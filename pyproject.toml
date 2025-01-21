@@ -1,5 +1,5 @@
 [project]
-name = "sweatstack-python"
+name = "sweatstack"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,6 +9,17 @@ authors = [
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+jupyterlab = [
+    "ipython>=8.31.0",
+    "jupyterlab>=4.3.4",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.scripts]
+generate-response-models = "sweatstack.cli:generate_response_models"
+sweatshell = "sweatstack.sweatshell:run_ipython"
+sweatlab = "sweatstack.jupyterlab_oauth2_startup:start_jupyterlab_with_oauth"
