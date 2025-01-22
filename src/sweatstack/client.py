@@ -1,15 +1,21 @@
 import base64
+import contextlib
 import random
 import hashlib
 import os
 import secrets
 import urllib
 import webbrowser
+from datetime import date
+from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any, Generator, get_type_hints, List
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import pandas as pd
 
+from .schemas import ActivitySummary, Sport
 
 AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
@@ -66,7 +72,7 @@ class OAuth2Mixin:
         try:
             server.handle_request()
         except TimeoutError:
-            raise Exception("Sweat Stack Python login timed out after 30 seconds. Please try again.")
+            raise Exception("SweatStack Python login timed out after 30 seconds. Please try again.")
 
         if hasattr(server, "code"):
             token_data = {
@@ -82,14 +88,14 @@ class OAuth2Mixin:
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
-                raise Exception(f"Sweat Stack Python login failed. Please try again.") from e
+                raise Exception(f"SweatStack Python login failed. Please try again.") from e
             token_response = response.json()
 
             self.jwt = token_response.get("access_token")
             self.api_key = self.jwt
-            print(f"Sweat Stack Python login successful.")
+            print(f"SweatStack Python login successful.")
         else:
-            raise Exception("Sweat Stack Python login failed. Please try again.")
+            raise Exception("SweatStack Python login failed. Please try again.")
 
 
 class Client(OAuth2Mixin):
@@ -126,17 +132,111 @@ class Client(OAuth2Mixin):
     @url.setter
     def url(self, value: str):
         self._url = value
+    
+    @contextlib.contextmanager
+    def _http_client(self):
+        """
+        Creates an httpx client with the base URL and authentication headers pre-configured.
+        """
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        
+        with httpx.Client(base_url=self.url, headers=headers) as client:
+            yield client
+    
+    def _get_activities_generator(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        limit: int = 100,
+    ) -> Generator[ActivitySummary, None, None]:
+        num_returned = 0
+        offset = 0
+        default_limit = 100
+        params = {
+            "sports": sports,
+            "limit": default_limit,
+            "offset": offset,
+        }
+        if start:
+            params["start"] = start.isoformat()
+        if end:
+            params["end"] = end.isoformat()
 
-    def list_activities(self):
-        return []
+        with self._http_client() as client:
+            while True:
+                response = client.get(
+                    url="/api/v1/activities/",
+                    params=params,
+                )
+                response.raise_for_status()
+                activities = response.json()
+                for activity in activities:
+                    yield ActivitySummary.model_validate(activity)
+
+                    num_returned += 1
+                    if num_returned >= limit:
+                        return
+                if len(activities) < default_limit:
+                    return
+
+                params["limit"] = min(default_limit, limit - num_returned)
+                params["offset"] += default_limit
+
+    def get_activities(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        limit: int = 100,
+        as_dataframe: bool = False,
+    ) -> Generator[ActivitySummary, None, None] | pd.DataFrame:
+        generator = self._get_activities_generator(
+            start=start,
+            end=end,
+            sports=sports,
+            limit=limit,
+        )
+        if as_dataframe:
+            return pd.DataFrame([activity.model_dump() for activity in generator])
+        else:
+            return generator
 
 
 _default_client = Client()
 
 
-def login():
-    _default_client.login()
+def generate_singleton_methods(method_names: List[str]) -> None:
+    """
+    Automatically generates singleton methods for the Client class.
+    
+    Args:
+        method_names: List of method names to expose in the singleton interface
+    """
+    
+    for method_name in method_names:
+        if not hasattr(Client, method_name):
+            raise ValueError(f"Method '{method_name}' not found in class {Client.__name__}")
+            
+        class_method = getattr(Client, method_name)
+        
+        if not callable(class_method):
+            continue
+            
+        class_method = getattr(Client, method_name)
+        
+        @wraps(class_method)
+        def singleton_method(*args: Any, **kwargs: Any) -> Any:
+            return getattr(_default_client, method_name)(*args, **kwargs)
+            
+        singleton_method.__annotations__ = get_type_hints(class_method)
+        
+        globals()[method_name] = singleton_method
 
 
-def list_activities():
-    return _default_client.list_activities()
+methods_to_expose = ["get_activities", "login"]
+generate_singleton_methods(methods_to_expose)
