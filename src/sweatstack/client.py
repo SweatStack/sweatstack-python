@@ -9,6 +9,7 @@ import webbrowser
 from datetime import date
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from io import BytesIO
 from typing import Any, Generator, get_type_hints, List
 from urllib.parse import parse_qs, urlparse
 
@@ -207,11 +208,41 @@ class Client(OAuth2Mixin):
         else:
             return generator
 
+    def get_latest_activity(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+    ) -> ActivityDetails:
+        return next(self.get_activities(
+            start=start,
+            end=end,
+            sports=sports,
+            limit=1,
+        ))
+
     def get_activity(self, activity_id: str) -> ActivityDetails:
         with self._http_client() as client:
             response = client.get(url=f"/api/v1/activities/{activity_id}")
             response.raise_for_status()
             return ActivityDetails.model_validate(response.json())
+
+    def get_activity_data(self, activity_id: str) -> pd.DataFrame:
+        with self._http_client() as client:
+            response = client.get(
+                f"/api/v1/activities/{activity_id}/data",
+            )
+
+        response.raise_for_status()
+
+        data = pd.read_parquet(BytesIO(response.content))
+
+        return data
+
+    def get_latest_activity_data(self) -> pd.DataFrame:
+        activity = self.get_latest_activity()
+        return self.get_activity_data(activity.id)
 
 
 _default_client = Client()
@@ -251,8 +282,11 @@ def _generate_singleton_methods(method_names: List[str]) -> None:
 
 _generate_singleton_methods(
     [
-        "get_activities",
-        "get_activity",
         "login",
+        "get_activities",
+        "get_latest_activity",
+        "get_activity",
+        "get_activity_data",
+        "get_latest_activity_data",
     ]
 )
