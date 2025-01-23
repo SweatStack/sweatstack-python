@@ -236,13 +236,37 @@ class Client(OAuth2Mixin):
 
         response.raise_for_status()
 
-        data = pd.read_parquet(BytesIO(response.content))
-
-        return data
+        return pd.read_parquet(BytesIO(response.content))
 
     def get_latest_activity_data(self) -> pd.DataFrame:
         activity = self.get_latest_activity()
         return self.get_activity_data(activity.id)
+
+    def get_longitudinal_data(
+        self,
+        *,
+        sports: list[Sport | str],
+        start: date | str,
+        end: date | str | None = None,
+        metrics: list[str] | None = None,
+    ) -> pd.DataFrame:
+        params = {
+            "sports": sports,
+            "start": start,
+        }
+        if end is not None:
+            params["end"] = end
+        if metrics is not None:
+            params["metrics"] = metrics
+
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/activities/longitudinal-data",
+                params=params,
+            )
+            response.raise_for_status()
+
+        return pd.read_parquet(BytesIO(response.content))
 
 
 _default_client = Client()
@@ -288,5 +312,6 @@ _generate_singleton_methods(
         "get_activity",
         "get_activity_data",
         "get_latest_activity_data",
+        "get_longitudinal_data",
     ]
 )
