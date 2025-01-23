@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pandas as pd
 
-from .schemas import ActivitySummary, Sport
+from .schemas import ActivityDetails, ActivitySummary, Sport
 
 AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
@@ -144,7 +144,7 @@ class Client(OAuth2Mixin):
         
         with httpx.Client(base_url=self.url, headers=headers) as client:
             yield client
-    
+
     def _get_activities_generator(
         self,
         *,
@@ -157,14 +157,15 @@ class Client(OAuth2Mixin):
         offset = 0
         default_limit = 100
         params = {
-            "sports": sports,
             "limit": default_limit,
             "offset": offset,
         }
-        if start:
+        if start is not None:
             params["start"] = start.isoformat()
-        if end:
+        if end is not None:
             params["end"] = end.isoformat()
+        if sports is not None:
+            params["sports"] = sports
 
         with self._http_client() as client:
             while True:
@@ -206,17 +207,35 @@ class Client(OAuth2Mixin):
         else:
             return generator
 
+    def get_activity(self, activity_id: str) -> ActivityDetails:
+        with self._http_client() as client:
+            response = client.get(url=f"/api/v1/activities/{activity_id}")
+            response.raise_for_status()
+            return ActivityDetails.model_validate(response.json())
+
 
 _default_client = Client()
 
 
-def generate_singleton_methods(method_names: List[str]) -> None:
+def _generate_singleton_methods(method_names: List[str]) -> None:
     """
     Automatically generates singleton methods for the Client class.
     
     Args:
         method_names: List of method names to expose in the singleton interface
     """
+
+    def create_singleton_method(method_name: str):
+        bound_method = getattr(_default_client, method_name)
+
+        @wraps(bound_method)
+        def singleton_method(*args: Any, **kwargs: Any) -> Any:
+            return bound_method(*args, **kwargs)
+
+        class_method = getattr(Client, method_name)
+        singleton_method.__annotations__ = get_type_hints(class_method)
+
+        return singleton_method
     
     for method_name in method_names:
         if not hasattr(Client, method_name):
@@ -227,16 +246,13 @@ def generate_singleton_methods(method_names: List[str]) -> None:
         if not callable(class_method):
             continue
             
-        class_method = getattr(Client, method_name)
-        
-        @wraps(class_method)
-        def singleton_method(*args: Any, **kwargs: Any) -> Any:
-            return getattr(_default_client, method_name)(*args, **kwargs)
-            
-        singleton_method.__annotations__ = get_type_hints(class_method)
-        
-        globals()[method_name] = singleton_method
+        globals()[method_name] = create_singleton_method(method_name)
 
 
-methods_to_expose = ["get_activities", "login"]
-generate_singleton_methods(methods_to_expose)
+_generate_singleton_methods(
+    [
+        "get_activities",
+        "get_activity",
+        "login",
+    ]
+)
