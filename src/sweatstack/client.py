@@ -4,6 +4,7 @@ import random
 import hashlib
 import os
 import secrets
+import time
 import urllib
 import webbrowser
 from datetime import date
@@ -17,6 +18,8 @@ import httpx
 import pandas as pd
 
 from .schemas import ActivityDetails, ActivitySummary, Sport
+from .utils import decode_jwt_body
+
 
 AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
@@ -94,27 +97,81 @@ class OAuth2Mixin:
 
             self.jwt = token_response.get("access_token")
             self.api_key = self.jwt
+            self.refresh_token = token_response.get("refresh_token")
             print(f"SweatStack Python login successful.")
         else:
             raise Exception("SweatStack Python login failed. Please try again.")
 
 
 class Client(OAuth2Mixin):
-    def __init__(self, api_key: str | None = None, url: str | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        refresh_token: str | None = None,
+        url: str | None = None,
+    ):
         self.api_key = api_key
+        self.refresh_token = refresh_token
         self.url = url
+
+    def _do_token_refresh(self, tz_offset: int) -> str:
+        with self._http_client() as client:
+            response = client.post(
+                "/api/v1/oauth/token",
+                json={
+                    "grant_type": "refresh_token",
+                    "refresh_token": self.refresh_token,
+                    "tz_offset": tz_offset,
+                },
+            )
+
+            response.raise_for_status()
+            return response.json()["access_token"]
+
+    def _check_token_expiry(self, token: str) -> str:
+        try:
+            body = decode_jwt_body(token)
+            # Margin in seconds to account for time to token validation of the next request
+            TOKEN_EXPIRY_MARGIN = 5
+            if body["exp"] - TOKEN_EXPIRY_MARGIN < time.time():
+                # Token is (almost) expired, refresh it
+                token = self._do_token_refresh(body["tz_offset"])
+                self._api_key = token
+        except Exception:
+            # If token can't be decoded, just return as-is
+            # @TODO: This probably should be handled differently
+            pass
+
+        return token
 
     @property
     def api_key(self) -> str:
         if self._api_key is not None:
-            return self._api_key
-        
-        return os.getenv("SWEATSTACK_API_KEY")
+            value = self._api_key
+        else:
+            value = os.getenv("SWEATSTACK_API_KEY")
+
+        if value is None:
+            # A non-authenticated client is a potentially valid use-case.
+            return None
+
+        return self._check_token_expiry(value)
 
     @api_key.setter
     def api_key(self, value: str):
         self._api_key = value
     
+    @property
+    def refresh_token(self) -> str:
+        if self._refresh_token is not None:
+            return self._refresh_token
+        else:
+            return os.getenv("SWEATSTACK_REFRESH_TOKEN")
+
+    @refresh_token.setter
+    def refresh_token(self, value: str):
+        self._refresh_token = value
+
     @property
     def url(self) -> str:
         """
