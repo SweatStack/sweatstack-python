@@ -11,7 +11,7 @@ from datetime import date
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO
-from typing import Any, Generator, get_type_hints, List
+from typing import Any, Generator, get_type_hints, List, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -306,6 +306,7 @@ class Client(OAuth2Mixin):
         start: date | str,
         end: date | str | None = None,
         metrics: list[str] | None = None,
+        adaptive_sampling_on: Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
         params = {
             "sports": sports,
@@ -315,6 +316,8 @@ class Client(OAuth2Mixin):
             params["end"] = end
         if metrics is not None:
             params["metrics"] = metrics
+        if adaptive_sampling_on is not None:
+            params["adaptive_sampling_on"] = adaptive_sampling_on
 
         with self._http_client() as client:
             response = client.get(
