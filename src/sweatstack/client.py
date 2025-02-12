@@ -17,9 +17,8 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pandas as pd
 
-from .schemas import ActivityDetails, ActivitySummary, Sport
+from .schemas import ActivityDetails, ActivitySummary, Sport, TraceDetails
 from .utils import decode_jwt_body
-
 
 AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
@@ -209,14 +208,14 @@ class Client(OAuth2Mixin):
         start: date | None = None,
         end: date | None = None,
         sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
         limit: int = 100,
     ) -> Generator[ActivitySummary, None, None]:
         num_returned = 0
-        offset = 0
         default_limit = 100
         params = {
             "limit": default_limit,
-            "offset": offset,
+            "offset": 0,
         }
         if start is not None:
             params["start"] = start.isoformat()
@@ -224,6 +223,8 @@ class Client(OAuth2Mixin):
             params["end"] = end.isoformat()
         if sports is not None:
             params["sports"] = sports
+        if tags is not None:
+            params["tags"] = tags
 
         with self._http_client() as client:
             while True:
@@ -251,6 +252,7 @@ class Client(OAuth2Mixin):
         start: date | None = None,
         end: date | None = None,
         sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
         limit: int = 100,
         as_dataframe: bool = False,
     ) -> Generator[ActivitySummary, None, None] | pd.DataFrame:
@@ -258,6 +260,7 @@ class Client(OAuth2Mixin):
             start=start,
             end=end,
             sports=sports,
+            tags=tags,
             limit=limit,
         )
         if as_dataframe:
@@ -270,12 +273,14 @@ class Client(OAuth2Mixin):
         *,
         start: date | None = None,
         end: date | None = None,
-        sports: list[Sport | str] | None = None,
+        sport: Sport | None = None,
+        tag: str | None = None,
     ) -> ActivityDetails:
         return next(self.get_activities(
             start=start,
             end=end,
-            sports=sports,
+            sports=[sport] if sport is not None else None,
+            tags=[tag] if tag is not None else None,
             limit=1,
         ))
 
@@ -285,29 +290,76 @@ class Client(OAuth2Mixin):
             response.raise_for_status()
             return ActivityDetails.model_validate(response.json())
 
-    def get_activity_data(self, activity_id: str) -> pd.DataFrame:
+    def get_activity_data(
+        self,
+        activity_id: str,
+        adaptive_sampling_on: Literal["power", "speed"] | None = None,
+    ) -> pd.DataFrame:
+        params = {}
+        if adaptive_sampling_on is not None:
+            params["adaptive_sampling_on"] = adaptive_sampling_on
+
         with self._http_client() as client:
             response = client.get(
-                f"/api/v1/activities/{activity_id}/data",
+                url=f"/api/v1/activities/{activity_id}/data",
+                params=params,
             )
 
         response.raise_for_status()
 
         return pd.read_parquet(BytesIO(response.content))
 
-    def get_latest_activity_data(self) -> pd.DataFrame:
-        activity = self.get_latest_activity()
-        return self.get_activity_data(activity.id)
+    def get_activity_mean_max(
+        self,
+        activity_id: str,
+        metric: str,
+        adaptive_sampling: bool = False,
+    ) -> pd.DataFrame:
+        with self._http_client() as client:
+            response = client.get(
+                url=f"/api/v1/activities/{activity_id}/mean-max",
+                params={
+                    "metric": metric,
+                    "adaptive_sampling": adaptive_sampling,
+                },
+            )
+            response.raise_for_status()
+            return pd.read_parquet(BytesIO(response.content))
+
+    def get_latest_activity_data(
+        self,
+        sport: Sport | None = None,
+        adaptive_sampling_on: Literal["power", "speed"] | None = None,
+    ) -> pd.DataFrame:
+        activity = self.get_latest_activity(sport=sport)
+        return self.get_activity_data(activity.id, adaptive_sampling_on)
+
+    def get_latest_activity_mean_max(
+        self,
+        metric: str,
+        sport: Sport | None = None,
+        adaptive_sampling: bool = False,
+    ) -> pd.DataFrame:
+        activity = self.get_latest_activity(sport=sport)
+        return self.get_activity_mean_max(activity.id, metric, adaptive_sampling)
 
     def get_longitudinal_data(
         self,
         *,
-        sports: list[Sport | str],
+        sport: Sport | None = None,
+        sports: list[Sport | str] | None = None,
         start: date | str,
         end: date | str | None = None,
         metrics: list[str] | None = None,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
+        if sport and sports:
+            raise ValueError("Cannot specify both sport and sports")
+        if sport is not None:
+            sports = [sport]
+        elif sports is None:
+            sports = []
+
         params = {
             "sports": sports,
             "start": start,
@@ -327,6 +379,98 @@ class Client(OAuth2Mixin):
             response.raise_for_status()
 
         return pd.read_parquet(BytesIO(response.content))
+
+    def get_longitudinal_mean_max(
+        self,
+        *,
+        sport: Sport | str,
+        metric: str,
+        date: date | str | None = None,
+        window_days: int | None = None,
+    ) -> pd.DataFrame:
+        params = {
+            "sport": sport,
+            "metric": metric,
+        }
+        if date is not None:
+            params["date"] = date
+        if window_days is not None:
+            params["window_days"] = window_days
+
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/activities/longitudinal-mean-max",
+                params=params,
+            )
+            response.raise_for_status()
+
+        return pd.read_parquet(BytesIO(response.content))
+
+    def _get_traces_generator(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+    ) -> Generator[TraceDetails, None, None]:
+        num_returned = 0
+        default_limit = 100
+        params = {
+            "limit": default_limit,
+            "offset": 0,
+        }
+        if start is not None:
+            params["start"] = start.isoformat()
+        if end is not None:
+            params["end"] = end.isoformat()
+        if sports is not None:
+            params["sports"] = sports
+        if tags is not None:
+            params["tags"] = tags
+
+        with self._http_client() as client:
+            while True:
+                response = client.get(
+                    url="/api/v1/traces/",
+                    params=params,
+                )
+                response.raise_for_status()
+                traces = response.json()
+                for trace in traces:
+                    yield TraceDetails.model_validate(trace)
+
+                    num_returned += 1
+                    if num_returned >= limit:
+                        return
+                if len(traces) < default_limit:
+                    return
+
+                params["limit"] = min(default_limit, limit - num_returned)
+                params["offset"] += default_limit
+
+    def get_traces(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        as_dataframe: bool = False,
+    ) -> Generator[TraceDetails, None, None] | pd.DataFrame:
+        generator = self._get_traces_generator(
+            start=start,
+            end=end,
+            sports=sports,
+            tags=tags,
+            limit=limit,
+        )
+        if as_dataframe:
+            return pd.DataFrame([trace.model_dump() for trace in generator])
+        else:
+            return generator
 
 
 _default_client = Client()
@@ -367,11 +511,20 @@ def _generate_singleton_methods(method_names: List[str]) -> None:
 _generate_singleton_methods(
     [
         "login",
+
         "get_activities",
-        "get_latest_activity",
+
         "get_activity",
         "get_activity_data",
+        "get_activity_mean_max",
+
+        "get_latest_activity",
         "get_latest_activity_data",
+        "get_latest_activity_mean_max",
+
         "get_longitudinal_data",
+        "get_longitudinal_mean_max",
+
+        "get_traces",
     ]
 )

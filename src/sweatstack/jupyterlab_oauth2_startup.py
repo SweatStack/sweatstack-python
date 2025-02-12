@@ -1,9 +1,11 @@
 import argparse
+import os
 import shutil
 from pathlib import Path
 
 import sweatstack as ss
 from jupyterlab.labapp import LabApp
+from sweatstack.client import _default_client
 
 
 def start_jupyterlab_with_oauth():
@@ -23,5 +25,8 @@ def start_jupyterlab_with_oauth():
             shutil.copytree(examples_dir, target_dir)
 
     ss.login()
+    os.environ["SWEATSTACK_API_KEY"] = _default_client.api_key
+    os.environ["SWEATSTACK_REFRESH_TOKEN"] = _default_client.refresh_token
+
 
     return LabApp.launch_instance(argv=remaining_args)

@@ -18,6 +18,7 @@ dependencies = [
 jupyterlab = [
     "ipython>=8.31.0",
     "jupyterlab>=4.3.4",
+    "matplotlib",
 ]
 
 [build-system]
