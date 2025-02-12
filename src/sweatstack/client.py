@@ -501,6 +501,23 @@ class Client(OAuth2Mixin):
             response.raise_for_status()
             return TraceDetails.model_validate(response.json())
 
+    def get_sports(self, only_root: bool = False) -> list[Sport]:
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/profile/sports/",
+                params={"only_root": only_root},
+            )
+            response.raise_for_status()
+            return [Sport(sport) for sport in response.json()]
+
+    def get_tags(self) -> list[str]:
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/profile/tags/",
+            )
+            response.raise_for_status()
+            return response.json()
+
 
 _default_client = Client()
 
@@ -556,5 +573,8 @@ _generate_singleton_methods(
 
         "get_traces",
         "create_trace",
+
+        "get_sports",
+        "get_tags",
     ]
 )
