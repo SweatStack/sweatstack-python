@@ -7,7 +7,7 @@ import secrets
 import time
 import urllib
 import webbrowser
-from datetime import date
+from datetime import date, datetime
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO
@@ -472,6 +472,35 @@ class Client(OAuth2Mixin):
         else:
             return generator
 
+    def create_trace(
+        self,
+        *,
+        timestamp: datetime,
+        lactate: float | None = None,
+        rpe: int | None = None,
+        notes: str | None = None,
+        power: int | None = None,
+        speed: float | None = None,
+        heart_rate: int | None = None,
+        tags: list[str] | None = None,
+    ) -> TraceDetails:
+        with self._http_client() as client:
+            response = client.post(
+                url="/api/v1/traces/",
+                json={
+                    "timestamp": timestamp.isoformat(),
+                    "lactate": lactate,
+                    "rpe": rpe,
+                    "notes": notes,
+                    "power": power,
+                    "speed": speed,
+                    "heart_rate": heart_rate,
+                    "tags": tags,
+                },
+            )
+            response.raise_for_status()
+            return TraceDetails.model_validate(response.json())
+
 
 _default_client = Client()
 
@@ -526,5 +555,6 @@ _generate_singleton_methods(
         "get_longitudinal_mean_max",
 
         "get_traces",
+        "create_trace",
     ]
 )

@@ -1,1 +1,3 @@
-from .openapi_schemas import ActivityDetails, ActivitySummary, Sport, TraceDetails
+from .openapi_schemas import (
+    ActivityDetails, ActivitySummary, Sport, TraceDetails
+)
