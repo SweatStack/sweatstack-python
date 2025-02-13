@@ -450,6 +450,15 @@ class Client(OAuth2Mixin):
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
+    def _normalize_dataframe_column(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
+        normalized = pd.json_normalize(
+            df[column],
+        )
+        normalized = normalized.add_prefix(f"{column}.")
+        if column == "activity":
+            normalized = normalized.drop(["activity.traces", "activity.laps"], axis=1, errors="ignore")
+        return pd.concat([df.drop(column, axis=1), normalized], axis=1)
+
     def get_traces(
         self,
         *,
@@ -467,10 +476,18 @@ class Client(OAuth2Mixin):
             tags=tags,
             limit=limit,
         )
-        if as_dataframe:
-            return pd.DataFrame([trace.model_dump() for trace in generator])
-        else:
+        if not as_dataframe:
             return generator
+
+        data = pd.DataFrame([trace.model_dump() for trace in generator])
+
+        if "activity" in data.columns:
+            data = self._normalize_dataframe_column(data, "activity")
+
+        if "lap" in data.columns:
+            data = self._normalize_dataframe_column(data, "lap")
+
+        return data
 
     def create_trace(
         self,
