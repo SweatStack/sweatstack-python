@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pandas as pd
 
+from .constants import DEFAULT_URL
 from .schemas import ActivityDetails, ActivitySummary, Sport, TraceDetails
 from .utils import decode_jwt_body
 
