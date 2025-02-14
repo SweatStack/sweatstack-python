@@ -20,9 +20,9 @@ import pandas as pd
 from .schemas import ActivityDetails, ActivitySummary, Sport, TraceDetails
 from .utils import decode_jwt_body
 
+
 AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
-DEFAULT_URL = "https://app.sweatstack.no"
 
 
 class OAuth2Mixin:

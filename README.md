@@ -67,3 +67,32 @@ activities = client.list_activities()
 Although both interfaces are feature-equivalent, they serve different purposes:
 - The singleton interface is the default and recommended interface. It is intended for most use cases and is the easiest to use.
 - The class-based interface is intended for more advanced use cases, such as when you need to authenticate multiple users at the same time or in multi-threaded applications.
+
+
+## Streamlit integration
+
+The `sweatstack.streamlit` module provides a Streamlit integration for SweatStack. This requires the optional `streamlit` dependency that can be installed with:
+```
+uv pip install 'sweatstack[streamlit]'
+```
+
+The `StreamlitAuth` class is a Streamlit component that handles the OAuth2 authentication flow. It provides a `st.authenticate()` function that can be used to authenticate the user.
+
+Example usage:
+
+```python
+from sweatstack.streamlit import StreamlitAuth
+
+auth = StreamlitAuth()
+
+with st.sidebar:
+    st.authenticate()
+
+if not auth.is_authenticated():
+    st.write("User is not authenticated")
+    st.stop()
+
+st.write("User is authenticated")
+
+auth.client.get_latest_activity()
+```

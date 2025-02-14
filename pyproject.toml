@@ -20,6 +20,10 @@ jupyterlab = [
     "jupyterlab>=4.3.4",
     "matplotlib",
 ]
+streamlit = [
+    "streamlit>=1.42.0",
+    "streamlit-cookies-controller>=0.0.4",
+]
 
 [build-system]
 requires = ["hatchling"]
