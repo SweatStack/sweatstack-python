@@ -51,6 +51,7 @@ class StreamlitAuth:
             cookie_controller.remove("sweatstack_api_key")
             if self.set_env_var:
                 os.environ.pop("SWEATSTACK_API_KEY")
+            st.rerun()
 
     def _show_sweatstack_login(self):
         st.link_button("Login", self._get_authorization_url_implicit())
