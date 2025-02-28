@@ -1,6 +1,6 @@
 [project]
 name = "sweatstack"
-version = "0.13.2"
+version = "0.14.0"
 description = "The official Python client for SweatStack"
 readme = "README.md"
 authors = [
@@ -22,7 +22,6 @@ jupyterlab = [
 ]
 streamlit = [
     "streamlit>=1.42.0",
-    "streamlit-cookies-controller>=0.0.4",
 ]
 
 [build-system]
