@@ -60,9 +60,11 @@ class StreamlitAuth:
             "client_secret": self.client_secret,
             "code": code,
         }
+        auth = httpx.BasicAuth(username=self.client_id, password=self.client_secret)
         response = httpx.post(
             f"{DEFAULT_URL}/api/v1/oauth/token",
             data=token_data,
+            auth=auth,
         )
         try:
             response.raise_for_status()
