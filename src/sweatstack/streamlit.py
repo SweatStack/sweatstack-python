@@ -73,7 +73,7 @@ class StreamlitAuth:
         self.api_key = token_response.get("access_token")
         st.session_state["sweatstack_api_key"] = self.api_key
 
-        self.client = Client(self.api_key)
+        self.client = Client(self.api_key, streamlit_compatible=True)
 
         return
 

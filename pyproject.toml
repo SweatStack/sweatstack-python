@@ -1,6 +1,6 @@
 [project]
 name = "sweatstack"
-version = "0.14.1"
+version = "0.14.2"
 description = "The official Python client for SweatStack"
 readme = "README.md"
 authors = [

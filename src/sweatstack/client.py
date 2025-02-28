@@ -19,7 +19,7 @@ import pandas as pd
 
 from .constants import DEFAULT_URL
 from .schemas import ActivityDetails, ActivitySummary, Sport, TraceDetails
-from .utils import decode_jwt_body
+from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
 
 AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
@@ -109,10 +109,12 @@ class Client(OAuth2Mixin):
         api_key: str | None = None,
         refresh_token: str | None = None,
         url: str | None = None,
+        streamlit_compatible: bool = False,
     ):
         self.api_key = api_key
         self.refresh_token = refresh_token
         self.url = url
+        self.streamlit_compatible = streamlit_compatible
 
     def _do_token_refresh(self, tz_offset: int) -> str:
         with self._http_client() as client:
@@ -247,6 +249,12 @@ class Client(OAuth2Mixin):
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
+    def _postprocess_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        if self.streamlit_compatible:
+            return make_dataframe_streamlit_compatible(df)
+        else:
+            return df
+
     def get_activities(
         self,
         *,
@@ -265,7 +273,8 @@ class Client(OAuth2Mixin):
             limit=limit,
         )
         if as_dataframe:
-            return pd.DataFrame([activity.model_dump() for activity in generator])
+            df = pd.DataFrame([activity.model_dump() for activity in generator])
+            return self._postprocess_dataframe(df)
         else:
             return generator
 
@@ -308,7 +317,8 @@ class Client(OAuth2Mixin):
 
         response.raise_for_status()
 
-        return pd.read_parquet(BytesIO(response.content))
+        df = pd.read_parquet(BytesIO(response.content))
+        return self._postprocess_dataframe(df)
 
     def get_activity_mean_max(
         self,
@@ -325,7 +335,8 @@ class Client(OAuth2Mixin):
                 },
             )
             response.raise_for_status()
-            return pd.read_parquet(BytesIO(response.content))
+            df = pd.read_parquet(BytesIO(response.content))
+            return self._postprocess_dataframe(df)
 
     def get_latest_activity_data(
         self,
@@ -379,7 +390,8 @@ class Client(OAuth2Mixin):
             )
             response.raise_for_status()
 
-        return pd.read_parquet(BytesIO(response.content))
+            df = pd.read_parquet(BytesIO(response.content))
+            return self._postprocess_dataframe(df)
 
     def get_longitudinal_mean_max(
         self,
@@ -405,7 +417,8 @@ class Client(OAuth2Mixin):
             )
             response.raise_for_status()
 
-        return pd.read_parquet(BytesIO(response.content))
+            df = pd.read_parquet(BytesIO(response.content))
+            return self._postprocess_dataframe(df)
 
     def _get_traces_generator(
         self,
@@ -488,7 +501,7 @@ class Client(OAuth2Mixin):
         if "lap" in data.columns:
             data = self._normalize_dataframe_column(data, "lap")
 
-        return data
+        return self._postprocess_dataframe(data)
 
     def create_trace(
         self,
