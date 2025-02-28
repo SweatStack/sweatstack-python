@@ -61,7 +61,7 @@ class StreamlitAuth:
             "code": code,
         }
         response = httpx.post(
-            f"{DEFAULT_URL}/oauth/token",
+            f"{DEFAULT_URL}/api/v1/oauth/token",
             data=token_data,
         )
         try:
