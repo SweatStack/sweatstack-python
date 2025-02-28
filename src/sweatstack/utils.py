@@ -16,7 +16,7 @@ def decode_jwt_body(jwt: str) -> dict:
     return json.loads(decoded)
 
 
-def make_dataframe_streamlit_compatible(df):
+def make_dataframe_streamlit_compatible(df: pd.DataFrame) -> pd.DataFrame:
     """
     Converts all columns containing enum values in a DataFrame to their respective string values.
 

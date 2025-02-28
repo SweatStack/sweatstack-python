@@ -30,12 +30,12 @@ class StreamlitAuth:
         self.redirect_uri = redirect_uri or os.environ.get("SWEATSTACK_REDIRECT_URI")
 
         self.api_key = st.session_state.get("sweatstack_api_key")
-        self.client = Client(self.api_key)
+        self.client = Client(self.api_key, streamlit_compatible=True)
 
     def _show_sweatstack_logout(self):
         if st.button("Logout"):
             self.api_key = None
-            self.client = Client()
+            self.client = Client(streamlit_compatible=True)
             st.session_state.pop("sweatstack_api_key")
             st.rerun()
 
