@@ -274,6 +274,7 @@ class Client(OAuth2Mixin):
         )
         if as_dataframe:
             df = pd.DataFrame([activity.model_dump() for activity in generator])
+            df = df.set_index(df["start"].rename("timestamp"))
             df = self._normalize_dataframe_column(df, "summary")
             df = self._normalize_dataframe_column(df, "laps")
             df = self._normalize_dataframe_column(df, "traces")
