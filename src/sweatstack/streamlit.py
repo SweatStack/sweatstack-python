@@ -40,9 +40,37 @@ class StreamlitAuth:
             st.rerun()
 
     def _show_sweatstack_login(self):
-        st.link_button("Login", self._get_authorization_url_implicit())
+        authorization_url = self._get_authorization_url()
+        st.markdown(
+            f"""
+            <style>
+                .animated-button {{
+                }}
+                .animated-button:hover {{
+                    transform: scale(1.05);
+                }}
+                .animated-button:active {{
+                    transform: scale(1);
+                }}
+            </style>
+            <a href="{authorization_url}"
+                target="_self"
+                class="animated-button"
+                style="display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #EF2B2D;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    border: none;
+                    transition: all 0.3s ease;
+                    cursor: pointer;"
+                >Login with SweatStack</a>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    def _get_authorization_url_implicit(self):
+    def _get_authorization_url(self):
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
