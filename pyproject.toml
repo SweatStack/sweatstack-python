@@ -1,6 +1,6 @@
 [project]
 name = "sweatstack"
-version = "0.18.0"
+version = "0.19.0"
 description = "The official Python client for SweatStack"
 readme = "README.md"
 authors = [
@@ -15,13 +15,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-jupyterlab = [
-    "ipython>=8.31.0",
-    "jupyterlab>=4.3.4",
-    "matplotlib",
-]
 streamlit = [
     "streamlit>=1.42.0",
+]
+jupyter = [
+    "ipython>=8.31.0",
+    "jupyterlab>=4.3.4",
+    "matplotlib>=3.10.0",
 ]
 
 [build-system]
@@ -32,6 +32,9 @@ build-backend = "hatchling.build"
 dev = [
     "datamodel-code-generator>=0.26.5",
 ]
+
+[tool.uv.workspace]
+members = ["playground"]
 
 [project.scripts]
 generate-response-models = "sweatstack.cli:generate_response_models"

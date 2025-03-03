@@ -15,7 +15,9 @@ from typing import Any, Generator, get_type_hints, List, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import ipywidgets as widgets
 import pandas as pd
+from IPython.display import display
 
 from .constants import DEFAULT_URL
 from .schemas import (
@@ -154,7 +156,7 @@ class DelegationMixin:
         )
 
 
-class Client(OAuth2Mixin, DelegationMixin):
+class Client(OAuth2Mixin, DelegationMixin, JupyterInteractivityMixin):
     def __init__(
         self,
         api_key: str | None = None,
