@@ -15,9 +15,7 @@ from typing import Any, Generator, get_type_hints, List, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import ipywidgets as widgets
 import pandas as pd
-from IPython.display import display
 
 from .constants import DEFAULT_URL
 from .schemas import (
