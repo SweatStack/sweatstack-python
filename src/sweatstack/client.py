@@ -107,7 +107,14 @@ class OAuth2Mixin:
 
 
 class DelegationMixin:
-    def _get_delegated_token(self, user_id: str):
+    def _validate_user(self, user: str | UserSummary):
+        if isinstance(user, UserSummary):
+            return user.id
+        else:
+            return user
+
+    def _get_delegated_token(self, user: str | UserSummary):
+        user_id = self._validate_user(user)
         with self._http_client() as client:
             response = client.post(
                 "/api/v1/oauth/delegated-token",
@@ -117,8 +124,8 @@ class DelegationMixin:
 
         return response.json()
 
-    def switch_user(self, user_id: str):
-        token_response = self._get_delegated_token(user_id)
+    def switch_user(self, user: str | UserSummary):
+        token_response = self._get_delegated_token(user)
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
 
@@ -135,8 +142,8 @@ class DelegationMixin:
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
 
-    def delegated_client(self, user_id: str):
-        token_response = self._get_delegated_token(user_id)
+    def delegated_client(self, user: str | UserSummary):
+        token_response = self._get_delegated_token(user)
         return self.__class__(
             api_key=token_response["access_token"],
             refresh_token=token_response["refresh_token"],
@@ -604,7 +611,7 @@ class Client(OAuth2Mixin, DelegationMixin):
             response.raise_for_status()
             return response.json()
 
-    def list_users(self) -> list[UserSummary]:
+    def get_users(self) -> list[UserSummary]:
         with self._http_client() as client:
             response = client.get(
                 url="/api/v1/users/",
@@ -651,7 +658,7 @@ _generate_singleton_methods(
     [
         "login",
 
-        "list_users",
+        "get_users",
 
         "get_activities",
 
