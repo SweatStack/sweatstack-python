@@ -18,7 +18,9 @@ import httpx
 import pandas as pd
 
 from .constants import DEFAULT_URL
-from .schemas import ActivityDetails, ActivitySummary, Sport, TraceDetails
+from .schemas import (
+    ActivityDetails, ActivitySummary, Sport, TraceDetails, UserSummary
+)
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
 
@@ -62,6 +64,7 @@ class OAuth2Mixin:
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
             "scope": "data:read",
+            "prompt": "none",
         }
         base_url = self.url
         path = "/oauth/authorize"
@@ -83,7 +86,7 @@ class OAuth2Mixin:
                 "grant_type": "authorization_code",
                 "client_id": OAUTH2_CLIENT_ID,
                 "code": server.code,
-                "code_verifier": code_verifier
+                "code_verifier": code_verifier,
             }
             response = httpx.post(
                 f"{self.url}/api/v1/oauth/token",
@@ -103,7 +106,55 @@ class OAuth2Mixin:
             raise Exception("SweatStack Python login failed. Please try again.")
 
 
-class Client(OAuth2Mixin):
+class DelegationMixin:
+    def _get_delegated_token(self, user_id: str):
+        with self._http_client() as client:
+            response = client.post(
+                "/api/v1/oauth/delegated-token",
+                json={"sub": user_id},
+            )
+            response.raise_for_status()
+
+        return response.json()
+
+    def switch_user(self, user_id: str):
+        token_response = self._get_delegated_token(user_id)
+        self.api_key = token_response["access_token"]
+        self.refresh_token = token_response["refresh_token"]
+
+    def _get_principal_token(self):
+        with self._http_client() as client:
+            response = client.get(
+                "/api/v1/oauth/principal-token",
+            )
+            response.raise_for_status()
+        return response.json()
+
+    def switch_back(self):
+        token_response = self._get_principal_token()
+        self.api_key = token_response["access_token"]
+        self.refresh_token = token_response["refresh_token"]
+
+    def delegated_client(self, user_id: str):
+        token_response = self._get_delegated_token(user_id)
+        return self.__class__(
+            api_key=token_response["access_token"],
+            refresh_token=token_response["refresh_token"],
+            url=self.url,
+            streamlit_compatible=self.streamlit_compatible,
+        )
+
+    def principal_client(self):
+        token_response = self._get_principal_token()
+        return self.__class__(
+            api_key=token_response["access_token"],
+            refresh_token=token_response["refresh_token"],
+            url=self.url,
+            streamlit_compatible=self.streamlit_compatible,
+        )
+
+
+class Client(OAuth2Mixin, DelegationMixin):
     def __init__(
         self,
         api_key: str | None = None,
@@ -553,6 +604,13 @@ class Client(OAuth2Mixin):
             response.raise_for_status()
             return response.json()
 
+    def list_users(self) -> list[UserSummary]:
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/users/",
+            )
+            response.raise_for_status()
+            return [UserSummary.model_validate(user) for user in response.json()]
 
 _default_client = Client()
 
@@ -593,6 +651,8 @@ _generate_singleton_methods(
     [
         "login",
 
+        "list_users",
+
         "get_activities",
 
         "get_activity",
@@ -611,5 +671,10 @@ _generate_singleton_methods(
 
         "get_sports",
         "get_tags",
+
+        "switch_user",
+        "switch_back",
+        "delegated_client",
+        "principal_client",
     ]
 )
