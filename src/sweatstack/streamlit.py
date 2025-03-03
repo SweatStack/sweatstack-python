@@ -75,6 +75,7 @@ class StreamlitAuth:
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "scope": "data:read",
+            "prompt": "none",
         }
         path = "/oauth/authorize"
         authorization_url = urllib.parse.urljoin(DEFAULT_URL, path + "?" + urllib.parse.urlencode(params))
