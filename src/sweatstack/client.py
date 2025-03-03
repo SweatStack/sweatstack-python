@@ -154,7 +154,7 @@ class DelegationMixin:
         )
 
 
-class Client(OAuth2Mixin, DelegationMixin, JupyterInteractivityMixin):
+class Client(OAuth2Mixin, DelegationMixin):
     def __init__(
         self,
         api_key: str | None = None,
