@@ -86,7 +86,7 @@ class OAuth2Mixin:
                 "code_verifier": code_verifier
             }
             response = httpx.post(
-                f"{self.url}/oauth/token",
+                f"{self.url}/api/v1/oauth/token",
                 data=token_data,
             )
             try:
