@@ -540,11 +540,31 @@ class Client(OAuth2Mixin, DelegationMixin):
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
+    def _prepare_unserialized_data(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
+        """
+        pd.json_normalize() only likes to play with lists of records (dicts?), not lists of lists.
+        So that's what we're feeding it.
+        """
+        unserialized_data = df[column].tolist()
+        if column in ["laps", "traces"]:
+            result = []
+            for sublist in unserialized_data:
+                if sublist:
+                    dict_from_sublist = {i: value for i, value in enumerate(sublist) if sublist}
+                else:
+                    dict_from_sublist = {}
+                result.append(dict_from_sublist)
+
+            unserialized_data = result
+
+        return unserialized_data
+
     def _normalize_dataframe_column(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
         normalized = pd.json_normalize(
-            df[column],
+            self._prepare_unserialized_data(df, column),
         )
         normalized = normalized.add_prefix(f"{column}.")
+        normalized.index = df.index
         if column == "activity":
             normalized = normalized.drop(["activity.traces", "activity.laps"], axis=1, errors="ignore")
         return pd.concat([df.drop(column, axis=1), normalized], axis=1)
