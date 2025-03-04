@@ -24,7 +24,21 @@ from .schemas import (
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
 
-AUTH_SUCCESSFUL_RESPONSE = "<!DOCTYPE html><html><body><h1>Authentication successful. You can now close this window.</h1></body></html>"
+AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { max-width: 600px; margin: 40px auto; text-align: center; }
+        h1 { color: #2C3E50; font-size: 24px; }
+        p { color: #34495E; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <img src="https://sweatstack.no/images/sweat-stack-python-client.png" alt="SweatStack Logo" style="width: 200px; margin: 20px auto; display: block;">
+    <h1>Successfully authenticated with SweatStack!</h1>
+    <p>You have successfully authenticated using the SweatStack Python client library. You can now close this window and return to your Python environment.</p>
+</body>
+</html>"""
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
 
 
