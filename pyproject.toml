@@ -1,6 +1,6 @@
 [project]
 name = "sweatstack"
-version = "0.23.0"
+version = "0.24.0"
 description = "The official Python client for SweatStack"
 readme = "README.md"
 authors = [
@@ -22,6 +22,9 @@ jupyter = [
     "ipython>=8.31.0",
     "jupyterlab>=4.3.4",
     "matplotlib>=3.10.0",
+]
+pyodide = [
+    "pyodide-httpx>=0.2.0",
 ]
 
 [build-system]

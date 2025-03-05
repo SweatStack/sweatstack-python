@@ -1533,6 +1533,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyodide-httpx"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cc/61/dac172a07e710f24f9027919448d418ec452884d62c3fec5469b877d4c1c/pyodide_httpx-0.2.0.tar.gz", hash = "sha256:d4c976cf2cf6ea1133f759a62cf0f01e89b3f8c29edb28734e3af0208241d001", size = 13022 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/33/c338c68d41ce6a2b6aa57f265a998602b70f68a2b9f356632680a86c67ad/pyodide_httpx-0.2.0-py3-none-any.whl", hash = "sha256:03d8519549a95aef3ff6bff1e88df4d72e687c46113772806ae8793b100fb734", size = 14960 },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1874,7 +1886,7 @@ wheels = [
 
 [[package]]
 name = "sweatstack"
-version = "0.19.1"
+version = "0.23.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -1888,6 +1900,9 @@ jupyter = [
     { name = "ipython" },
     { name = "jupyterlab" },
     { name = "matplotlib" },
+]
+pyodide = [
+    { name = "pyodide-httpx" },
 ]
 streamlit = [
     { name = "streamlit" },
@@ -1905,8 +1920,9 @@ requires-dist = [
     { name = "jupyterlab", marker = "extra == 'jupyter'", specifier = ">=4.3.4" },
     { name = "matplotlib", marker = "extra == 'jupyter'", specifier = ">=3.10.0" },
     { name = "pandas", specifier = ">=2.2.3" },
-    { name = "pyarrow", specifier = ">=19.0.0" },
+    { name = "pyarrow", specifier = ">=18.0.0" },
     { name = "pydantic", specifier = ">=2.10.5" },
+    { name = "pyodide-httpx", marker = "extra == 'pyodide'", specifier = ">=0.2.0" },
     { name = "streamlit", marker = "extra == 'streamlit'", specifier = ">=1.42.0" },
 ]
 
