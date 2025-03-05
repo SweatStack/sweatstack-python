@@ -54,7 +54,7 @@ class StreamlitAuth:
                 }}
             </style>
             <a href="{authorization_url}"
-                target="_self"
+                target="_top"
                 class="animated-button"
                 style="display: inline-block;
                     padding: 10px 20px;
