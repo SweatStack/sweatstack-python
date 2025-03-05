@@ -113,7 +113,9 @@ class StreamlitAuth:
 
     def authenticate(self):
         if self.is_authenticated():
-            st.toast("SweatStack authentication successful!", icon="✅")
+            if not st.session_state.get("sweatstack_auth_toast_shown", False):
+                st.toast("SweatStack authentication successful!", icon="✅")
+                st.session_state["sweatstack_auth_toast_shown"] = True
             self._show_sweatstack_logout()
         elif code := st.query_params.get("code"):
             self._exchange_token(code)
