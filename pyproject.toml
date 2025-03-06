@@ -1,12 +1,12 @@
 [project]
 name = "sweatstack"
-version = "0.25.2"
+version = "0.26.0"
 description = "The official Python client for SweatStack"
 readme = "README.md"
 authors = [
     { name = "Aart Goossens", email = "aart@gssns.io" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
     "httpx>=0.28.1",
     "pandas>=2.2.3",
