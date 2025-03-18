@@ -88,6 +88,11 @@ class StreamlitAuth:
 
         return authorization_url
 
+    def _set_api_key(self, api_key):
+        self.api_key = api_key
+        st.session_state["sweatstack_api_key"] = api_key
+        self.client = Client(self.api_key, streamlit_compatible=True)
+
     def _exchange_token(self, code):
         token_data = {
             "grant_type": "authorization_code",
@@ -107,10 +112,7 @@ class StreamlitAuth:
             raise Exception(f"SweatStack Python login failed. Please try again.") from e
         token_response = response.json()
 
-        self.api_key = token_response.get("access_token")
-        st.session_state["sweatstack_api_key"] = self.api_key
-
-        self.client = Client(self.api_key, streamlit_compatible=True)
+        self._set_api_key(token_response.get("access_token"))
 
         return
 
@@ -129,3 +131,20 @@ class StreamlitAuth:
             st.rerun()
         else:
             self._show_sweatstack_login()
+
+    def switch_user(self):
+        self.switch_back()
+        other_users = self.client.get_users()
+        selected_user = st.selectbox(
+            "Select a user",
+            other_users,
+            format_func=lambda user: user.display_name,
+        )
+        self.client.switch_user(selected_user)
+        self._set_api_key(self.client.api_key)
+
+        return selected_user
+
+    def switch_back(self):
+        self.client.switch_back()
+        self._set_api_key(self.client.api_key)
