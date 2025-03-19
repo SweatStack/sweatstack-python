@@ -177,8 +177,15 @@ class StreamlitAuth:
         )
         return selected_activity
 
-    def select_sport(self, only_root: bool = False, allow_multiple: bool = False):
-        sports = self.client.get_sports(only_root)
+    def select_sport(self, only_root: bool = False, allow_multiple: bool = False, only_available: bool = True):
+        if only_available:
+            sports = self.client.get_sports(only_root)
+        else:
+            if only_root:
+                sports = [sport for sport in Sport if "." not in sport.value]
+            else:
+                sports = Sport
+
         if allow_multiple:
             selected_sport = st.multiselect(
                 "Select sports",
