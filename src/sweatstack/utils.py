@@ -4,6 +4,8 @@ from enum import Enum
 
 import pandas as pd
 
+from .schemas import Sport
+
 
 def decode_jwt_body(jwt: str) -> dict:
     payload = jwt.split(".")[1]
@@ -51,3 +53,16 @@ def make_dataframe_streamlit_compatible(df: pd.DataFrame) -> pd.DataFrame:
                     )
 
     return df_copy if df_copy is not None else df
+
+
+def format_sport(sport: Sport):
+    parts = sport.value.split(".")
+    base_sport = parts[0]
+    base_sport = base_sport.replace("_", " ")
+
+    if len(parts) == 1:
+        return base_sport
+
+    remainder = " ".join(parts[1:]).replace("_", " ")
+
+    return f"{base_sport} ({remainder})"

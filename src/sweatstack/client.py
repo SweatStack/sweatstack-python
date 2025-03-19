@@ -297,6 +297,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         if end is not None:
             params["end"] = end.isoformat()
         if sports is not None:
+            sports = [sport.value if isinstance(sport, Sport) else sport for sport in sports]
             params["sports"] = sports
         if tags is not None:
             params["tags"] = tags

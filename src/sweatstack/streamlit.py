@@ -1,6 +1,6 @@
 import os
 import urllib.parse
-
+from datetime import date
 try:
     import streamlit as st
 except ImportError:
@@ -10,10 +10,11 @@ except ImportError:
         "pip install 'sweatstack[streamlit]'\n\n"
     )
 import httpx
-from sweatstack import Client
 
+from .client import Client
 from .constants import DEFAULT_URL
-
+from .schemas import Metric, Sport
+from .utils import format_sport
 
 class StreamlitAuth:
     def __init__(self, client_id=None, client_secret=None, scope=None, redirect_uri=None):
@@ -132,8 +133,8 @@ class StreamlitAuth:
         else:
             self._show_sweatstack_login()
 
-    def switch_user(self):
-        self.switch_back()
+    def select_user(self):
+        self.switch_to_principal_user()
         other_users = self.client.get_users()
         selected_user = st.selectbox(
             "Select a user",
@@ -145,6 +146,79 @@ class StreamlitAuth:
 
         return selected_user
 
-    def switch_back(self):
+    def switch_to_principal_user(self):
         self.client.switch_back()
         self._set_api_key(self.client.api_key)
+
+    def select_activity(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport] | None = None,
+        tags: list[str] | None = None,
+        limit: int | None = 100,
+    ):
+        """
+        Select an activity from the user's activities.
+        """
+
+        activities = self.client.get_activities(
+            start=start,
+            end=end,
+            sports=sports,
+            tags=tags,
+            limit=limit,
+        )
+        selected_activity = st.selectbox(
+            "Select an activity",
+            activities,
+            format_func=lambda activity: f"{activity.start.date().isoformat()} {format_sport(activity.sport)}",
+        )
+        return selected_activity
+
+    def select_sport(self, only_root: bool = False, allow_multiple: bool = False):
+        sports = self.client.get_sports(only_root)
+        if allow_multiple:
+            selected_sport = st.multiselect(
+                "Select sports",
+                sports,
+                format_func=format_sport,
+            )
+        else:
+            selected_sport = st.selectbox(
+                "Select a sport",
+                sports,
+                format_func=format_sport,
+            )
+        return selected_sport
+
+    def select_tag(self, allow_multiple: bool = False):
+        tags = self.client.get_tags()
+        if allow_multiple:
+            selected_tag = st.multiselect(
+                "Select tags",
+                tags,
+            )
+        else:
+            selected_tag = st.selectbox(
+                "Select a tag",
+                tags,
+                format_func=lambda tag: tag or "-",
+            )
+        return selected_tag
+
+    def select_metric(self, allow_multiple: bool = False):
+        if allow_multiple:
+            selected_metric = st.multiselect(
+                "Select metrics",
+                Metric,
+                format_func=lambda metric: metric.value,
+            )
+        else:
+            selected_metric = st.selectbox(
+                "Select a metric",
+                Metric,
+                format_func=lambda metric: metric.value,
+            )
+        return selected_metric
