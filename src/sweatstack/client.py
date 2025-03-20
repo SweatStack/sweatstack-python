@@ -44,7 +44,7 @@ OAUTH2_CLIENT_ID = "5382f68b0d254378"
 
 
 try:
-    __version__ = version("python-sweatstack")
+    __version__ = version("sweatstack")
 except ImportError:
     __version__ = "unknown"
 
