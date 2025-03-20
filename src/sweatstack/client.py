@@ -8,6 +8,7 @@ import time
 import urllib
 import webbrowser
 from datetime import date, datetime
+from enum import Enum
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
@@ -20,7 +21,7 @@ import pandas as pd
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, Sport, TraceDetails, UserSummary
+    ActivityDetails, ActivitySummary, Metric, Sport, TraceDetails, UserSummary
 )
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -286,6 +287,9 @@ class Client(OAuth2Mixin, DelegationMixin):
         with httpx.Client(base_url=self.url, headers=headers) as client:
             yield client
 
+    def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
+        return [value.value if isinstance(value, Enum) else value for value in values]
+
     def _get_activities_generator(
         self,
         *,
@@ -306,8 +310,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         if end is not None:
             params["end"] = end.isoformat()
         if sports is not None:
-            sports = [sport.value if isinstance(sport, Sport) else sport for sport in sports]
-            params["sports"] = sports
+            params["sports"] = self._enums_to_strings(sports)
         if tags is not None:
             params["tags"] = tags
 
@@ -409,9 +412,10 @@ class Client(OAuth2Mixin, DelegationMixin):
     def get_activity_mean_max(
         self,
         activity_id: str,
-        metric: str,
+        metric: Metric | str,
         adaptive_sampling: bool = False,
     ) -> pd.DataFrame:
+        metric = self._enums_to_strings([metric])[0]
         with self._http_client() as client:
             response = client.get(
                 url=f"/api/v1/activities/{activity_id}/mean-max",
@@ -426,7 +430,7 @@ class Client(OAuth2Mixin, DelegationMixin):
 
     def get_latest_activity_data(
         self,
-        sport: Sport | None = None,
+        sport: Sport | str | None = None,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
         activity = self.get_latest_activity(sport=sport)
@@ -434,8 +438,8 @@ class Client(OAuth2Mixin, DelegationMixin):
 
     def get_latest_activity_mean_max(
         self,
-        metric: str,
-        sport: Sport | None = None,
+        metric: Metric | str,
+        sport: Sport | str | None = None,
         adaptive_sampling: bool = False,
     ) -> pd.DataFrame:
         activity = self.get_latest_activity(sport=sport)
@@ -444,11 +448,11 @@ class Client(OAuth2Mixin, DelegationMixin):
     def get_longitudinal_data(
         self,
         *,
-        sport: Sport | None = None,
+        sport: Sport | str | None = None,
         sports: list[Sport | str] | None = None,
         start: date | str,
         end: date | str | None = None,
-        metrics: list[str] | None = None,
+        metrics: list[Metric | str] | None = None,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
         if sport and sports:
@@ -457,6 +461,9 @@ class Client(OAuth2Mixin, DelegationMixin):
             sports = [sport]
         elif sports is None:
             sports = []
+
+        sports = self._enums_to_strings(sports)
+        metrics = self._enums_to_strings(metrics)
 
         params = {
             "sports": sports,
@@ -483,10 +490,13 @@ class Client(OAuth2Mixin, DelegationMixin):
         self,
         *,
         sport: Sport | str,
-        metric: str,
+        metric: Metric | str,
         date: date | str | None = None,
         window_days: int | None = None,
     ) -> pd.DataFrame:
+        sport = self._enums_to_strings([sport])[0]
+        metric = self._enums_to_strings([metric])[0]
+
         params = {
             "sport": sport,
             "metric": metric,
@@ -526,8 +536,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         if end is not None:
             params["end"] = end.isoformat()
         if sports is not None:
-            sports = [sport.value if isinstance(sport, Sport) else sport for sport in sports]
-            params["sports"] = sports
+            params["sports"] = self._enums_to_strings(sports)
         if tags is not None:
             params["tags"] = tags
 
