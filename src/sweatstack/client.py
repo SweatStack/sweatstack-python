@@ -10,6 +10,7 @@ import webbrowser
 from datetime import date, datetime
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from importlib.metadata import version
 from io import BytesIO
 from typing import Any, Generator, get_type_hints, List, Literal
 from urllib.parse import parse_qs, urlparse
@@ -40,6 +41,12 @@ AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 </body>
 </html>"""
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
+
+
+try:
+    __version__ = version("python-sweatstack")
+except ImportError:
+    __version__ = "unknown"
 
 
 class OAuth2Mixin:
@@ -270,7 +277,9 @@ class Client(OAuth2Mixin, DelegationMixin):
         """
         Creates an httpx client with the base URL and authentication headers pre-configured.
         """
-        headers = {}
+        headers = {
+            "User-Agent": f"python-sweatstack/{__version__}",
+        }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         
