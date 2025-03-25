@@ -115,7 +115,7 @@ class OAuth2Mixin:
                 data=token_data,
             )
             try:
-                response.raise_for_status()
+                self._raise_for_status(response)
             except httpx.HTTPStatusError as e:
                 raise Exception(f"SweatStack Python login failed. Please try again.") from e
             token_response = response.json()
@@ -142,7 +142,7 @@ class DelegationMixin:
                 "/api/v1/oauth/delegated-token",
                 json={"sub": user_id},
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
 
         return response.json()
 
@@ -156,7 +156,7 @@ class DelegationMixin:
             response = client.get(
                 "/api/v1/oauth/principal-token",
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
         return response.json()
 
     def switch_back(self):
@@ -207,7 +207,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                 },
             )
 
-            response.raise_for_status()
+            self._raise_for_status(response)
             return response.json()["access_token"]
 
     def _check_token_expiry(self, token: str) -> str:
@@ -287,6 +287,12 @@ class Client(OAuth2Mixin, DelegationMixin):
         with httpx.Client(base_url=self.url, headers=headers) as client:
             yield client
 
+    def _raise_for_status(self, response: httpx.Response):
+        if response.status_code == 422:
+            raise ValueError(response.json())
+        else:
+            response.raise_for_status()
+
     def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
         return [value.value if isinstance(value, Enum) else value for value in values]
 
@@ -320,7 +326,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                     url="/api/v1/activities/",
                     params=params,
                 )
-                response.raise_for_status()
+                self._raise_for_status(response)
                 activities = response.json()
                 for activity in activities:
                     yield ActivitySummary.model_validate(activity)
@@ -386,7 +392,7 @@ class Client(OAuth2Mixin, DelegationMixin):
     def get_activity(self, activity_id: str) -> ActivityDetails:
         with self._http_client() as client:
             response = client.get(url=f"/api/v1/activities/{activity_id}")
-            response.raise_for_status()
+            self._raise_for_status(response)
             return ActivityDetails.model_validate(response.json())
 
     def get_activity_data(
@@ -403,8 +409,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                 url=f"/api/v1/activities/{activity_id}/data",
                 params=params,
             )
-
-        response.raise_for_status()
+            self._raise_for_status(response)
 
         df = pd.read_parquet(BytesIO(response.content))
         return self._postprocess_dataframe(df)
@@ -412,7 +417,7 @@ class Client(OAuth2Mixin, DelegationMixin):
     def get_activity_mean_max(
         self,
         activity_id: str,
-        metric: Metric | str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         adaptive_sampling: bool = False,
     ) -> pd.DataFrame:
         metric = self._enums_to_strings([metric])[0]
@@ -424,7 +429,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                     "adaptive_sampling": adaptive_sampling,
                 },
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
             df = pd.read_parquet(BytesIO(response.content))
             return self._postprocess_dataframe(df)
 
@@ -438,7 +443,7 @@ class Client(OAuth2Mixin, DelegationMixin):
 
     def get_latest_activity_mean_max(
         self,
-        metric: Metric | str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
         adaptive_sampling: bool = False,
     ) -> pd.DataFrame:
@@ -481,7 +486,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                 url="/api/v1/activities/longitudinal-data",
                 params=params,
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
 
             df = pd.read_parquet(BytesIO(response.content))
             return self._postprocess_dataframe(df)
@@ -490,7 +495,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         self,
         *,
         sport: Sport | str,
-        metric: Metric | str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         date: date | str | None = None,
         window_days: int | None = None,
     ) -> pd.DataFrame:
@@ -511,7 +516,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                 url="/api/v1/activities/longitudinal-mean-max",
                 params=params,
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
 
             df = pd.read_parquet(BytesIO(response.content))
             return self._postprocess_dataframe(df)
@@ -546,7 +551,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                     url="/api/v1/traces/",
                     params=params,
                 )
-                response.raise_for_status()
+                self._raise_for_status(response)
                 traces = response.json()
                 for trace in traces:
                     yield TraceDetails.model_validate(trace)
@@ -645,7 +650,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                     "tags": tags,
                 },
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
             return TraceDetails.model_validate(response.json())
 
     def get_sports(self, only_root: bool = False) -> list[Sport]:
@@ -654,7 +659,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                 url="/api/v1/profile/sports/",
                 params={"only_root": only_root},
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
             return [Sport(sport) for sport in response.json()]
 
     def get_tags(self) -> list[str]:
@@ -662,7 +667,7 @@ class Client(OAuth2Mixin, DelegationMixin):
             response = client.get(
                 url="/api/v1/profile/tags/",
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
             return response.json()
 
     def get_users(self) -> list[UserSummary]:
@@ -670,7 +675,7 @@ class Client(OAuth2Mixin, DelegationMixin):
             response = client.get(
                 url="/api/v1/users/",
             )
-            response.raise_for_status()
+            self._raise_for_status(response)
             return [UserSummary.model_validate(user) for user in response.json()]
 
 _default_client = Client()
