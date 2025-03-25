@@ -458,7 +458,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        adaptive_sampling_on: Literal["power", "speed"] | None = None,
+        adaptive_sampling_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
         if sport and sports:
             raise ValueError("Cannot specify both sport and sports")
@@ -467,19 +467,16 @@ class Client(OAuth2Mixin, DelegationMixin):
         elif sports is None:
             sports = []
 
-        sports = self._enums_to_strings(sports)
-        metrics = self._enums_to_strings(metrics)
-
         params = {
-            "sports": sports,
-            "start": start,
+            "sports": self._enums_to_strings(sports),
+            "start": start
         }
         if end is not None:
             params["end"] = end
         if metrics is not None:
-            params["metrics"] = metrics
+            params["metrics"] = self._enums_to_strings(metrics)
         if adaptive_sampling_on is not None:
-            params["adaptive_sampling_on"] = adaptive_sampling_on
+            params["adaptive_sampling_on"] = self._enums_to_strings([adaptive_sampling_on])[0]
 
         with self._http_client() as client:
             response = client.get(
