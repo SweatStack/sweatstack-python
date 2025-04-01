@@ -118,9 +118,31 @@ class StreamlitAuth:
         return
 
     def is_authenticated(self):
+        """Checks if the user is currently authenticated with SweatStack.
+
+        This method determines if the user has a valid API key stored in the session state
+        or in the instance. It does not verify if the API key is still valid with the server.
+
+        Returns:
+            bool: True if the user has an API key, False otherwise.
+        """
         return self.api_key is not None
 
     def authenticate(self):
+        """Authenticates the user with SweatStack.
+
+        This method handles the authentication flow for SweatStack in a Streamlit app.
+        It checks if the user is already authenticated, and if not, displays a login button.
+        If the user is authenticated, it displays a logout button.
+
+        When the user clicks the login button, they are redirected to the SweatStack
+        authorization page. After successful authorization, they are redirected back
+        to the Streamlit app with an authorization code, which is exchanged for an
+        access token.
+
+        Returns:
+            None
+        """
         if self.is_authenticated():
             if not st.session_state.get("sweatstack_auth_toast_shown", False):
                 st.toast("SweatStack authentication successful!", icon="✅")
@@ -134,6 +156,20 @@ class StreamlitAuth:
             self._show_sweatstack_login()
 
     def select_user(self):
+        """Displays a user selection dropdown and switches the client to the selected user.
+
+        This method retrieves a list of users accessible to the current user and displays
+        them in a dropdown. When a user is selected, the client is switched to operate on
+        behalf of that user. The method first switches back to the principal user to ensure
+        the full list of available users is displayed.
+
+        Returns:
+            UserSummary: The selected user object.
+
+        Note:
+            This method requires the user to have appropriate permissions to access other users.
+            For regular users, this typically only shows their own user information.
+        """
         self.switch_to_principal_user()
         other_users = self.client.get_users()
         selected_user = st.selectbox(
@@ -147,6 +183,18 @@ class StreamlitAuth:
         return selected_user
 
     def switch_to_principal_user(self):
+        """Switches the client back to the principal user.
+
+        This method reverts the client's authentication from a delegated user back to the principal user.
+        The client will use the principal token for all subsequent API calls and updates the session state
+        with the new API key.
+
+        Returns:
+            None
+
+        Raises:
+            HTTPStatusError: If the principal token request fails.
+        """
         self.client.switch_back()
         self._set_api_key(self.client.api_key)
 
@@ -159,8 +207,23 @@ class StreamlitAuth:
         tags: list[str] | None = None,
         limit: int | None = 100,
     ):
-        """
-        Select an activity from the user's activities.
+        """Select an activity from the user's activities.
+
+        This method retrieves activities based on specified filters and displays them in a
+        dropdown for selection.
+
+        Args:
+            start: Optional start date to filter activities.
+            end: Optional end date to filter activities.
+            sports: Optional list of sports to filter activities by.
+            tags: Optional list of tags to filter activities by.
+            limit: Maximum number of activities to retrieve. Defaults to 100.
+
+        Returns:
+            The selected activity object.
+
+        Note:
+            Activities are displayed in the format "YYYY-MM-DD sport_name".
         """
 
         activities = self.client.get_activities(
@@ -178,6 +241,22 @@ class StreamlitAuth:
         return selected_activity
 
     def select_sport(self, only_root: bool = False, allow_multiple: bool = False, only_available: bool = True):
+        """Select a sport from the available sports.
+
+        This method retrieves sports and displays them in a dropdown or multiselect for selection.
+
+        Args:
+            only_root: If True, only returns root sports without parents. Defaults to False.
+            allow_multiple: If True, allows selecting multiple sports. Defaults to False.
+            only_available: If True, only shows sports available to the user. If False, shows all
+                sports defined in the Sport enum. Defaults to True.
+
+        Returns:
+            Sport or list[Sport]: The selected sport or list of sports, depending on allow_multiple.
+
+        Note:
+            Sports are displayed in a human-readable format using the format_sport function.
+        """
         if only_available:
             sports = self.client.get_sports(only_root)
         else:
@@ -201,6 +280,19 @@ class StreamlitAuth:
         return selected_sport
 
     def select_tag(self, allow_multiple: bool = False):
+        """Select a tag from the available tags.
+
+        This method retrieves tags and displays them in a dropdown or multiselect for selection.
+
+        Args:
+            allow_multiple: If True, allows selecting multiple tags. Defaults to False.
+
+        Returns:
+            str or list[str]: The selected tag or list of tags, depending on allow_multiple.
+
+        Note:
+            Empty tags are displayed as "-" in the dropdown.
+        """
         tags = self.client.get_tags()
         if allow_multiple:
             selected_tag = st.multiselect(
@@ -216,6 +308,16 @@ class StreamlitAuth:
         return selected_tag
 
     def select_metric(self, allow_multiple: bool = False):
+        """Select a metric from the available metrics.
+
+        This method displays metrics in a dropdown or multiselect for selection.
+
+        Args:
+            allow_multiple: If True, allows selecting multiple metrics. Defaults to False.
+
+        Returns:
+            Metric or list[Metric]: The selected metric or list of metrics, depending on allow_multiple.
+        """
         if allow_multiple:
             selected_metric = st.multiselect(
                 "Select metrics",

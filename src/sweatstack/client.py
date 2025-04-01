@@ -2,6 +2,7 @@ import base64
 import contextlib
 import random
 import hashlib
+import logging
 import os
 import secrets
 import time
@@ -52,6 +53,26 @@ except ImportError:
 
 class OAuth2Mixin:
     def login(self):
+        """Initiates the OAuth2 login flow for SweatStack authentication.
+
+        This method starts a local HTTP server to receive the OAuth2 callback,
+        opens a browser window for the user to authenticate with SweatStack,
+        and exchanges the authorization code for an access token.
+
+        The method uses PKCE (Proof Key for Code Exchange) for enhanced security
+        during the OAuth2 authorization code flow.
+
+        Returns:
+            None
+
+        Raises:
+            Exception: If the authentication process times out or fails.
+
+        Note:
+            This method requires a working internet connection and the ability
+            to open a browser window. It will also temporarily open a local HTTP
+            server on a random port between 8000-9000.
+        """
         class AuthHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
                 # This override disables logging.
@@ -147,6 +168,20 @@ class DelegationMixin:
         return response.json()
 
     def switch_user(self, user: str | UserSummary):
+        """Switches the client to operate on behalf of another user.
+
+        This method changes the current client's authentication to act on behalf of the specified user.
+        The client will use a delegated token for all subsequent API calls.
+
+        Args:
+            user: Either a UserSummary object or a string user ID representing the user to switch to.
+
+        Returns:
+            None
+
+        Raises:
+            HTTPStatusError: If the delegation request fails.
+        """
         token_response = self._get_delegated_token(user)
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
@@ -160,11 +195,37 @@ class DelegationMixin:
         return response.json()
 
     def switch_back(self):
+        """Switches the client back to the principal user.
+
+        This method reverts the client's authentication from a delegated user back to the principal user.
+        The client will use the principal token for all subsequent API calls.
+
+        Returns:
+            None
+
+        Raises:
+            HTTPStatusError: If the principal token request fails.
+        """
+
         token_response = self._get_principal_token()
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
 
     def delegated_client(self, user: str | UserSummary):
+        """Creates a new client instance that operates on behalf of another user.
+
+        This method creates a new client instance with delegated authentication for the specified user.
+        Unlike `switch_user`, this method does not modify the current client but returns a new one.
+
+        Args:
+            user: Either a UserSummary object or a string user ID representing the user to delegate to.
+
+        Returns:
+            Client: A new client instance authenticated as the delegated user.
+
+        Raises:
+            HTTPStatusError: If the delegation request fails.
+        """
         token_response = self._get_delegated_token(user)
         return self.__class__(
             api_key=token_response["access_token"],
@@ -174,6 +235,17 @@ class DelegationMixin:
         )
 
     def principal_client(self):
+        """Creates a new client instance that operates as the principal user.
+
+        This method creates a new client instance with authentication for the principal user.
+        Unlike `switch_back`, this method does not modify the current client but returns a new one.
+
+        Returns:
+            Client: A new client instance authenticated as the principal user.
+
+        Raises:
+            HTTPStatusError: If the principal token request fails.
+        """
         token_response = self._get_principal_token()
         return self.__class__(
             api_key=token_response["access_token"],
@@ -290,6 +362,23 @@ class Client(OAuth2Mixin, DelegationMixin):
     def _raise_for_status(self, response: httpx.Response):
         if response.status_code == 422:
             raise ValueError(response.json())
+        elif response.status_code == 401:
+            try:
+                import streamlit
+            except ImportError:
+                response.raise_for_status()
+            else:
+                try:
+                    response.raise_for_status()
+                except Exception as exception:
+                    if not self.streamlit_compatible:
+                        streamlit_error_message = (
+                            "\nStreamlit environment detected. Use StreamlitAuth.client instance.\n"
+                            "Docs: https://developer.sweatstack.no/learn/integrations/streamlit/"
+                        )
+                        exception.add_note(streamlit_error_message)
+                    raise
+
         else:
             response.raise_for_status()
 
@@ -356,6 +445,23 @@ class Client(OAuth2Mixin, DelegationMixin):
         limit: int = 100,
         as_dataframe: bool = False,
     ) -> Generator[ActivitySummary, None, None] | pd.DataFrame:
+        """Gets a list of activities based on specified filters.
+
+        Args:
+            start: Optional start date to filter activities.
+            end: Optional end date to filter activities.
+            sports: Optional list of sports to filter activities by. Can be Sport objects or string IDs.
+            tags: Optional list of tags to filter activities by.
+            limit: Maximum number of activities to return. Defaults to 100.
+            as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
+
+        Returns:
+            Either a generator yielding ActivitySummary objects or a pandas DataFrame containing
+            the activities data, depending on the value of as_dataframe.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         generator = self._get_activities_generator(
             start=start,
             end=end,
@@ -381,6 +487,21 @@ class Client(OAuth2Mixin, DelegationMixin):
         sport: Sport | None = None,
         tag: str | None = None,
     ) -> ActivityDetails:
+        """Gets the most recent activity based on specified filters.
+
+        Args:
+            start: Optional start date to filter activities.
+            end: Optional end date to filter activities.
+            sport: Optional sport to filter activities by. Can be a Sport object or string ID.
+            tag: Optional tag to filter activities by.
+
+        Returns:
+            ActivityDetails: The most recent activity matching the filters.
+
+        Raises:
+            StopIteration: If no activities match the filters.
+            HTTPStatusError: If the API request fails.
+        """
         return next(self.get_activities(
             start=start,
             end=end,
@@ -390,6 +511,17 @@ class Client(OAuth2Mixin, DelegationMixin):
         ))
 
     def get_activity(self, activity_id: str) -> ActivityDetails:
+        """Gets details for a specific activity by ID.
+
+        Args:
+            activity_id: The unique identifier of the activity to retrieve.
+
+        Returns:
+            ActivityDetails: The activity details object containing all information about the activity.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         with self._http_client() as client:
             response = client.get(url=f"/api/v1/activities/{activity_id}")
             self._raise_for_status(response)
@@ -400,6 +532,22 @@ class Client(OAuth2Mixin, DelegationMixin):
         activity_id: str,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
+        """Gets the raw data for a specific activity.
+
+        This method retrieves the time-series data for a given activity, with optional
+        adaptive sampling to reduce data points for visualization.
+
+        Args:
+            activity_id: The unique identifier of the activity.
+            adaptive_sampling_on: Optional parameter to apply adaptive sampling on 
+                either "power" or "speed" data. If None, no adaptive sampling is applied.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the activity's time-series data.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         params = {}
         if adaptive_sampling_on is not None:
             params["adaptive_sampling_on"] = adaptive_sampling_on
@@ -420,6 +568,23 @@ class Client(OAuth2Mixin, DelegationMixin):
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         adaptive_sampling: bool = False,
     ) -> pd.DataFrame:
+        """Gets the mean-max data for a specific activity.
+
+        This method retrieves the mean-max curve data for a given activity, which represents
+        the maximum average value of a metric (power or speed) for different time durations.
+
+        Args:
+            activity_id: The unique identifier of the activity.
+            metric: The metric to calculate mean-max values for, either "power" or "speed".
+            adaptive_sampling: Whether to apply adaptive sampling to reduce data points
+                for visualization. Defaults to False.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         metric = self._enums_to_strings([metric])[0]
         with self._http_client() as client:
             response = client.get(
@@ -438,6 +603,22 @@ class Client(OAuth2Mixin, DelegationMixin):
         sport: Sport | str | None = None,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
+        """Gets the data for the latest activity of a specific sport.
+
+        This method retrieves the time series data for the most recent activity of the specified sport.
+        If no sport is specified, it returns data for the latest activity regardless of sport.
+
+        Args:
+            sport: Optional sport to filter by. Can be a Sport enum or string.
+            adaptive_sampling_on: Optional metric to apply adaptive sampling for visualization.
+                Can be either "power" or "speed". Defaults to None.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the activity data.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         activity = self.get_latest_activity(sport=sport)
         return self.get_activity_data(activity.id, adaptive_sampling_on)
 
@@ -447,6 +628,23 @@ class Client(OAuth2Mixin, DelegationMixin):
         sport: Sport | str | None = None,
         adaptive_sampling: bool = False,
     ) -> pd.DataFrame:
+        """Gets the mean-max curve for the latest activity of a specific sport.
+
+        This method retrieves the mean-max curve data for the most recent activity of the specified sport.
+        If no sport is specified, it returns data for the latest activity regardless of sport.
+
+        Args:
+            metric: The metric to calculate the mean-max curve for. Can be either "power" or "speed".
+            sport: Optional sport to filter by. Can be a Sport enum or string.
+            adaptive_sampling: Whether to apply adaptive sampling to the mean-max curve data.
+                Defaults to False.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         activity = self.get_latest_activity(sport=sport)
         return self.get_activity_mean_max(activity.id, metric, adaptive_sampling)
 
@@ -460,6 +658,29 @@ class Client(OAuth2Mixin, DelegationMixin):
         metrics: list[Metric | str] | None = None,
         adaptive_sampling_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
+        """Gets longitudinal data for activities within a specified date range.
+
+        This method retrieves aggregated data for activities that match the specified criteria,
+        including sport type and date range. The data is returned as a pandas DataFrame.
+
+        Args:
+            sport: Optional single sport to filter by. Can be a Sport enum or string.
+                Cannot be used together with 'sports'.
+            sports: Optional list of sports to filter by. Can be a list of Sport enums or strings.
+                Cannot be used together with 'sport'.
+            start: The start date for the data range. Can be a date object or string in ISO format.
+            end: Optional end date for the data range. Can be a date object or string in ISO format.
+            metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
+            adaptive_sampling_on: Optional metric to apply adaptive sampling for visualization.
+                Can be either "power" or "speed". Defaults to None.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the longitudinal activity data.
+
+        Raises:
+            ValueError: If both 'sport' and 'sports' parameters are provided.
+            HTTPStatusError: If the API request fails.
+        """
         if sport and sports:
             raise ValueError("Cannot specify both sport and sports")
         if sport is not None:
@@ -496,6 +717,26 @@ class Client(OAuth2Mixin, DelegationMixin):
         date: date | str | None = None,
         window_days: int | None = None,
     ) -> pd.DataFrame:
+        """Gets the mean-max curve for a specific sport and metric.
+
+        This method retrieves the mean-max curve data for a given sport and metric,
+        optionally filtered by date and window size.
+
+        Args:
+            sport: The sport to get mean-max data for. Can be a Sport enum or string ID.
+            metric: The metric to calculate mean-max for. Must be either "power" or "speed".
+            date: Optional reference date for the mean-max calculation. If provided,
+                the mean-max curve will be calculated up to this date. Can be a date object
+                or string in ISO format.
+            window_days: Optional number of days to include in the calculation window
+                before the reference date. If None, all available data is used.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         sport = self._enums_to_strings([sport])[0]
         metric = self._enums_to_strings([metric])[0]
 
@@ -601,6 +842,23 @@ class Client(OAuth2Mixin, DelegationMixin):
         limit: int = 100,
         as_dataframe: bool = False,
     ) -> Generator[TraceDetails, None, None] | pd.DataFrame:
+        """Gets a list of traces based on specified filters.
+
+        Args:
+            start: Optional start date to filter traces.
+            end: Optional end date to filter traces.
+            sports: Optional list of sports to filter traces by. Can be Sport objects or string IDs.
+            tags: Optional list of tags to filter traces by.
+            limit: Maximum number of traces to return. Defaults to 100.
+            as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
+
+        Returns:
+            Either a generator yielding TraceDetails objects or a pandas DataFrame containing
+            the traces data, depending on the value of as_dataframe.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         generator = self._get_traces_generator(
             start=start,
             end=end,
@@ -633,6 +891,27 @@ class Client(OAuth2Mixin, DelegationMixin):
         heart_rate: int | None = None,
         tags: list[str] | None = None,
     ) -> TraceDetails:
+        """Creates a new trace with the specified parameters.
+
+        This method creates a new trace entry with the given timestamp and optional
+        measurement values.
+
+        Args:
+            timestamp: The date and time when the trace was recorded.
+            lactate: Optional blood lactate concentration in mmol/L.
+            rpe: Optional rating of perceived exertion (typically on a scale of 1-10).
+            notes: Optional text notes associated with this trace.
+            power: Optional power measurement in watts.
+            speed: Optional speed measurement in meters per second.
+            heart_rate: Optional heart rate measurement in beats per minute.
+            tags: Optional list of tags to associate with this trace.
+
+        Returns:
+            TraceDetails: The created trace object with all details.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         with self._http_client() as client:
             response = client.post(
                 url="/api/v1/traces/",
@@ -651,6 +930,20 @@ class Client(OAuth2Mixin, DelegationMixin):
             return TraceDetails.model_validate(response.json())
 
     def get_sports(self, only_root: bool = False) -> list[Sport]:
+        """Gets a list of available sports.
+
+        This method retrieves all sports available to the user, with an option to only
+        return root sports (top-level sports without parents).
+
+        Args:
+            only_root: If True, only returns root sports without parents. Defaults to False.
+
+        Returns:
+            list[Sport]: A list of Sport objects representing the available sports.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         with self._http_client() as client:
             response = client.get(
                 url="/api/v1/profile/sports/",
@@ -660,6 +953,17 @@ class Client(OAuth2Mixin, DelegationMixin):
             return [Sport(sport) for sport in response.json()]
 
     def get_tags(self) -> list[str]:
+        """Gets a list of all tags used by the user.
+
+        This method retrieves all tags that the user has created or used across
+        their activities and traces.
+
+        Returns:
+            list[str]: A list of tag strings.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         with self._http_client() as client:
             response = client.get(
                 url="/api/v1/profile/tags/",
@@ -668,6 +972,18 @@ class Client(OAuth2Mixin, DelegationMixin):
             return response.json()
 
     def get_users(self) -> list[UserSummary]:
+        """Gets a list of all users accessible to the current user.
+
+        This method retrieves all users that the current user has access to view.
+        For regular users, this typically returns only their own user information.
+        For admin users, this may return information about multiple users.
+
+        Returns:
+            list[UserSummary]: A list of UserSummary objects containing basic user information.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
         with self._http_client() as client:
             response = client.get(
                 url="/api/v1/users/",
