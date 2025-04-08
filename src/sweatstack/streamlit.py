@@ -1,6 +1,7 @@
 import os
 import urllib.parse
 from datetime import date
+from typing import List, Union
 try:
     import streamlit as st
 except ImportError:
@@ -13,21 +14,37 @@ import httpx
 
 from .client import Client
 from .constants import DEFAULT_URL
-from .schemas import Metric, Sport
+from .schemas import Metric, Scope, Sport
 from .utils import format_sport
 
 class StreamlitAuth:
-    def __init__(self, client_id=None, client_secret=None, scope=None, redirect_uri=None):
+    def __init__(
+        self,
+        client_id=None,
+        client_secret=None,
+        scopes: List[Union[str, Scope]]=None,
+        redirect_uri=None,
+    ):
         """
         Args:
             client_id: The client ID to use. If not provided, the SWEATSTACK_CLIENT_ID environment variable will be used.
             client_secret: The client secret to use. If not provided, the SWEATSTACK_CLIENT_SECRET environment variable will be used.
-            scope: The scope to use. If not provided, the SWEATSTACK_SCOPE environment variable will be used.
+            scopes: The scopes to use. If not provided, the SWEATSTACK_SCOPES environment variable will be used. Defaults to data:read, profile.
             redirect_uri: The redirect URI to use. If not provided, the SWEATSTACK_REDIRECT_URI environment variable will be used.
         """
         self.client_id = client_id or os.environ.get("SWEATSTACK_CLIENT_ID")
         self.client_secret = client_secret or os.environ.get("SWEATSTACK_CLIENT_SECRET")
-        self.scope = scope or os.environ.get("SWEATSTACK_SCOPE")
+
+        if scopes is not None:
+            self.scopes = [Scope(scope.strip().lower()) if isinstance(scope, str) else scope
+                          for scope in scopes] if scopes else []
+        elif os.environ.get("SWEATSTACK_SCOPES"):
+            scopes = os.environ.get("SWEATSTACK_SCOPES").split(",")
+            self.scopes = [Scope(scope.strip().lower()) if isinstance(scope, str) else scope
+                          for scope in scopes]
+        else:
+            self.scopes = [Scope.data_read, Scope.profile]
+
         self.redirect_uri = redirect_uri or os.environ.get("SWEATSTACK_REDIRECT_URI")
 
         self.api_key = st.session_state.get("sweatstack_api_key")
@@ -81,7 +98,7 @@ class StreamlitAuth:
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
-            "scope": "data:read",
+            "scope": ",".join([scope.value for scope in self.scopes]),
             "prompt": "none",
         }
         path = "/oauth/authorize"

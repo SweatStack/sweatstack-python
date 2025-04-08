@@ -1,5 +1,5 @@
 from enum import Enum
 
 from .openapi_schemas import (
-    ActivityDetails, ActivitySummary, Metric, Sport, TraceDetails, UserInfoResponse, UserSummary
+    ActivityDetails, ActivitySummary, Metric, Scope, Sport, TraceDetails, UserInfoResponse, UserSummary
 )
