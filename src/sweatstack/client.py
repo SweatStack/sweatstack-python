@@ -22,7 +22,7 @@ import pandas as pd
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, Metric, Sport, TraceDetails, UserSummary
+    ActivityDetails, ActivitySummary, Metric, Sport, TraceDetails, UserInfoResponse, UserSummary
 )
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -106,7 +106,7 @@ class OAuth2Mixin:
             "client_id": OAUTH2_CLIENT_ID,
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
-            "scope": "data:read",
+            "scope": "data:read profile",
             "prompt": "none",
         }
         base_url = self.url
@@ -991,6 +991,27 @@ class Client(OAuth2Mixin, DelegationMixin):
             self._raise_for_status(response)
             return [UserSummary.model_validate(user) for user in response.json()]
 
+    def get_userinfo(self) -> UserInfoResponse:
+        """Gets detailed information about the current user.
+
+        This method retrieves comprehensive information about the user currently
+        authenticated with the client.
+
+        Returns:
+            UserInfoResponse: A UserInfoResponse object containing detailed user information
+                including profile data, permissions, and authentication details.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/oauth/userinfo",
+            )
+            self._raise_for_status(response)
+            return UserInfoResponse.model_validate(response.json())
+
+
 _default_client = Client()
 
 
@@ -1031,6 +1052,7 @@ _generate_singleton_methods(
         "login",
 
         "get_users",
+        "get_userinfo",
 
         "get_activities",
 
