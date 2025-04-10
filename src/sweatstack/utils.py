@@ -53,28 +53,3 @@ def make_dataframe_streamlit_compatible(df: pd.DataFrame) -> pd.DataFrame:
                     )
 
     return df_copy if df_copy is not None else df
-
-
-def format_sport(sport: Sport):
-    """Formats a sport enum value into a human-readable string.
-
-    This function takes a Sport enum and converts it to a formatted string representation.
-    For example, "cycling.road" becomes "cycling (road)" and "running" remains "running".
-    Underscores in sport names are replaced with spaces.
-
-    Args:
-        sport: A Sport enum value to format.
-
-    Returns:
-        str: A human-readable formatted string representation of the sport.
-    """
-    parts = sport.value.split(".")
-    base_sport = parts[0]
-    base_sport = base_sport.replace("_", " ")
-
-    if len(parts) == 1:
-        return base_sport
-
-    remainder = " ".join(parts[1:]).replace("_", " ")
-
-    return f"{base_sport} ({remainder})"
