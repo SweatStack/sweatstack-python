@@ -15,7 +15,7 @@ import httpx
 from .client import Client
 from .constants import DEFAULT_URL
 from .schemas import Metric, Scope, Sport
-from .utils import format_sport
+
 
 class StreamlitAuth:
     def __init__(
@@ -253,7 +253,7 @@ class StreamlitAuth:
         selected_activity = st.selectbox(
             "Select an activity",
             activities,
-            format_func=lambda activity: f"{activity.start.date().isoformat()} {format_sport(activity.sport)}",
+            format_func=lambda activity: f"{activity.start.date().isoformat()} {activity.sport.display_name()}",
         )
         return selected_activity
 
@@ -272,7 +272,7 @@ class StreamlitAuth:
             Sport or list[Sport]: The selected sport or list of sports, depending on allow_multiple.
 
         Note:
-            Sports are displayed in a human-readable format using the format_sport function.
+            Sports are displayed in a human-readable format using the display_name function.
         """
         if only_available:
             sports = self.client.get_sports(only_root)
@@ -286,13 +286,13 @@ class StreamlitAuth:
             selected_sport = st.multiselect(
                 "Select sports",
                 sports,
-                format_func=format_sport,
+                format_func=lambda sport: sport.display_name(),
             )
         else:
             selected_sport = st.selectbox(
                 "Select a sport",
                 sports,
-                format_func=format_sport,
+                format_func=lambda sport: sport.display_name(),
             )
         return selected_sport
 
