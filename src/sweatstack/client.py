@@ -444,7 +444,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         tags: list[str] | None = None,
         limit: int = 100,
         as_dataframe: bool = False,
-    ) -> Generator[ActivitySummary, None, None] | pd.DataFrame:
+    ) -> list[ActivitySummary] | pd.DataFrame:
         """Gets a list of activities based on specified filters.
 
         Args:
@@ -456,28 +456,27 @@ class Client(OAuth2Mixin, DelegationMixin):
             as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
 
         Returns:
-            Either a generator yielding ActivitySummary objects or a pandas DataFrame containing
+            Either a list of ActivitySummary objects or a pandas DataFrame containing
             the activities data, depending on the value of as_dataframe.
 
         Raises:
             HTTPStatusError: If the API request fails.
         """
-        generator = self._get_activities_generator(
+        activities = list(self._get_activities_generator(
             start=start,
             end=end,
             sports=sports,
             tags=tags,
             limit=limit,
-        )
+        ))
         if as_dataframe:
-            df = pd.DataFrame([activity.model_dump() for activity in generator])
-            df = df.set_index(df["start"].rename("timestamp"))
+            df = pd.DataFrame([activity.model_dump() for activity in activities])
             df = self._normalize_dataframe_column(df, "summary")
             df = self._normalize_dataframe_column(df, "laps")
             df = self._normalize_dataframe_column(df, "traces")
             return self._postprocess_dataframe(df)
         else:
-            return generator
+            return activities
 
     def get_latest_activity(
         self,
@@ -502,7 +501,7 @@ class Client(OAuth2Mixin, DelegationMixin):
             StopIteration: If no activities match the filters.
             HTTPStatusError: If the API request fails.
         """
-        return next(self.get_activities(
+        return next(self._get_activities_generator(
             start=start,
             end=end,
             sports=[sport] if sport is not None else None,
@@ -841,7 +840,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         tags: list[str] | None = None,
         limit: int = 100,
         as_dataframe: bool = False,
-    ) -> Generator[TraceDetails, None, None] | pd.DataFrame:
+    ) -> list[TraceDetails] | pd.DataFrame:
         """Gets a list of traces based on specified filters.
 
         Args:
@@ -853,23 +852,23 @@ class Client(OAuth2Mixin, DelegationMixin):
             as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
 
         Returns:
-            Either a generator yielding TraceDetails objects or a pandas DataFrame containing
+            Either a list of TraceDetails objects or a pandas DataFrame containing
             the traces data, depending on the value of as_dataframe.
 
         Raises:
             HTTPStatusError: If the API request fails.
         """
-        generator = self._get_traces_generator(
+        traces = list(self._get_traces_generator(
             start=start,
             end=end,
             sports=sports,
             tags=tags,
             limit=limit,
-        )
+        ))
         if not as_dataframe:
-            return generator
+            return traces
 
-        data = pd.DataFrame([trace.model_dump() for trace in generator])
+        data = pd.DataFrame([trace.model_dump() for trace in traces])
 
         if "activity" in data.columns:
             data = self._normalize_dataframe_column(data, "activity")
