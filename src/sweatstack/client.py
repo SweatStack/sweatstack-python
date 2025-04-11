@@ -167,14 +167,106 @@ class DelegationMixin:
 
         return response.json()
 
-    def switch_user(self, user: str | UserSummary):
+    def _is_user_id(self, user: str) -> bool:
+        """Check if a string is a valid user ID.
+
+        Args:
+            user: The string to check.
+
+        Returns:
+            bool: True if the string is a valid user ID format, False otherwise.
+        """
+        if not isinstance(user, str):
+            return False
+
+        return len(user) == 16 and user.isalnum()
+
+    def _get_user_by_name(self, name: str) -> UserSummary:
+        """Get a user by name.
+
+        Args:
+            name: The name of the user to get.
+
+        Returns:
+            UserSummary: The user object.
+
+        Raises:
+            ValueError: If the user is not found.
+            ValueError: If multiple users are found with the same name.
+        """
+        matches = []
+        for user in self.get_users():
+            if name in user.display_name.lower():
+                matches.append(user)
+
+        if len(matches) == 0:
+            raise ValueError(f"User with name {name} not found")
+        elif len(matches) > 1:
+            raise ValueError(f"Multiple users found with name {name}: {', '.join([user.display_name for user in matches])}")
+        return matches[0]
+
+    def _get_user_by_id(self, id: str) -> UserSummary:
+        """Get a user by ID.
+
+        Args:
+            id: The ID of the user to get.
+
+        Returns:
+            UserSummary: The user object.
+
+        Raises:
+            HTTPStatusError: If the user is not found.
+        """
+        # TODO: Implement this using a user detail endpoint
+        return next((user for user in self.get_users() if user.id == id), None)
+
+    def get_user(self, user: str, *, search_mode: Literal["auto", "id", "name"] = "auto") -> UserSummary:
+        """Get a user by ID or name.
+        This method will always authenticate as the principal user.
+
+        Args:
+            user: Either a UserSummary object or a string representing the user id or (part of) the user name to get.
+            search_mode: The mode to use when searching for the user.
+                - "auto": Automatically determine the search mode based on the type of user argument.
+                - "id": Search for the user by ID.
+                - "name": Search for the user by name.
+
+        Returns:
+            UserSummary: The user object.
+
+        Raises:
+            HTTPStatusError: If the user is not found.
+        """
+        client = self.principal_client()
+        if search_mode == "auto":
+            if client._is_user_id(user):
+                return client._get_user_by_id(user)
+            else:
+                return client._get_user_by_name(user)
+        elif search_mode == "id":
+            return client._get_user_by_id(user)
+        elif search_mode == "name":
+            return client._get_user_by_name(user)
+
+    def switch_user(
+        self,
+        user: str | UserSummary,
+        *,
+        search_mode: Literal["auto", "id", "name"] = "auto",
+    ):
         """Switches the client to operate on behalf of another user.
 
         This method changes the current client's authentication to act on behalf of the specified user.
         The client will use a delegated token for all subsequent API calls.
 
         Args:
-            user: Either a UserSummary object or a string user ID representing the user to switch to.
+            user: Either a UserSummary object or a string representing the user id or (part of) the user name to switch to.
+
+            search_mode:
+                The mode to use when searching for the user.
+                - "auto": Automatically determine the search mode based on the type of user argument.
+                - "id": Search for the user by ID.
+                - "name": Search for the user by name.
 
         Returns:
             None
@@ -182,6 +274,11 @@ class DelegationMixin:
         Raises:
             HTTPStatusError: If the delegation request fails.
         """
+        self.switch_back()
+
+        if not isinstance(user, UserSummary):
+            user = self.get_user(user, search_mode=search_mode)
+
         token_response = self._get_delegated_token(user)
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
@@ -268,14 +365,14 @@ class Client(OAuth2Mixin, DelegationMixin):
         self.url = url
         self.streamlit_compatible = streamlit_compatible
 
-    def _do_token_refresh(self, tz_offset: int) -> str:
+    def _do_token_refresh(self, tz: str) -> str:
         with self._http_client() as client:
             response = client.post(
                 "/api/v1/oauth/token",
                 json={
                     "grant_type": "refresh_token",
                     "refresh_token": self.refresh_token,
-                    "tz_offset": tz_offset,
+                    "tz": tz,
                 },
             )
 
@@ -289,7 +386,7 @@ class Client(OAuth2Mixin, DelegationMixin):
             TOKEN_EXPIRY_MARGIN = 5
             if body["exp"] - TOKEN_EXPIRY_MARGIN < time.time():
                 # Token is (almost) expired, refresh it
-                token = self._do_token_refresh(body["tz_offset"])
+                token = self._do_token_refresh(body["tz"])
                 self._api_key = token
         except Exception:
             # If token can't be decoded, just return as-is
@@ -359,6 +456,14 @@ class Client(OAuth2Mixin, DelegationMixin):
         with httpx.Client(base_url=self.url, headers=headers) as client:
             yield client
 
+    def _print_response_and_raise(self, response: httpx.Response):
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exception:
+            additional_info = response.text
+            exception.add_note(additional_info)
+            raise exception
+
     def _raise_for_status(self, response: httpx.Response):
         if response.status_code == 422:
             raise ValueError(response.json())
@@ -366,7 +471,7 @@ class Client(OAuth2Mixin, DelegationMixin):
             try:
                 import streamlit
             except ImportError:
-                response.raise_for_status()
+                self._print_response_and_raise(response)
             else:
                 try:
                     response.raise_for_status()
@@ -380,7 +485,7 @@ class Client(OAuth2Mixin, DelegationMixin):
                     raise
 
         else:
-            response.raise_for_status()
+            self._print_response_and_raise(response)
 
     def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
         return [value.value if isinstance(value, Enum) else value for value in values]
@@ -976,6 +1081,7 @@ class Client(OAuth2Mixin, DelegationMixin):
         This method retrieves all users that the current user has access to view.
         For regular users, this typically returns only their own user information.
         For admin users, this may return information about multiple users.
+        This method will always authenticate as the principal user.
 
         Returns:
             list[UserSummary]: A list of UserSummary objects containing basic user information.
@@ -983,7 +1089,8 @@ class Client(OAuth2Mixin, DelegationMixin):
         Raises:
             HTTPStatusError: If the API request fails.
         """
-        with self._http_client() as client:
+        client = self.principal_client()
+        with client._http_client() as client:
             response = client.get(
                 url="/api/v1/users/",
             )
@@ -1050,6 +1157,7 @@ _generate_singleton_methods(
     [
         "login",
 
+        "get_user",
         "get_users",
         "get_userinfo",
 
