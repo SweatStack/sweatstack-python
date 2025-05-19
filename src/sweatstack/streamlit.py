@@ -60,8 +60,9 @@ class StreamlitAuth:
     def _running_on_streamlit_cloud(self):
         return os.environ.get("HOSTNAME") == "streamlit"
 
-    def _show_sweatstack_login(self):
-        authorization_url = self._get_authorization_url()
+    def _show_sweatstack_login(self, login_label: str | None = None):
+        authorization_url = self.get_authorization_url()
+        login_label = login_label or "Connect with SweatStack"
         if not self._running_on_streamlit_cloud():
             st.markdown(
                 f"""
@@ -87,14 +88,14 @@ class StreamlitAuth:
                         border: none;
                         transition: all 0.3s ease;
                         cursor: pointer;"
-                    >Login with SweatStack</a>
+                    >{login_label}</a>
                 """,
                 unsafe_allow_html=True,
             )
         else:
-            st.link_button("Login with SweatStack", authorization_url)
+            st.link_button(login_label, authorization_url)
 
-    def _get_authorization_url(self):
+    def get_authorization_url(self):
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
@@ -145,7 +146,7 @@ class StreamlitAuth:
         """
         return self.api_key is not None
 
-    def authenticate(self):
+    def authenticate(self, login_label: str | None = None):
         """Authenticates the user with SweatStack.
 
         This method handles the authentication flow for SweatStack in a Streamlit app.
@@ -156,6 +157,9 @@ class StreamlitAuth:
         authorization page. After successful authorization, they are redirected back
         to the Streamlit app with an authorization code, which is exchanged for an
         access token.
+
+        Args:
+            login_label: The label to display on the login button. Defaults to "Login with SweatStack".
 
         Returns:
             None
@@ -170,7 +174,7 @@ class StreamlitAuth:
             st.query_params.clear()
             st.rerun()
         else:
-            self._show_sweatstack_login()
+            self._show_sweatstack_login(login_label)
 
     def select_user(self):
         """Displays a user selection dropdown and switches the client to the selected user.
