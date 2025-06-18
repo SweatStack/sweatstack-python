@@ -1,5 +1,6 @@
 import base64
 import contextlib
+import json
 import random
 import hashlib
 import logging
@@ -14,11 +15,13 @@ from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Generator, get_type_hints, List, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pandas as pd
+from platformdirs import user_data_dir
 
 from .constants import DEFAULT_URL
 from .schemas import (
@@ -45,6 +48,45 @@ AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
 
 
+class TokenStorageMixin:
+    """Mixin for handling persistent token storage using platformdirs."""
+
+    def _get_token_file_path(self) -> Path:
+        """Get the path to the token storage file."""
+        data_dir = user_data_dir("SweatStack", "SweatStack")
+        return Path(data_dir) / "tokens.json"
+
+    def _save_tokens(self, access_token: str, refresh_token: str) -> None:
+        """Save tokens to the user data directory."""
+        token_file = self._get_token_file_path()
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+
+        token_data = {
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        }
+
+        with open(token_file, "w") as f:
+            json.dump(token_data, f, indent=2)
+
+        # Set restrictive permissions (user read/write only)
+        token_file.chmod(0o600)
+
+    def _load_persistent_tokens(self) -> tuple[str | None, str | None]:
+        """Load tokens from the user data directory."""
+        token_file = self._get_token_file_path()
+
+        if not token_file.exists():
+            return None, None
+
+        try:
+            with open(token_file, "r") as f:
+                token_data = json.load(f)
+            return token_data.get("access_token"), token_data.get("refresh_token")
+        except (json.JSONDecodeError, FileNotFoundError, KeyError):
+            return None, None
+
+
 try:
     __version__ = version("sweatstack")
 except ImportError:
@@ -52,7 +94,7 @@ except ImportError:
 
 
 class OAuth2Mixin:
-    def login(self):
+    def login(self, persist_api_key: bool = True):
         """Initiates the OAuth2 login flow for SweatStack authentication.
 
         This method starts a local HTTP server to receive the OAuth2 callback,
@@ -61,6 +103,10 @@ class OAuth2Mixin:
 
         The method uses PKCE (Proof Key for Code Exchange) for enhanced security
         during the OAuth2 authorization code flow.
+
+        Args:
+            persist_api_key: Whether to save the API key to persistent storage for future use.
+                Defaults to True.
 
         Returns:
             None
@@ -144,9 +190,44 @@ class OAuth2Mixin:
             self.jwt = token_response.get("access_token")
             self.api_key = self.jwt
             self.refresh_token = token_response.get("refresh_token")
+
+            if persist_api_key:
+                self._save_tokens(self.api_key, self.refresh_token)
             print(f"SweatStack Python login successful.")
         else:
             raise Exception("SweatStack Python login failed. Please try again.")
+
+    def authenticate(self, *, persist_api_key: bool = True, force_login: bool = False) -> None:
+        """Ensures the client is authenticated, either using existing tokens or by initiating login.
+
+        This method checks for authentication in the following order:
+        1. Current instance tokens (if already set)
+        2. Environment variables (SWEATSTACK_API_KEY, SWEATSTACK_REFRESH_TOKEN)
+        3. Persistent storage tokens
+        4. If none found or force_login is True, initiates OAuth2 login flow
+
+        Args:
+            persist_api_key: Whether to save tokens to persistent storage after login.
+                Defaults to True.
+            force_login: Whether to force a new login even if tokens are available.
+                Defaults to False.
+
+        Returns:
+            None
+
+        Raises:
+            Exception: If the authentication process fails.
+        """
+        if force_login:
+            self.login(persist_api_key=persist_api_key)
+            return
+
+        # Check if we already have valid tokens
+        if self.api_key:
+            return
+
+        # If no tokens available, initiate login
+        self.login(persist_api_key=persist_api_key)
 
 
 class DelegationMixin:
@@ -352,7 +433,7 @@ class DelegationMixin:
         )
 
 
-class Client(OAuth2Mixin, DelegationMixin):
+class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin):
     def __init__(
         self,
         api_key: str | None = None,
@@ -399,8 +480,10 @@ class Client(OAuth2Mixin, DelegationMixin):
     def api_key(self) -> str:
         if self._api_key is not None:
             value = self._api_key
+        elif value := os.getenv("SWEATSTACK_API_KEY"):
+            pass
         else:
-            value = os.getenv("SWEATSTACK_API_KEY")
+            value, _ = self._load_persistent_tokens()
 
         if value is None:
             # A non-authenticated client is a potentially valid use-case.
@@ -416,8 +499,12 @@ class Client(OAuth2Mixin, DelegationMixin):
     def refresh_token(self) -> str:
         if self._refresh_token is not None:
             return self._refresh_token
+        elif value := os.getenv("SWEATSTACK_REFRESH_TOKEN"):
+            pass
         else:
-            return os.getenv("SWEATSTACK_REFRESH_TOKEN")
+            _, value = self._load_persistent_tokens()
+
+        return value
 
     @refresh_token.setter
     def refresh_token(self, value: str):
@@ -1156,6 +1243,7 @@ def _generate_singleton_methods(method_names: List[str]) -> None:
 _generate_singleton_methods(
     [
         "login",
+        "authenticate",
 
         "get_user",
         "get_users",
