@@ -1204,6 +1204,32 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin):
             self._raise_for_status(response)
             return UserInfoResponse.model_validate(response.json())
 
+    def whoami(self) -> UserSummary:
+        """Gets the authenticated user's summary information.
+
+        This method retrieves basic information about the currently authenticated user
+        by extracting the user ID from the JWT token and fetching the user details.
+
+        Returns:
+            UserSummary: A UserSummary object containing the authenticated user's information.
+
+        Raises:
+            ValueError: If no authentication token is available.
+            HTTPStatusError: If the API request fails or user is not found.
+        """
+        if not self.api_key:
+            raise ValueError("Not authenticated. Please call authenticate() or login() first.")
+
+        try:
+            jwt_body = decode_jwt_body(self.api_key)
+            user_id = jwt_body.get("sub")
+            if not user_id:
+                raise ValueError("Unable to extract user ID from token")
+        except Exception as e:
+            raise ValueError(f"Invalid authentication token: {e}")
+
+        return self._get_user_by_id(user_id)
+
 
 _default_client = Client()
 
@@ -1248,6 +1274,7 @@ _generate_singleton_methods(
         "get_user",
         "get_users",
         "get_userinfo",
+        "whoami",
 
         "get_activities",
 

@@ -102,3 +102,14 @@ Sport.root_sport = root_sport
 Sport.parent_sport = parent_sport
 Sport.is_sub_sport_of = is_sub_sport_of
 Sport.display_name = display_name
+
+
+def metric_display_name(metric: Metric) -> str:
+    """Returns a human-readable display name for a metric.
+
+    This function converts a Metric enum value into a formatted string suitable for display.
+    """
+    return metric.value.replace("_", " ")
+
+
+Metric.display_name = metric_display_name
