@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Generator, get_type_hints, List, Literal
+from typing import Any, Dict, Generator, get_type_hints, List, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -25,7 +25,8 @@ from platformdirs import user_data_dir
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, Metric, Sport, TraceDetails, UserInfoResponse, UserSummary
+    ActivityDetails, ActivitySummary, BackfillStatus, Metric, Sport,
+    TraceDetails, UserInfoResponse, UserSummary
 )
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -1230,6 +1231,67 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin):
 
         return self._get_user_by_id(user_id)
 
+    def _parse_backfill_line(self, line: str) -> BackfillStatus | None:
+        """Parse a single NDJSON line from backfill status stream."""
+        try:
+            return BackfillStatus.model_validate_json(line)
+        except Exception:
+            pass
+        return None
+
+    def watch_backfill_status(self, *, auto_reconnect: bool = False) -> Generator[BackfillStatus, None, None]:
+        """Watches backfill status from the activities backfill-status endpoint.
+
+        This method connects to the backfill status event stream and yields
+        backfill_loaded_until timestamps as they are received. The connection
+        automatically closes after 60 seconds, but can be configured to auto-reconnect.
+
+        Args:
+            auto_reconnect: Whether to automatically reconnect when the connection
+                closes and continue receiving updates. Defaults to False.
+
+        Yields:
+            BackfillStatus: A BackfillStatus object for each received message.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        while True:
+            try:
+                with self._http_client() as client:
+                    with client.stream("GET", "/api/v1/activities/backfill-status") as response:
+                        self._raise_for_status(response)
+
+                        for line in response.iter_lines():
+                            if line.strip():
+                                parsed = self._parse_backfill_line(line)
+                                if parsed:
+                                    yield parsed
+
+            except httpx.RequestError:
+                if not auto_reconnect:
+                    raise
+                time.sleep(1)
+            if not auto_reconnect:
+                break
+
+    def get_backfill_status(self) -> BackfillStatus:
+        """Gets the current backfill status from the activities backfill-status endpoint.
+
+        This method connects to the backfill status event stream and returns
+        the first backfill_loaded_until timestamp received.
+
+        Returns:
+            BackfillStatus: A BackfillStatus object containing the current backfill status.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+            ValueError: If no status message is received.
+        """
+        for status in self.watch_backfill_status(auto_reconnect=False):
+            return status
+        raise ValueError("No backfill status received")
+
 
 _default_client = Client()
 
@@ -1275,6 +1337,9 @@ _generate_singleton_methods(
         "get_users",
         "get_userinfo",
         "whoami",
+
+        "get_backfill_status",
+        "watch_backfill_status",
 
         "get_activities",
 

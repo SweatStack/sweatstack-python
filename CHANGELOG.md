@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [unreleased]
+
+### Added
+
+- Added a new `ss.get_backfill_status()` method that returns the current backfill status from the activities backfill-status endpoint.
+- Added a new `ss.watch_backfill_status()` method that watches the backfill status from the activities backfill-status endpoint.
+
+
 ## [0.46.0] - 2025-08-01
 
 ### Added
