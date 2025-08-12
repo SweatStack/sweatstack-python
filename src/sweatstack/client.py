@@ -6,6 +6,8 @@ import hashlib
 import logging
 import os
 import secrets
+import shutil
+import tempfile
 import time
 import urllib
 import webbrowser
@@ -47,6 +49,110 @@ AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 </body>
 </html>"""
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
+
+
+class LocalCacheMixin:
+    """Mixin for handling local filesystem caching of API responses."""
+
+    def _cache_enabled(self) -> bool:
+        """Check if local caching is enabled."""
+        return bool(os.getenv("SWEATSTACK_LOCAL_CACHE"))
+
+    def _log_cache_error(self, operation: str, error: Exception) -> None:
+        """Log cache operation errors with context."""
+        cache_location = os.getenv("SWEATSTACK_CACHE_DIR") or tempfile.gettempdir()
+        try:
+            user_id = self._get_user_id_from_token()
+        except Exception:
+            user_id = "unknown"
+
+        logging.warning(
+            f"Failed to {operation} cache despite SWEATSTACK_LOCAL_CACHE being enabled. "
+            f"Cache directory: {cache_location}/sweatstack/{user_id}. "
+            f"Error: {error}"
+        )
+
+    def _get_user_id_from_token(self) -> str:
+        """Extract user ID from the JWT token."""
+        if not self.api_key:
+            raise ValueError("Not authenticated. Please call authenticate() or login() first.")
+
+        try:
+            jwt_body = decode_jwt_body(self.api_key)
+            user_id = jwt_body.get("sub")
+            if not user_id:
+                raise ValueError("Unable to extract user ID from token")
+            return user_id
+        except Exception as e:
+            raise ValueError(f"Invalid authentication token: {e}")
+
+    def _get_cache_dir(self) -> Path:
+        """Get cache directory for current user."""
+        user_id = self._get_user_id_from_token()
+
+        if cache_location := os.getenv("SWEATSTACK_CACHE_DIR"):
+            cache_dir = Path(cache_location) / user_id
+        else:
+            cache_dir = Path(tempfile.gettempdir()) / "sweatstack" / user_id
+
+        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return cache_dir
+
+    def _generate_longitudinal_cache_key(self, **params) -> str:
+        """Generate cache key for longitudinal data requests."""
+        normalized_params = {}
+
+        for key, value in params.items():
+            if value is None:
+                continue
+            elif isinstance(value, list):
+                normalized_params[key] = sorted([
+                    v.value if hasattr(v, 'value') else str(v) for v in value
+                ])
+            elif hasattr(value, 'value'):
+                normalized_params[key] = value.value
+            elif isinstance(value, (date, datetime)):
+                normalized_params[key] = value.isoformat()
+            else:
+                normalized_params[key] = str(value)
+
+        cache_data = f"longitudinal_data:{json.dumps(normalized_params, sort_keys=True)}"
+        return hashlib.sha256(cache_data.encode()).hexdigest()[:16]
+
+    def _read_longitudinal_cache(self, cache_key: str) -> pd.DataFrame | None:
+        """Try to read cached longitudinal data."""
+        try:
+            cache_dir = self._get_cache_dir()
+            cache_file = cache_dir / f"longitudinal-{cache_key}.parquet"
+
+            if cache_file.exists():
+                return pd.read_parquet(cache_file)
+        except Exception as e:
+            self._log_cache_error("read", e)
+
+        return None
+
+    def _write_longitudinal_cache(self, cache_key: str, content: bytes) -> None:
+        """Write longitudinal data to cache."""
+        try:
+            cache_dir = self._get_cache_dir()
+            cache_file = cache_dir / f"longitudinal-{cache_key}.parquet"
+            cache_file.write_bytes(content)
+        except Exception as e:
+            self._log_cache_error("write", e)
+
+    def clear_cache(self) -> None:
+        """Clear all cached data for the current user.
+
+        This removes all cached data (longitudinal data, etc.) from the temporary
+        directory for the currently authenticated user.
+        """
+        try:
+            cache_dir = self._get_cache_dir()
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+        except Exception as e:
+            self._log_cache_error("clear", e)
 
 
 class TokenStorageMixin:
@@ -434,7 +540,7 @@ class DelegationMixin:
         )
 
 
-class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin):
+class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
     def __init__(
         self,
         api_key: str | None = None,
@@ -891,6 +997,12 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin):
         if adaptive_sampling_on is not None:
             params["adaptive_sampling_on"] = self._enums_to_strings([adaptive_sampling_on])[0]
 
+        if self._cache_enabled():
+            cache_key = self._generate_longitudinal_cache_key(**params)
+            cached_df = self._read_longitudinal_cache(cache_key)
+            if cached_df is not None:
+                return self._postprocess_dataframe(cached_df)
+
         with self._http_client() as client:
             response = client.get(
                 url="/api/v1/activities/longitudinal-data",
@@ -898,8 +1010,12 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin):
             )
             self._raise_for_status(response)
 
+            if self._cache_enabled():
+                self._write_longitudinal_cache(cache_key, response.content)
+
             df = pd.read_parquet(BytesIO(response.content))
-            return self._postprocess_dataframe(df)
+
+        return self._postprocess_dataframe(df)
 
     def get_longitudinal_mean_max(
         self,
@@ -1359,6 +1475,7 @@ _generate_singleton_methods(
 
         "get_sports",
         "get_tags",
+        "clear_cache",
 
         "switch_user",
         "switch_back",

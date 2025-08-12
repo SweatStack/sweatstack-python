@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [unreleased]
+
+### Added
+
+- Added optional local caching of longitudinal data, enabled by setting the `SWEATSTACK_CACHE_ENABLED` environment variable to `true`. The cache directory can be specified by setting the `SWEATSTACK_CACHE_DIR` environment variable. The cache can be cleared by calling `ss.clear_cache()`.
+
 
 ## [0.47.0] - 2025-08-07
 
