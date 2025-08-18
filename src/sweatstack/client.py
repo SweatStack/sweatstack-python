@@ -829,6 +829,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         self,
         activity_id: str,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
     ) -> pd.DataFrame:
         """Gets the raw data for a specific activity.
 
@@ -839,6 +840,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             activity_id: The unique identifier of the activity.
             adaptive_sampling_on: Optional parameter to apply adaptive sampling on 
                 either "power" or "speed" data. If None, no adaptive sampling is applied.
+            metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the activity's time-series data.
@@ -849,6 +851,8 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         params = {}
         if adaptive_sampling_on is not None:
             params["adaptive_sampling_on"] = adaptive_sampling_on
+        if metrics is not None:
+            params["metrics"] = self._enums_to_strings(metrics)
 
         with self._http_client() as client:
             response = client.get(
@@ -900,6 +904,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         self,
         sport: Sport | str | None = None,
         adaptive_sampling_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
     ) -> pd.DataFrame:
         """Gets the data for the latest activity of a specific sport.
 
@@ -910,6 +915,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             sport: Optional sport to filter by. Can be a Sport enum or string.
             adaptive_sampling_on: Optional metric to apply adaptive sampling for visualization.
                 Can be either "power" or "speed". Defaults to None.
+            metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the activity data.
@@ -918,7 +924,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             HTTPStatusError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_data(activity.id, adaptive_sampling_on)
+        return self.get_activity_data(activity.id, adaptive_sampling_on, metrics=metrics)
 
     def get_latest_activity_mean_max(
         self,
