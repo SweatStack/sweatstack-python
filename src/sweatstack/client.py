@@ -692,12 +692,13 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         sports: list[Sport | str] | None = None,
         tags: list[str] | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> Generator[ActivitySummary, None, None]:
         num_returned = 0
         default_limit = 100
         params = {
             "limit": default_limit,
-            "offset": 0,
+            "offset": offset,
         }
         if start is not None:
             params["start"] = start.isoformat()
@@ -742,6 +743,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         sports: list[Sport | str] | None = None,
         tags: list[str] | None = None,
         limit: int = 100,
+        offset: int = 0,
         as_dataframe: bool = False,
     ) -> list[ActivitySummary] | pd.DataFrame:
         """Gets a list of activities based on specified filters.
@@ -752,6 +754,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             sports: Optional list of sports to filter activities by. Can be Sport objects or string IDs.
             tags: Optional list of tags to filter activities by.
             limit: Maximum number of activities to return. Defaults to 100.
+            offset: Number of activities to skip. Defaults to 0.
             as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
 
         Returns:
@@ -767,6 +770,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             sports=sports,
             tags=tags,
             limit=limit,
+            offset=offset,
         ))
         if as_dataframe:
             df = pd.DataFrame([activity.model_dump() for activity in activities])
@@ -1081,12 +1085,13 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         sports: list[Sport | str] | None = None,
         tags: list[str] | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> Generator[TraceDetails, None, None]:
         num_returned = 0
         default_limit = 100
         params = {
             "limit": default_limit,
-            "offset": 0,
+            "offset": offset,
         }
         if start is not None:
             params["start"] = start.isoformat()
@@ -1154,6 +1159,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         sports: list[Sport | str] | None = None,
         tags: list[str] | None = None,
         limit: int = 100,
+        offset: int = 0,
         as_dataframe: bool = False,
     ) -> list[TraceDetails] | pd.DataFrame:
         """Gets a list of traces based on specified filters.
@@ -1164,6 +1170,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             sports: Optional list of sports to filter traces by. Can be Sport objects or string IDs.
             tags: Optional list of tags to filter traces by.
             limit: Maximum number of traces to return. Defaults to 100.
+            offset: Number of traces to skip. Defaults to 0.
             as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
 
         Returns:
@@ -1179,6 +1186,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             sports=sports,
             tags=tags,
             limit=limit,
+            offset=offset,
         ))
         if not as_dataframe:
             return traces
