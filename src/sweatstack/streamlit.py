@@ -50,7 +50,7 @@ class StreamlitAuth:
         self.api_key = st.session_state.get("sweatstack_api_key")
         self.client = Client(self.api_key, streamlit_compatible=True)
 
-    def _show_sweatstack_logout(self):
+    def logout_button(self):
         if st.button("Logout"):
             self.api_key = None
             self.client = Client(streamlit_compatible=True)
@@ -146,7 +146,7 @@ class StreamlitAuth:
         """
         return self.api_key is not None
 
-    def authenticate(self, login_label: str | None = None):
+    def authenticate(self, login_label: str | None = None, show_logout: bool = True):
         """Authenticates the user with SweatStack.
 
         This method handles the authentication flow for SweatStack in a Streamlit app.
@@ -168,7 +168,8 @@ class StreamlitAuth:
             if not st.session_state.get("sweatstack_auth_toast_shown", False):
                 st.toast("SweatStack authentication successful!", icon="✅")
                 st.session_state["sweatstack_auth_toast_shown"] = True
-            self._show_sweatstack_logout()
+            if show_logout:
+                self.logout_button()
         elif code := st.query_params.get("code"):
             self._exchange_token(code)
             st.query_params.clear()

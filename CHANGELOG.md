@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.51.0] - 2025-08-28
+
+### Added
+
+- Added a new `show_logout` parameter to the `ss.StreamlitAuth.authenticate()` method that allows for disabling the logout button. The logout button can be shown by calling `ss.StreamlitAuth.logout_button()`. This is for example useful when you want to show the login button on the main page, but the logout button in the sidebar.
+
+
 ## [0.50.0] - 2025-08-25
 
 ### Added
