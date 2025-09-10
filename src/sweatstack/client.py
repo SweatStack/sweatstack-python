@@ -647,7 +647,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         
-        with httpx.Client(base_url=self.url, headers=headers) as client:
+        with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
             yield client
 
     def _print_response_and_raise(self, response: httpx.Response):
