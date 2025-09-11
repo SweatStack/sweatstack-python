@@ -259,7 +259,7 @@ class OAuth2Mixin:
             "client_id": OAUTH2_CLIENT_ID,
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
-            "scope": "data:read profile",
+            "scope": "data:read data:write profile",
             "prompt": "none",
         }
         base_url = self.url
@@ -1212,6 +1212,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         speed: float | None = None,
         heart_rate: int | None = None,
         tags: list[str] | None = None,
+        sport: Sport | str | None = None,
     ) -> TraceDetails:
         """Creates a new trace with the specified parameters.
 
@@ -1227,6 +1228,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             speed: Optional speed measurement in meters per second.
             heart_rate: Optional heart rate measurement in beats per minute.
             tags: Optional list of tags to associate with this trace.
+            sport: Optional sport to associate with this trace.
 
         Returns:
             TraceDetails: The created trace object with all details.
@@ -1234,6 +1236,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         Raises:
             HTTPStatusError: If the API request fails.
         """
+        sport = self._enums_to_strings([sport])[0] if sport else None
         with self._http_client() as client:
             response = client.post(
                 url="/api/v1/traces/",
@@ -1246,6 +1249,7 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
                     "speed": speed,
                     "heart_rate": heart_rate,
                     "tags": tags,
+                    "sport": sport,
                 },
             )
             self._raise_for_status(response)
