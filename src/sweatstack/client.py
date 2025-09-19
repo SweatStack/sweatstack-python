@@ -28,7 +28,7 @@ from platformdirs import user_data_dir
 from .constants import DEFAULT_URL
 from .schemas import (
     ActivityDetails, ActivitySummary, BackfillStatus, Metric, Sport,
-    TraceDetails, UserInfoResponse, UserSummary
+    TokenResponse, TraceDetails, UserInfoResponse, UserSummary
 )
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -201,6 +201,120 @@ except ImportError:
 
 
 class OAuth2Mixin:
+    def generate_pkce_params(self) -> tuple[str, str]:
+        """Generate PKCE parameters for OAuth2 authorization.
+
+        This method generates a code verifier and its corresponding code challenge
+        for use in the PKCE (Proof Key for Code Exchange) OAuth2 flow.
+
+        Returns:
+            tuple[str, str]: A tuple of (code_verifier, code_challenge)
+        """
+        code_verifier = secrets.token_urlsafe(32)
+        code_challenge = hashlib.sha256(code_verifier.encode("ascii")).digest()
+        code_challenge = base64.urlsafe_b64encode(code_challenge).rstrip(b"=").decode("ascii")
+        return code_verifier, code_challenge
+
+    def get_authorization_url(
+        self,
+        client_id: str,
+        redirect_uri: str,
+        code_challenge: str | None = None,
+        scope: str = "data:read data:write profile",
+        prompt: str = "none",
+        state: str | None = None,
+    ) -> str:
+        """Generate OAuth2 authorization URL.
+
+        Args:
+            client_id: OAuth2 client ID
+            redirect_uri: Redirect URI for OAuth callback
+            code_challenge: Optional PKCE code challenge for enhanced security
+            scope: OAuth2 scopes (default: "data:read data:write profile")
+            prompt: OAuth2 prompt parameter (default: "none")
+            state: Optional state parameter for CSRF protection
+
+        Returns:
+            str: The authorization URL to redirect the user to
+        """
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "prompt": prompt,
+        }
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
+        if state:
+            params["state"] = state
+
+        base_url = self.url
+        path = "/oauth/authorize"
+        return urllib.parse.urljoin(base_url, path + "?" + urllib.parse.urlencode(params))
+
+    def exchange_code_for_token(
+        self,
+        code: str,
+        client_id: str,
+        code_verifier: str | None = None,
+        client_secret: str | None = None,
+        redirect_uri: str | None = None,
+        persist: bool = True,
+    ) -> TokenResponse:
+        """Exchange authorization code for access and refresh tokens.
+
+        This method exchanges an authorization code for tokens and automatically
+        sets them on the client instance.
+
+        Args:
+            code: The authorization code received from the OAuth callback
+            client_id: OAuth2 client ID
+            code_verifier: PKCE code verifier (required if PKCE was used in authorization)
+            client_secret: Client secret for standard OAuth2 flow
+            redirect_uri: Redirect URI if required by the server
+            persist: Whether to persist tokens to storage (default: True)
+
+        Returns:
+            TokenResponse: The token response containing access_token, refresh_token, etc.
+
+        Raises:
+            HTTPStatusError: If the token exchange fails
+        """
+        token_data = {
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+        }
+
+        if code_verifier:
+            token_data["code_verifier"] = code_verifier
+        if client_secret:
+            token_data["client_secret"] = client_secret
+        if redirect_uri:
+            token_data["redirect_uri"] = redirect_uri
+
+        response = httpx.post(
+            f"{self.url}/api/v1/oauth/token",
+            data=token_data,
+        )
+
+        try:
+            self._raise_for_status(response)
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"Token exchange failed: {e}") from e
+
+        token_response = TokenResponse.model_validate(response.json())
+
+        self.api_key = token_response.access_token
+        self.jwt = token_response.access_token  # For backward compatibility
+        self.refresh_token = token_response.refresh_token
+
+        if persist:
+            self._save_tokens(token_response.access_token, token_response.refresh_token)
+
+        return token_response
+
     def login(self, persist_api_key: bool = True):
         """Initiates the OAuth2 login flow for SweatStack authentication.
 
@@ -242,9 +356,7 @@ class OAuth2Mixin:
                 self.wfile.write(AUTH_SUCCESSFUL_RESPONSE.encode())
                 self.server.server_close()
 
-        code_verifier = secrets.token_urlsafe(32)
-        code_challenge = hashlib.sha256(code_verifier.encode("ascii")).digest()
-        code_challenge = base64.urlsafe_b64encode(code_challenge).rstrip(b"=").decode("ascii")
+        code_verifier, code_challenge = self.generate_pkce_params()
 
         while True:
             port = random.randint(8000, 9000)
@@ -255,16 +367,15 @@ class OAuth2Mixin:
                 continue
 
         redirect_uri = f"http://localhost:{port}"
-        params = {
-            "client_id": OAUTH2_CLIENT_ID,
-            "redirect_uri": redirect_uri,
-            "code_challenge": code_challenge,
-            "scope": "data:read data:write profile",
-            "prompt": "none",
-        }
-        base_url = self.url
-        path = "/oauth/authorize"
-        authorization_url = urllib.parse.urljoin(base_url, path + "?" + urllib.parse.urlencode(params))
+
+        authorization_url = self.get_authorization_url(
+            client_id=OAUTH2_CLIENT_ID,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            scope="data:read data:write profile",
+            prompt="none",
+        )
+
         webbrowser.open(authorization_url)
 
         print(f"Waiting for authorization... (listening on port {port})")
@@ -278,29 +389,17 @@ class OAuth2Mixin:
             raise Exception("SweatStack Python login timed out after 30 seconds. Please try again.")
 
         if hasattr(server, "code"):
-            token_data = {
-                "grant_type": "authorization_code",
-                "client_id": OAUTH2_CLIENT_ID,
-                "code": server.code,
-                "code_verifier": code_verifier,
-            }
-            response = httpx.post(
-                f"{self.url}/api/v1/oauth/token",
-                data=token_data,
-            )
             try:
-                self._raise_for_status(response)
-            except httpx.HTTPStatusError as e:
-                raise Exception(f"SweatStack Python login failed. Please try again.") from e
-            token_response = response.json()
-
-            self.jwt = token_response.get("access_token")
-            self.api_key = self.jwt
-            self.refresh_token = token_response.get("refresh_token")
-
-            if persist_api_key:
-                self._save_tokens(self.api_key, self.refresh_token)
-            print(f"SweatStack Python login successful.")
+                token_response = self.exchange_code_for_token(
+                    code=server.code,
+                    client_id=OAUTH2_CLIENT_ID,
+                    code_verifier=code_verifier,
+                    persist=persist_api_key,
+                )
+                self.jwt = token_response.access_token
+                print("SweatStack Python login successful.")
+            except Exception as e:
+                raise Exception("SweatStack Python login failed. Please try again.") from e
         else:
             raise Exception("SweatStack Python login failed. Please try again.")
 
