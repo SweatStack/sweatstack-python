@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added new methods `get_authorization_url()`, `exchange_code_for_token()` and `get_pkce_params()` to the `ss.Client` class that allow for getting the authorization URL and exchanging a code for tokens. This should make it easier for clients to implement the SweatStack OAuth2 flow.
 
+### Fixed
+
+- Fixed an issue where the `ss.get_activities()` with `as_dataframe=True` method would raise an error if no activities were found.
+
 
 ## [0.53.0] - 2025-09-11
 

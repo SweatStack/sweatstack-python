@@ -834,6 +834,38 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         else:
             return df
 
+    def _create_empty_dataframe_from_model(self, model_class, normalize_columns: list[str] | None = None) -> pd.DataFrame:
+        """Create an empty DataFrame with proper schema from a Pydantic model.
+
+        Args:
+            model_class: The Pydantic model class to extract schema from
+            normalize_columns: Optional list of columns to normalize (expand nested fields)
+
+        Returns:
+            pd.DataFrame: Empty DataFrame with columns matching the model schema
+        """
+        # Create a dummy instance with all None values to get the structure
+        fields = model_class.model_fields
+        dummy_data = {}
+        for field_name, field_info in fields.items():
+            dummy_data[field_name] = None
+
+        # Create a single-row DataFrame then drop the row to preserve schema
+        df = pd.DataFrame([dummy_data])
+
+        # Normalize specified columns if requested
+        if normalize_columns:
+            for column in normalize_columns:
+                if column in df.columns:
+                    # Create empty normalized columns
+                    normalized = pd.DataFrame()
+                    df = pd.concat([df.drop(column, axis=1), normalized], axis=1)
+
+        # Drop the dummy row to create empty DataFrame
+        df = df.iloc[0:0]
+
+        return df
+
     def get_activities(
         self,
         *,
@@ -872,10 +904,17 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
             offset=offset,
         ))
         if as_dataframe:
-            df = pd.DataFrame([activity.model_dump() for activity in activities])
-            df = self._normalize_dataframe_column(df, "summary")
-            df = self._normalize_dataframe_column(df, "laps")
-            df = self._normalize_dataframe_column(df, "traces")
+            if not activities:
+                # Return empty DataFrame with proper schema
+                df = self._create_empty_dataframe_from_model(
+                    ActivitySummary,
+                    normalize_columns=["summary", "laps", "traces"]
+                )
+            else:
+                df = pd.DataFrame([activity.model_dump() for activity in activities])
+                df = self._normalize_dataframe_column(df, "summary")
+                df = self._normalize_dataframe_column(df, "laps")
+                df = self._normalize_dataframe_column(df, "traces")
             return self._postprocess_dataframe(df)
         else:
             return activities
@@ -1565,6 +1604,9 @@ _generate_singleton_methods(
     [
         "login",
         "authenticate",
+        "get_authorization_url",
+        "exchange_code_for_token",
+        "generate_pkce_params",
 
         "get_user",
         "get_users",
