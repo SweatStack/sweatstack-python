@@ -1,3 +1,15 @@
+"""SweatStack data schemas and utilities.
+
+This module re-exports Pydantic models from openapi_schemas and extends
+the Sport and Metric enums with convenient utility methods.
+
+Example:
+    sport = Sport.cycling_road
+    print(sport.display_name())  # "cycling (road)"
+    print(sport.root_sport())    # Sport.cycling
+    print(sport.is_root_sport())  # False
+    print(sport.is_sub_sport_of(Sport.cycling))  # True
+"""
 from enum import Enum
 from typing import List, Union
 
@@ -7,7 +19,7 @@ from .openapi_schemas import (
 )
 
 
-def parent_sport(sport: Sport) -> Sport:
+def _parent_sport(sport: Sport) -> Sport:
     """Returns the parent sport of a given sport.
 
     For sports with a hierarchical structure (e.g., 'cycling.road'), returns the parent sport
@@ -25,7 +37,7 @@ def parent_sport(sport: Sport) -> Sport:
     return sport.__class__(".".join(parts[:-1]))
 
 
-def root_sport(sport: Sport) -> Sport:
+def _root_sport(sport: Sport) -> Sport:
     """Returns the root sport of a given sport.
 
     For sports with a hierarchical structure (e.g., 'cycling.road' or 'cycling.road.gravel'),
@@ -40,7 +52,7 @@ def root_sport(sport: Sport) -> Sport:
     return sport.__class__(sport.value.split(".")[0])
 
 
-def is_root_sport(sport: Sport) -> bool:
+def _is_root_sport(sport: Sport) -> bool:
     """Determines if a sport is a root sport.
 
     A root sport is one that doesn't have a parent sport in the hierarchy
@@ -52,10 +64,10 @@ def is_root_sport(sport: Sport) -> bool:
     Returns:
         bool: True if the sport is a root sport, False otherwise.
     """
-    return sport == root_sport(sport)
+    return sport == _root_sport(sport)
 
 
-def is_sub_sport_of(sport: Sport, sport_or_sports: Union[Sport, List[Sport]]) -> bool:
+def _is_sub_sport_of(sport: Sport, sport_or_sports: Union[Sport, List[Sport]]) -> bool:
     """Determines if a sport is a sub-sport of another sport or list of sports.
 
     For example, 'cycling.road' is a sub-sport of 'cycling', but not of 'running'.
@@ -73,12 +85,12 @@ def is_sub_sport_of(sport: Sport, sport_or_sports: Union[Sport, List[Sport]]) ->
     if isinstance(sport_or_sports, Sport):
         return sport.value.startswith(sport_or_sports.value)
     elif isinstance(sport_or_sports, (list, tuple)):
-        return any(is_sub_sport_of(sport, sport) for sport in sport_or_sports)
+        return any(_is_sub_sport_of(sport, s) for s in sport_or_sports)
     else:
         raise ValueError(f"Invalid type for sport_or_sports: {type(sport_or_sports)}")
 
 
-def display_name(sport: Sport) -> str:
+def _display_name(sport: Sport) -> str:
     """Returns a human-readable display name for a sport.
 
     This function converts a Sport enum value into a formatted string suitable for display.
@@ -98,13 +110,23 @@ def display_name(sport: Sport) -> str:
     return f"{base_sport} ({the_rest})"
 
 
-Sport.root_sport = root_sport
-Sport.parent_sport = parent_sport
-Sport.is_sub_sport_of = is_sub_sport_of
-Sport.display_name = display_name
+Sport.root_sport = _root_sport
+Sport.root_sport.__doc__ = _root_sport.__doc__
+
+Sport.parent_sport = _parent_sport
+Sport.parent_sport.__doc__ = _parent_sport.__doc__
+
+Sport.is_sub_sport_of = _is_sub_sport_of
+Sport.is_sub_sport_of.__doc__ = _is_sub_sport_of.__doc__
+
+Sport.is_root_sport = _is_root_sport
+Sport.is_root_sport.__doc__ = _is_root_sport.__doc__
+
+Sport.display_name = _display_name
+Sport.display_name.__doc__ = _display_name.__doc__
 
 
-def metric_display_name(metric: Metric) -> str:
+def _metric_display_name(metric: Metric) -> str:
     """Returns a human-readable display name for a metric.
 
     This function converts a Metric enum value into a formatted string suitable for display.
@@ -112,4 +134,5 @@ def metric_display_name(metric: Metric) -> str:
     return metric.value.replace("_", " ")
 
 
-Metric.display_name = metric_display_name
+Metric.display_name = _metric_display_name
+Metric.display_name.__doc__ = _metric_display_name.__doc__

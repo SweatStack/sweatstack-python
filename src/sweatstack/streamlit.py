@@ -1,3 +1,29 @@
+"""Streamlit integration for SweatStack authentication and UI components.
+
+This module provides authentication and UI helper components for building
+Streamlit applications with SweatStack. The StreamlitAuth class handles
+OAuth2 authentication flow and provides convenient selector components.
+
+Example:
+    import streamlit as st
+    from sweatstack.streamlit import StreamlitAuth
+
+    auth = StreamlitAuth(
+        client_id="YOUR_APPLICATION_ID",
+        client_secret="YOUR_APPLICATION_SECRET",
+        redirect_uri="http://localhost:8501",
+    )
+
+    with st.sidebar:
+        auth.authenticate()
+
+    if not auth.is_authenticated():
+        st.stop()
+
+    st.write("Welcome!")
+    latest = auth.client.get_latest_activity()
+    st.write(f"Latest: {latest.sport}")
+"""
 import os
 import urllib.parse
 from datetime import date
@@ -18,6 +44,46 @@ from .schemas import Metric, Scope, Sport
 
 
 class StreamlitAuth:
+    """Handles SweatStack authentication and provides UI components for Streamlit apps.
+
+    This class manages OAuth2 authentication flow for Streamlit applications and provides
+    convenient selector components for activities, sports, tags, and metrics. Once authenticated,
+    the client property provides access to the SweatStack API.
+
+    Example:
+        import streamlit as st
+        from sweatstack.streamlit import StreamlitAuth
+
+        # Initialize authentication
+        auth = StreamlitAuth(
+            client_id="YOUR_APPLICATION_ID",
+            client_secret="YOUR_APPLICATION_SECRET",
+            redirect_uri="http://localhost:8501",
+        )
+
+        # Add authentication to sidebar
+        with st.sidebar:
+            auth.authenticate()
+
+        # Check authentication
+        if not auth.is_authenticated():
+            st.write("Please log in to continue")
+            st.stop()
+
+        # Use the authenticated client
+        st.write("Welcome to SweatStack")
+        latest_activity = auth.client.get_latest_activity()
+        st.write(f"Latest activity: {latest_activity.sport} on {latest_activity.start}")
+
+        # Switch between accessible users (admin feature)
+        with st.sidebar:
+            auth.select_user()
+
+    Attributes:
+        client: The SweatStack Client instance for API access.
+        api_key: The current API access token.
+    """
+
     def __init__(
         self,
         client_id=None,
@@ -25,12 +91,13 @@ class StreamlitAuth:
         scopes: List[Union[str, Scope]]=None,
         redirect_uri=None,
     ):
-        """
+        """Initialize the StreamlitAuth component.
+
         Args:
-            client_id: The client ID to use. If not provided, the SWEATSTACK_CLIENT_ID environment variable will be used.
-            client_secret: The client secret to use. If not provided, the SWEATSTACK_CLIENT_SECRET environment variable will be used.
-            scopes: The scopes to use. If not provided, the SWEATSTACK_SCOPES environment variable will be used. Defaults to data:read, profile.
-            redirect_uri: The redirect URI to use. If not provided, the SWEATSTACK_REDIRECT_URI environment variable will be used.
+            client_id: OAuth2 client ID. Falls back to SWEATSTACK_CLIENT_ID env var.
+            client_secret: OAuth2 client secret. Falls back to SWEATSTACK_CLIENT_SECRET env var.
+            scopes: OAuth2 scopes. Falls back to SWEATSTACK_SCOPES env var. Defaults to data:read, profile.
+            redirect_uri: OAuth2 redirect URI. Falls back to SWEATSTACK_REDIRECT_URI env var.
         """
         self.client_id = client_id or os.environ.get("SWEATSTACK_CLIENT_ID")
         self.client_secret = client_secret or os.environ.get("SWEATSTACK_CLIENT_SECRET")
@@ -51,6 +118,11 @@ class StreamlitAuth:
         self.client = Client(self.api_key, streamlit_compatible=True)
 
     def logout_button(self):
+        """Displays a logout button and handles user logout.
+
+        When clicked, this button clears the stored API key from session state,
+        resets the client, and triggers a Streamlit rerun to update the UI.
+        """
         if st.button("Logout"):
             self.api_key = None
             self.client = Client(streamlit_compatible=True)
@@ -58,9 +130,15 @@ class StreamlitAuth:
             st.rerun()
 
     def _running_on_streamlit_cloud(self):
+        """Detects if the app is running on Streamlit Cloud."""
         return os.environ.get("HOSTNAME") == "streamlit"
 
     def _show_sweatstack_login(self, login_label: str | None = None):
+        """Displays the SweatStack login button with appropriate styling.
+
+        Args:
+            login_label: Text to display on the login button.
+        """
         authorization_url = self.get_authorization_url()
         login_label = login_label or "Connect with SweatStack"
         if not self._running_on_streamlit_cloud():
@@ -96,6 +174,14 @@ class StreamlitAuth:
             st.link_button(login_label, authorization_url)
 
     def get_authorization_url(self):
+        """Generates the OAuth2 authorization URL for SweatStack.
+
+        This method constructs the URL users will be redirected to for OAuth2 authorization.
+        It includes the client ID, redirect URI, scopes, and other OAuth2 parameters.
+
+        Returns:
+            str: The complete authorization URL.
+        """
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
@@ -108,11 +194,24 @@ class StreamlitAuth:
         return authorization_url
 
     def _set_api_key(self, api_key):
+        """Sets the API key in instance and session state, then refreshes the client.
+
+        Args:
+            api_key: The API access token to set.
+        """
         self.api_key = api_key
         st.session_state["sweatstack_api_key"] = api_key
         self.client = Client(self.api_key, streamlit_compatible=True)
 
     def _exchange_token(self, code):
+        """Exchanges an authorization code for an access token.
+
+        Args:
+            code: The authorization code from the OAuth2 callback.
+
+        Raises:
+            Exception: If the token exchange fails.
+        """
         token_data = {
             "grant_type": "authorization_code",
             "client_id": self.client_id,

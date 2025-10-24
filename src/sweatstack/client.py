@@ -51,8 +51,16 @@ AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
 
 
-class LocalCacheMixin:
-    """Mixin for handling local filesystem caching of API responses."""
+class _LocalCacheMixin:
+    """Mixin for handling local filesystem caching of API responses.
+
+    Caching is controlled via environment variables:
+
+    - :envvar:`SWEATSTACK_LOCAL_CACHE` - Enable/disable caching
+    - :envvar:`SWEATSTACK_CACHE_DIR` - Custom cache directory location
+
+    Use :meth:`clear_cache` to remove all cached data for the current user.
+    """
 
     def _cache_enabled(self) -> bool:
         """Check if local caching is enabled."""
@@ -155,7 +163,7 @@ class LocalCacheMixin:
             self._log_cache_error("clear", e)
 
 
-class TokenStorageMixin:
+class _TokenStorageMixin:
     """Mixin for handling persistent token storage using platformdirs."""
 
     def _get_token_file_path(self) -> Path:
@@ -200,7 +208,9 @@ except ImportError:
     __version__ = "unknown"
 
 
-class OAuth2Mixin:
+class _OAuth2Mixin:
+    """OAuth2 authentication methods for the Client class."""
+
     def generate_pkce_params(self) -> tuple[str, str]:
         """Generate PKCE parameters for OAuth2 authorization.
 
@@ -436,7 +446,9 @@ class OAuth2Mixin:
         self.login(persist_api_key=persist_api_key)
 
 
-class DelegationMixin:
+class _DelegationMixin:
+    """User delegation methods for accessing data on behalf of other users."""
+
     def _validate_user(self, user: str | UserSummary):
         if isinstance(user, UserSummary):
             return user.id
@@ -639,7 +651,18 @@ class DelegationMixin:
         )
 
 
-class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
+class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixin):
+    """SweatStack API client for accessing activities, traces, and user data.
+
+    The Client handles authentication, API requests, and data retrieval from SweatStack.
+    You can initialize it with credentials or use authenticate()/login() for OAuth2.
+
+    Example:
+        client = Client()
+        client.authenticate()
+        activities = client.get_activities(limit=10)
+    """
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -647,6 +670,14 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
         url: str | None = None,
         streamlit_compatible: bool = False,
     ):
+        """Initialize a SweatStack client.
+
+        Args:
+            api_key: Optional API access token. If not provided, will check environment or storage.
+            refresh_token: Optional refresh token for automatic token renewal.
+            url: Optional SweatStack instance URL. Defaults to production.
+            streamlit_compatible: Set to True when using in Streamlit apps.
+        """
         self.api_key = api_key
         self.refresh_token = refresh_token
         self.url = url
@@ -684,6 +715,11 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
 
     @property
     def api_key(self) -> str:
+        """The current API access token.
+
+        Automatically loads from instance, environment (SWEATSTACK_API_KEY),
+        or persistent storage. Refreshes expired tokens automatically.
+        """
         if self._api_key is not None:
             value = self._api_key
         elif value := os.getenv("SWEATSTACK_API_KEY"):
@@ -703,6 +739,10 @@ class Client(OAuth2Mixin, DelegationMixin, TokenStorageMixin, LocalCacheMixin):
     
     @property
     def refresh_token(self) -> str:
+        """The refresh token used for automatic token renewal.
+
+        Loads from instance, environment (SWEATSTACK_REFRESH_TOKEN), or persistent storage.
+        """
         if self._refresh_token is not None:
             return self._refresh_token
         elif value := os.getenv("SWEATSTACK_REFRESH_TOKEN"):
