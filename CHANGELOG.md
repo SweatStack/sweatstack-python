@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [unreleased]
+
+### Added
+- Added a new `get_activity_awd()` method to the `ss.Client` class that allows for getting the accumulated work duration (AWD) data for a specific activity.
+- Added a new `get_longitudinal_awd()` method to the `ss.Client` class that allows for getting the AWD data for a specific date range.
+
+
 ## [0.54.0] - 2025-09-11
 
 ### Added

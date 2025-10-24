@@ -1082,6 +1082,41 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             df = pd.read_parquet(BytesIO(response.content))
             return self._postprocess_dataframe(df)
 
+    def get_activity_awd(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+    ) -> pd.DataFrame:
+        """Gets the accumulated work duration (AWD) for a specific activity.
+
+        This method retrieves accumulated work duration metrics for a specific activity.
+        AWD represents the total duration spent at each intensity level by sorting
+        activity data by intensity.
+
+        Args:
+            activity_id: The unique identifier of the activity.
+            metric: Optional metric type. Defaults to power for cycling, speed for other sports.
+                Can be either "power" or "speed".
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the AWD data.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        params = {}
+        if metric is not None:
+            params["metric"] = self._enums_to_strings([metric])[0]
+
+        with self._http_client() as client:
+            response = client.get(
+                url=f"/api/v1/activities/{activity_id}/accumulated-work-duration",
+                params=params,
+            )
+            self._raise_for_status(response)
+            df = pd.read_parquet(BytesIO(response.content))
+            return self._postprocess_dataframe(df)
+
     def get_latest_activity_data(
         self,
         sport: Sport | str | None = None,
@@ -1252,6 +1287,57 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             )
             self._raise_for_status(response)
 
+            df = pd.read_parquet(BytesIO(response.content))
+            return self._postprocess_dataframe(df)
+
+    def get_longitudinal_awd(
+        self,
+        *,
+        sport: Sport | str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        date: date | str | None = None,
+        window_days: int | None = None,
+    ) -> pd.DataFrame:
+        """Gets the longitudinal accumulated work duration (AWD) for a specific sport and metric.
+
+        This method retrieves AWD values across four intensity levels: max (highest daily AWD),
+        hard, medium, and easy (sustainable durations for respective workout intensities).
+
+        Note: This endpoint is in development and subject to change.
+
+        Args:
+            sport: The sport to get AWD data for. Can be a Sport enum or string ID.
+            metric: The metric to calculate AWD for. Must be either "power" or "speed".
+            date: Optional reference date for the AWD calculation. If provided,
+                the AWD will be calculated up to this date. Can be a date object
+                or string in ISO format.
+            window_days: Optional number of days to include in the calculation window
+                before the reference date. If None, all available data is used.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the longitudinal AWD data with intensity levels.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        sport = self._enums_to_strings([sport])[0]
+        metric = self._enums_to_strings([metric])[0]
+
+        params = {
+            "sport": sport,
+            "metric": metric,
+        }
+        if date is not None:
+            params["date"] = date
+        if window_days is not None:
+            params["window_days"] = window_days
+
+        with self._http_client() as client:
+            response = client.get(
+                url="/api/v1/activities/longitudinal-accumulated-work-duration",
+                params=params,
+            )
+            self._raise_for_status(response)
             df = pd.read_parquet(BytesIO(response.content))
             return self._postprocess_dataframe(df)
 
@@ -1661,6 +1747,7 @@ _generate_singleton_methods(
         "get_activity",
         "get_activity_data",
         "get_activity_mean_max",
+        "get_activity_awd",
 
         "get_latest_activity",
         "get_latest_activity_data",
@@ -1668,6 +1755,7 @@ _generate_singleton_methods(
 
         "get_longitudinal_data",
         "get_longitudinal_mean_max",
+        "get_longitudinal_awd",
 
         "get_traces",
         "create_trace",
