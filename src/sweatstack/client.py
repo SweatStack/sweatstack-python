@@ -669,6 +669,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         refresh_token: str | None = None,
         url: str | None = None,
         streamlit_compatible: bool = False,
+        client_id: str | None = None,
+        client_secret: str | None = None,
     ):
         """Initialize a SweatStack client.
 
@@ -682,18 +684,28 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self.refresh_token = refresh_token
         self.url = url
         self.streamlit_compatible = streamlit_compatible
+        self.client_id = client_id or OAUTH2_CLIENT_ID
+        self.client_secret = client_secret
 
     def _do_token_refresh(self, tz: str) -> str:
-        with self._http_client() as client:
-            response = client.post(
-                "/api/v1/oauth/token",
-                json={
-                    "grant_type": "refresh_token",
-                    "refresh_token": self.refresh_token,
-                    "tz": tz,
-                },
+        refresh_token = self.refresh_token
+        if refresh_token is None:
+            raise ValueError(
+                "Cannot refresh token: no refresh_token available. "
+                "If using Streamlit, ensure you're using StreamlitAuth which handles token refresh automatically."
             )
 
+        with self._http_client(skip_token_check=True) as client:
+            response = client.post(
+                "/api/v1/oauth/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "tz": tz,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                },
+            )
             self._raise_for_status(response)
             return response.json()["access_token"]
 
@@ -701,12 +713,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         try:
             body = decode_jwt_body(token)
             # Margin in seconds to account for time to token validation of the next request
-            TOKEN_EXPIRY_MARGIN = 5
+            TOKEN_EXPIRY_MARGIN = 5  # 5 seconds. Meaning that if the token is within 5 seconds of expiring, it will be refreshed.
             if body["exp"] - TOKEN_EXPIRY_MARGIN < time.time():
                 # Token is (almost) expired, refresh it
                 token = self._do_token_refresh(body["tz"])
                 self._api_key = token
-        except Exception:
+        except Exception as exception:
+            logging.warning("Exception checking token expiry: %s", exception)
             # If token can't be decoded, just return as-is
             # @TODO: This probably should be handled differently
             pass
@@ -776,16 +789,27 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self._url = value
     
     @contextlib.contextmanager
-    def _http_client(self):
+    def _http_client(self, skip_token_check: bool = False):
         """
         Creates an httpx client with the base URL and authentication headers pre-configured.
+
+        Args:
+            skip_token_check: If True, uses the raw _api_key without triggering token expiry check.
+                              This prevents recursive token refresh attempts.
         """
         headers = {
             "User-Agent": f"python-sweatstack/{__version__}",
         }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        
+        if skip_token_check:
+            # Use raw token without triggering expiry check (used during refresh)
+            token = self._api_key
+        else:
+            # Normal path: may trigger token refresh
+            token = self.api_key
+
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
         with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
             yield client
 

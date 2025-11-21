@@ -115,7 +115,14 @@ class StreamlitAuth:
         self.redirect_uri = redirect_uri or os.environ.get("SWEATSTACK_REDIRECT_URI")
 
         self.api_key = st.session_state.get("sweatstack_api_key")
-        self.client = Client(self.api_key, streamlit_compatible=True)
+        self.refresh_token = st.session_state.get("sweatstack_refresh_token")
+        self.client = Client(
+            self.api_key,
+            refresh_token=self.refresh_token,
+            streamlit_compatible=True,
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+        )
 
     def logout_button(self):
         """Displays a logout button and handles user logout.
@@ -125,8 +132,10 @@ class StreamlitAuth:
         """
         if st.button("Logout"):
             self.api_key = None
+            self.refresh_token = None
             self.client = Client(streamlit_compatible=True)
-            st.session_state.pop("sweatstack_api_key")
+            st.session_state.pop("sweatstack_api_key", None)
+            st.session_state.pop("sweatstack_refresh_token", None)
             st.rerun()
 
     def _running_on_streamlit_cloud(self):
@@ -193,15 +202,21 @@ class StreamlitAuth:
 
         return authorization_url
 
-    def _set_api_key(self, api_key):
-        """Sets the API key in instance and session state, then refreshes the client.
+    def _set_api_key(self, api_key, refresh_token=None):
+        """Sets the API key and refresh token in instance and session state, then refreshes the client.
 
         Args:
             api_key: The API access token to set.
+            refresh_token: The refresh token to set. If None, keeps the existing refresh token.
         """
         self.api_key = api_key
         st.session_state["sweatstack_api_key"] = api_key
-        self.client = Client(self.api_key, streamlit_compatible=True)
+
+        if refresh_token is not None:
+            self.refresh_token = refresh_token
+            st.session_state["sweatstack_refresh_token"] = refresh_token
+
+        self.client = Client(self.api_key, refresh_token=self.refresh_token, streamlit_compatible=True)
 
     def _exchange_token(self, code):
         """Exchanges an authorization code for an access token.
@@ -230,7 +245,10 @@ class StreamlitAuth:
             raise Exception(f"SweatStack Python login failed. Please try again.") from e
         token_response = response.json()
 
-        self._set_api_key(token_response.get("access_token"))
+        self._set_api_key(
+            token_response.get("access_token"),
+            refresh_token=token_response.get("refresh_token")
+        )
 
         return
 
