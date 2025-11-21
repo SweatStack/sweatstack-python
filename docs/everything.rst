@@ -163,9 +163,98 @@ Metric
     :undoc-members:
 
 sweatstack.openapi_schemas
-------------------
+--------------------------
 
-.. automodule:: sweatstack.openapi_schemas
+Core Data Models
+~~~~~~~~~~~~~~~~
+
+.. autoclass:: sweatstack.openapi_schemas.ActivitySummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.ActivityDetails
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.TraceDetails
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.Lap
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+Activity Summaries
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: sweatstack.openapi_schemas.ActivitySummarySummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.PowerSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.SpeedSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.DistanceSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.ElevationSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.HeartRateSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.TemperatureSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.CoreTemperatureSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.Smo2Summary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+User & Authentication
+~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: sweatstack.openapi_schemas.UserSummary
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.UserInfoResponse
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.TokenResponse
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: sweatstack.openapi_schemas.BackfillStatus
     :members:
     :undoc-members:
     :show-inheritance:
