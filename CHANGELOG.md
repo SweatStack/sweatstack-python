@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [unreleased]
+
+### Added
+- Added a new "proxy mode" to the `ss.StreamlitAuth` class that allows running Streamlit apps behind a proxy. The proxy mode is enabled by calling `ss.StreamlitAuth.behind_proxy()`. The proxy should handle the OAuth callback and token exchange and pass the access token to the app via the `X-SweatStack-Token` (configurable) header. The OAuth2 flow is still initiated by the `ss.StreamlitAuth` class.
+
+
 ## [0.56.0] - 2025-11-21
 
 ### Fixed

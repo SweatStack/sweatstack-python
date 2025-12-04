@@ -114,6 +114,9 @@ class StreamlitAuth:
 
         self.redirect_uri = redirect_uri or os.environ.get("SWEATSTACK_REDIRECT_URI")
 
+        self._proxy_mode = False
+        self._logout_uri = None
+
         self.api_key = st.session_state.get("sweatstack_api_key")
         self.refresh_token = st.session_state.get("sweatstack_refresh_token")
         self.client = Client(
@@ -124,13 +127,97 @@ class StreamlitAuth:
             client_secret=self.client_secret,
         )
 
+    @classmethod
+    def behind_proxy(
+        cls,
+        redirect_uri: str,
+        header_name: str = "X-SweatStack-Token",
+        logout_uri: str = "/logout",
+    ) -> "StreamlitAuth":
+        """Create a StreamlitAuth instance for use behind a proxy.
+
+        Use this method when your Streamlit app runs behind a proxy that handles
+        authentication and passes the SweatStack access token via an HTTP header.
+
+        Args:
+            redirect_uri: The URI to redirect to after login (used by proxy).
+            header_name: The HTTP header name containing the access token.
+                         Defaults to "X-SweatStack-Token".
+            logout_uri: The URI to redirect to for logout.
+                        Defaults to "/logout".
+
+        Returns:
+            StreamlitAuth: An instance configured for proxy mode.
+
+        Example:
+            auth = StreamlitAuth.behind_proxy(
+                redirect_uri="https://myapp.example.com/app",
+            )
+
+            if not auth.is_authenticated():
+                st.error("Missing authentication header")
+                st.stop()
+
+            activities = auth.client.get_activities()
+        """
+        instance = cls(redirect_uri=redirect_uri)
+        instance._proxy_mode = True
+        instance._logout_uri = logout_uri
+
+        token = st.context.headers.get(header_name)
+        if token:
+            instance.api_key = token
+            instance.client = Client(token, streamlit_compatible=True)
+
+        return instance
+
+    def _show_styled_link_button(self, label: str, url: str):
+        """Displays a styled link button with hover effects.
+
+        Args:
+            label: Text to display on the button.
+            url: The URL to navigate to when clicked.
+        """
+        st.markdown(
+            f"""
+            <style>
+                .animated-button {{
+                }}
+                .animated-button:hover {{
+                    transform: scale(1.05);
+                }}
+                .animated-button:active {{
+                    transform: scale(1);
+                }}
+            </style>
+            <a href="{url}"
+                target="_top"
+                class="animated-button"
+                style="display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #EF2B2D;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    border: none;
+                    transition: all 0.3s ease;
+                    cursor: pointer;"
+                >{label}</a>
+            """,
+            unsafe_allow_html=True,
+        )
+
     def logout_button(self):
         """Displays a logout button and handles user logout.
 
-        When clicked, this button clears the stored API key from session state,
-        resets the client, and triggers a Streamlit rerun to update the UI.
+        In standard mode, clears the stored API key from session state,
+        resets the client, and triggers a Streamlit rerun.
+
+        In proxy mode, displays a styled link that redirects to the logout URI.
         """
-        if st.button("Logout"):
+        if self._proxy_mode:
+            self._show_styled_link_button("Logout", self._logout_uri)
+        elif st.button("Logout"):
             self.api_key = None
             self.refresh_token = None
             self.client = Client(streamlit_compatible=True)
@@ -151,34 +238,7 @@ class StreamlitAuth:
         authorization_url = self.get_authorization_url()
         login_label = login_label or "Connect with SweatStack"
         if not self._running_on_streamlit_cloud():
-            st.markdown(
-                f"""
-                <style>
-                    .animated-button {{
-                    }}
-                    .animated-button:hover {{
-                        transform: scale(1.05);
-                    }}
-                    .animated-button:active {{
-                        transform: scale(1);
-                    }}
-                </style>
-                <a href="{authorization_url}"
-                    target="_top"
-                    class="animated-button"
-                    style="display: inline-block;
-                        padding: 10px 20px;
-                        background-color: #EF2B2D;
-                        color: white;
-                        text-decoration: none;
-                        border-radius: 6px;
-                        border: none;
-                        transition: all 0.3s ease;
-                        cursor: pointer;"
-                    >{login_label}</a>
-                """,
-                unsafe_allow_html=True,
-            )
+            self._show_styled_link_button(login_label, authorization_url)
         else:
             st.link_button(login_label, authorization_url)
 
@@ -275,12 +335,23 @@ class StreamlitAuth:
         to the Streamlit app with an authorization code, which is exchanged for an
         access token.
 
+        In proxy mode, this method only shows the login button if not authenticated.
+        The proxy handles the OAuth callback and token exchange.
+
         Args:
             login_label: The label to display on the login button. Defaults to "Login with SweatStack".
 
         Returns:
             None
         """
+        if self._proxy_mode:
+            if self.is_authenticated():
+                if show_logout:
+                    self.logout_button()
+            else:
+                self._show_sweatstack_login(login_label)
+            return
+
         if self.is_authenticated():
             if not st.session_state.get("sweatstack_auth_toast_shown", False):
                 st.toast("SweatStack authentication successful!", icon="✅")
