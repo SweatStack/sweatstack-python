@@ -122,6 +122,22 @@ Sport.is_sub_sport_of.__doc__ = _is_sub_sport_of.__doc__
 Sport.is_root_sport = _is_root_sport
 Sport.is_root_sport.__doc__ = _is_root_sport.__doc__
 
+@classmethod
+def _sport_missing(cls, value: str):
+    """Handle unknown sport values from newer API versions.
+
+    This allows the client to gracefully handle new sports added to the API
+    without requiring a client library update. Unknown values become dynamic
+    enum members that behave like regular Sport values.
+    """
+    pseudo_member = object.__new__(cls)
+    pseudo_member._name_ = value
+    pseudo_member._value_ = value
+    cls._value2member_map_[value] = pseudo_member  # Cache for future lookups
+    return pseudo_member
+
+
+Sport._missing_ = _sport_missing
 Sport.display_name = _display_name
 Sport.display_name.__doc__ = _display_name.__doc__
 
@@ -134,5 +150,34 @@ def _metric_display_name(metric: Metric) -> str:
     return metric.value.replace("_", " ")
 
 
+@classmethod
+def _metric_missing(cls, value: str):
+    """Handle unknown metric values from newer API versions.
+
+    This allows the client to gracefully handle new metrics added to the API
+    without requiring a client library update. Unknown values become dynamic
+    enum members that behave like regular Metric values.
+    """
+    pseudo_member = object.__new__(cls)
+    pseudo_member._name_ = value
+    pseudo_member._value_ = value
+    cls._value2member_map_[value] = pseudo_member  # Cache for future lookups
+    return pseudo_member
+
+
+Metric._missing_ = _metric_missing
 Metric.display_name = _metric_display_name
 Metric.display_name.__doc__ = _metric_display_name.__doc__
+
+
+@classmethod
+def _scope_missing(cls, value: str):
+    """Handle unknown scope values from newer API versions."""
+    pseudo_member = object.__new__(cls)
+    pseudo_member._name_ = value
+    pseudo_member._value_ = value
+    cls._value2member_map_[value] = pseudo_member
+    return pseudo_member
+
+
+Scope._missing_ = _scope_missing
