@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 from cryptography.fernet import Fernet
+from pydantic import SecretStr
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,9 @@ class FastAPIConfig:
     """Internal configuration for the FastAPI plugin."""
 
     client_id: str
-    client_secret: str
+    client_secret: SecretStr
     app_url: str
-    session_secret: str | list[str]
+    session_secret: SecretStr | list[SecretStr]
     scopes: list[str]
     cookie_secure: bool
     cookie_max_age: int
@@ -44,12 +45,19 @@ class FastAPIConfig:
 _config: FastAPIConfig | None = None
 
 
+def _to_secret(value: str | SecretStr) -> SecretStr:
+    """Convert a string to SecretStr if needed."""
+    if isinstance(value, SecretStr):
+        return value
+    return SecretStr(value)
+
+
 def configure(
     *,
     client_id: str | None = None,
-    client_secret: str | None = None,
+    client_secret: str | SecretStr | None = None,
     app_url: str | None = None,
-    session_secret: str | list[str] | None = None,
+    session_secret: str | SecretStr | list[str | SecretStr] | None = None,
     scopes: list[str] | None = None,
     cookie_secure: bool | None = None,
     cookie_max_age: int = 86400,
@@ -73,7 +81,7 @@ def configure(
         cookie_max_age: Session cookie lifetime in seconds. Defaults to 86400 (24h).
         auth_route_prefix: URL prefix for auth routes. Defaults to "/auth/sweatstack".
         redirect_unauthenticated: If True, redirect unauthenticated requests to login
-            with ?next= set to the current path. If False, return 401. Defaults to False.
+            with ?next= set to the current path. If False, return 401. Defaults to True.
     """
     global _config
 
@@ -102,10 +110,18 @@ def configure(
                 app_url,
             )
 
-    # Validate session secret(s)
-    secrets = [session_secret] if isinstance(session_secret, str) else session_secret
-    for secret in secrets:
-        _validate_fernet_key(secret)
+    # Validate and convert session secret(s)
+    secret_list = [session_secret] if isinstance(session_secret, (str, SecretStr)) else session_secret
+    for secret in secret_list:
+        secret_value = secret.get_secret_value() if isinstance(secret, SecretStr) else secret
+        _validate_fernet_key(secret_value)
+
+    # Convert to SecretStr
+    client_secret_obj = _to_secret(client_secret)
+    if isinstance(session_secret, (str, SecretStr)):
+        session_secret_obj: SecretStr | list[SecretStr] = _to_secret(session_secret)
+    else:
+        session_secret_obj = [_to_secret(s) for s in session_secret]
 
     if scopes is None:
         scopes = ["profile", "data:read"]
@@ -115,9 +131,9 @@ def configure(
 
     _config = FastAPIConfig(
         client_id=client_id,
-        client_secret=client_secret,
+        client_secret=client_secret_obj,
         app_url=app_url,
-        session_secret=session_secret,
+        session_secret=session_secret_obj,
         scopes=scopes,
         cookie_secure=cookie_secure,
         cookie_max_age=cookie_max_age,

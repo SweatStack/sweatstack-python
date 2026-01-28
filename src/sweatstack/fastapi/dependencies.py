@@ -139,7 +139,7 @@ def require_user(request: Request, response: Response) -> SweatStackUser:
         api_key=access_token,
         refresh_token=refresh_token,
         client_id=config.client_id,
-        client_secret=config.client_secret,
+        client_secret=config.client_secret,  # Client accepts SecretStr directly
     )
     return SweatStackUser(user_id=user_id, client=client)
 

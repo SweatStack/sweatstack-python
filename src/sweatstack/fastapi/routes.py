@@ -111,7 +111,7 @@ def create_router() -> APIRouter:
                 data={
                     "grant_type": "authorization_code",
                     "client_id": config.client_id,
-                    "client_secret": config.client_secret,
+                    "client_secret": config.client_secret.get_secret_value(),
                     "code": code,
                     "redirect_uri": config.redirect_uri,
                 },

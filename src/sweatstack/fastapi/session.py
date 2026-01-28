@@ -17,9 +17,9 @@ def _get_fernet_instances() -> list[Fernet]:
     """Get Fernet instances for encryption/decryption."""
     config = get_config()
     secrets = config.session_secret
-    if isinstance(secrets, str):
+    if not isinstance(secrets, list):
         secrets = [secrets]
-    return [Fernet(secret.encode() if isinstance(secret, str) else secret) for secret in secrets]
+    return [Fernet(secret.get_secret_value().encode()) for secret in secrets]
 
 
 def encrypt_session(data: dict[str, Any]) -> str:

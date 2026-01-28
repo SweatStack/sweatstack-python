@@ -19,6 +19,8 @@ from importlib.metadata import version
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Generator, get_type_hints, List, Literal
+
+from pydantic import SecretStr
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -86,7 +88,7 @@ class _LocalCacheMixin:
             raise ValueError("Not authenticated. Please call authenticate() or login() first.")
 
         try:
-            jwt_body = decode_jwt_body(self.api_key)
+            jwt_body = decode_jwt_body(self.api_key.get_secret_value())
             user_id = jwt_body.get("sub")
             if not user_id:
                 raise ValueError("Unable to extract user ID from token")
@@ -208,6 +210,15 @@ except ImportError:
     __version__ = "unknown"
 
 
+def _to_secret(value: str | SecretStr | None) -> SecretStr | None:
+    """Convert a string to SecretStr, or return None if value is None."""
+    if value is None:
+        return None
+    if isinstance(value, SecretStr):
+        return value
+    return SecretStr(value)
+
+
 class _OAuth2Mixin:
     """OAuth2 authentication methods for the Client class."""
 
@@ -317,7 +328,6 @@ class _OAuth2Mixin:
         token_response = TokenResponse.model_validate(response.json())
 
         self.api_key = token_response.access_token
-        self.jwt = token_response.access_token  # For backward compatibility
         self.refresh_token = token_response.refresh_token
 
         if persist:
@@ -400,13 +410,12 @@ class _OAuth2Mixin:
 
         if hasattr(server, "code"):
             try:
-                token_response = self.exchange_code_for_token(
+                self.exchange_code_for_token(
                     code=server.code,
                     client_id=OAUTH2_CLIENT_ID,
                     code_verifier=code_verifier,
                     persist=persist_api_key,
                 )
-                self.jwt = token_response.access_token
                 print("SweatStack Python login successful.")
             except Exception as e:
                 raise Exception("SweatStack Python login failed. Please try again.") from e
@@ -665,12 +674,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
     def __init__(
         self,
-        api_key: str | None = None,
-        refresh_token: str | None = None,
+        api_key: str | SecretStr | None = None,
+        refresh_token: str | SecretStr | None = None,
         url: str | None = None,
         streamlit_compatible: bool = False,
         client_id: str | None = None,
-        client_secret: str | None = None,
+        client_secret: str | SecretStr | None = None,
     ):
         """Initialize a SweatStack client.
 
@@ -679,16 +688,18 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             refresh_token: Optional refresh token for automatic token renewal.
             url: Optional SweatStack instance URL. Defaults to production.
             streamlit_compatible: Set to True when using in Streamlit apps.
+            client_id: Optional OAuth client ID. Defaults to the public client ID.
+            client_secret: Optional OAuth client secret for confidential clients.
         """
-        self.api_key = api_key
-        self.refresh_token = refresh_token
+        self._api_key: SecretStr | None = _to_secret(api_key)
+        self._refresh_token: SecretStr | None = _to_secret(refresh_token)
+        self._client_secret: SecretStr | None = _to_secret(client_secret)
         self.url = url
         self.streamlit_compatible = streamlit_compatible
         self.client_id = client_id or OAUTH2_CLIENT_ID
-        self.client_secret = client_secret
 
     def _do_token_refresh(self, tz: str) -> str:
-        refresh_token = self.refresh_token
+        refresh_token = self._refresh_token
         if refresh_token is None:
             raise ValueError(
                 "Cannot refresh token: no refresh_token available. "
@@ -700,10 +711,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 "/api/v1/oauth/token",
                 data={
                     "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
+                    "refresh_token": refresh_token.get_secret_value(),
                     "tz": tz,
                     "client_id": self.client_id,
-                    "client_secret": self.client_secret,
+                    "client_secret": self._client_secret.get_secret_value() if self._client_secret else None,
                 },
             )
             self._raise_for_status(response)
@@ -717,7 +728,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if body["exp"] - TOKEN_EXPIRY_MARGIN < time.time():
                 # Token is (almost) expired, refresh it
                 token = self._do_token_refresh(body["tz"])
-                self._api_key = token
+                self._api_key = SecretStr(token)
         except Exception as exception:
             logging.warning("Exception checking token expiry: %s", exception)
             # If token can't be decoded, just return as-is
@@ -727,14 +738,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         return token
 
     @property
-    def api_key(self) -> str:
+    def api_key(self) -> SecretStr | None:
         """The current API access token.
 
         Automatically loads from instance, environment (SWEATSTACK_API_KEY),
         or persistent storage. Refreshes expired tokens automatically.
+
+        Returns a SecretStr to prevent accidental logging of the token.
+        Use .get_secret_value() to get the actual token string.
         """
         if self._api_key is not None:
-            value = self._api_key
+            value = self._api_key.get_secret_value()
         elif value := os.getenv("SWEATSTACK_API_KEY"):
             pass
         else:
@@ -744,30 +758,56 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             # A non-authenticated client is a potentially valid use-case.
             return None
 
-        return self._check_token_expiry(value)
+        # Check expiry and potentially refresh (returns the string value)
+        checked_value = self._check_token_expiry(value)
+        return SecretStr(checked_value)
 
     @api_key.setter
-    def api_key(self, value: str):
-        self._api_key = value
+    def api_key(self, value: str | SecretStr | None):
+        self._api_key = _to_secret(value)
     
     @property
-    def refresh_token(self) -> str:
+    def refresh_token(self) -> SecretStr | None:
         """The refresh token used for automatic token renewal.
 
         Loads from instance, environment (SWEATSTACK_REFRESH_TOKEN), or persistent storage.
+
+        Returns a SecretStr to prevent accidental logging of the token.
+        Use .get_secret_value() to get the actual token string.
         """
         if self._refresh_token is not None:
             return self._refresh_token
         elif value := os.getenv("SWEATSTACK_REFRESH_TOKEN"):
-            pass
+            return SecretStr(value)
         else:
             _, value = self._load_persistent_tokens()
-
-        return value
+            return _to_secret(value)
 
     @refresh_token.setter
-    def refresh_token(self, value: str):
-        self._refresh_token = value
+    def refresh_token(self, value: str | SecretStr | None):
+        self._refresh_token = _to_secret(value)
+
+    @property
+    def client_secret(self) -> SecretStr | None:
+        """The OAuth client secret for confidential clients.
+
+        Returns a SecretStr to prevent accidental logging of the secret.
+        Use .get_secret_value() to get the actual secret string.
+        """
+        return self._client_secret
+
+    @client_secret.setter
+    def client_secret(self, value: str | SecretStr | None):
+        self._client_secret = _to_secret(value)
+
+    @property
+    def jwt(self) -> SecretStr | None:
+        """Alias for api_key (backward compatibility)."""
+        return self.api_key
+
+    @jwt.setter
+    def jwt(self, value: str | SecretStr | None):
+        self.api_key = value
 
     @property
     def url(self) -> str:
@@ -808,7 +848,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             token = self.api_key
 
         if token:
-            headers["Authorization"] = f"Bearer {token}"
+            headers["Authorization"] = f"Bearer {token.get_secret_value()}"
 
         with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
             yield client
@@ -1644,7 +1684,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             raise ValueError("Not authenticated. Please call authenticate() or login() first.")
 
         try:
-            jwt_body = decode_jwt_body(self.api_key)
+            jwt_body = decode_jwt_body(self.api_key.get_secret_value())
             user_id = jwt_body.get("sub")
             if not user_id:
                 raise ValueError("Unable to extract user ID from token")

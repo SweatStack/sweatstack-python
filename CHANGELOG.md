@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a FastAPI plugin.
 
 
+### Changed
+- Converted sensitive variables to SecretStr to prevent accidental logging.
+
+
 ## [0.59.0] - 2026-01-27
 
 ### Changed
