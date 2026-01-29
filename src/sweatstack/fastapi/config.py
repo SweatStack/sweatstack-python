@@ -156,7 +156,20 @@ def get_config() -> FastAPIConfig:
 
 
 class _Urls:
-    """URL helpers for the FastAPI plugin."""
+    """URL helpers for the FastAPI plugin.
+
+    Provides methods to generate URLs for authentication and user selection routes.
+    These URLs can be used in templates or redirects.
+
+    Example:
+        from sweatstack.fastapi import urls
+
+        # In a template:
+        <a href="{{ urls.login() }}">Login</a>
+        <form method="post" action="{{ urls.select_user(athlete.id) }}">
+            <button>View as {{ athlete.name }}</button>
+        </form>
+    """
 
     def login(self, next: str | None = None) -> str:
         """Get the login URL.
@@ -172,6 +185,39 @@ class _Urls:
     def logout(self) -> str:
         """Get the logout URL."""
         return f"{get_config().auth_route_prefix}/logout"
+
+    def select_user(self, user_id: str, next: str | None = None) -> str:
+        """Get the URL to switch to viewing as another user.
+
+        Args:
+            user_id: The ID of the user to view as.
+            next: Optional path to redirect to after switching.
+
+        Example:
+            <form method="post" action="{{ urls.select_user(athlete.id) }}">
+                <button>View as {{ athlete.name }}</button>
+            </form>
+        """
+        base = f"{get_config().auth_route_prefix}/select-user/{user_id}"
+        if next:
+            return f"{base}?next={quote(next)}"
+        return base
+
+    def select_self(self, next: str | None = None) -> str:
+        """Get the URL to switch back to viewing as yourself.
+
+        Args:
+            next: Optional path to redirect to after switching.
+
+        Example:
+            <form method="post" action="{{ urls.select_self() }}">
+                <button>Back to my view</button>
+            </form>
+        """
+        base = f"{get_config().auth_route_prefix}/select-self"
+        if next:
+            return f"{base}?next={quote(next)}"
+        return base
 
 
 urls = _Urls()
