@@ -1,12 +1,18 @@
 """Module-level configuration for the FastAPI plugin."""
 
+from __future__ import annotations
+
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    from .models import TokenStore
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +41,8 @@ class FastAPIConfig:
     cookie_max_age: int
     auth_route_prefix: str
     redirect_unauthenticated: bool
+    webhook_secret: SecretStr | None = None
+    token_store: TokenStore | None = None
 
     @property
     def redirect_uri(self) -> str:
@@ -63,6 +71,8 @@ def configure(
     cookie_max_age: int = 86400,
     auth_route_prefix: str = "/auth/sweatstack",
     redirect_unauthenticated: bool = True,
+    webhook_secret: str | SecretStr | None = None,
+    token_store: TokenStore | None = None,
 ) -> None:
     """Configure the FastAPI plugin.
 
@@ -82,6 +92,10 @@ def configure(
         auth_route_prefix: URL prefix for auth routes. Defaults to "/auth/sweatstack".
         redirect_unauthenticated: If True, redirect unauthenticated requests to login
             with ?next= set to the current path. If False, return 401. Defaults to True.
+        webhook_secret: Secret for verifying webhook signatures. Falls back to
+            SWEATSTACK_WEBHOOK_SECRET env var. Required if using WebhookPayload dependency.
+        token_store: TokenStore implementation for persisting tokens. Required if using
+            AuthenticatedUser in webhook handlers.
     """
     global _config
 
@@ -90,6 +104,7 @@ def configure(
     client_secret = client_secret or os.environ.get("SWEATSTACK_CLIENT_SECRET")
     app_url = app_url or os.environ.get("APP_URL")
     session_secret = session_secret or os.environ.get("SWEATSTACK_SESSION_SECRET")
+    webhook_secret = webhook_secret or os.environ.get("SWEATSTACK_WEBHOOK_SECRET")
 
     # Validate required parameters
     if not client_id:
@@ -129,6 +144,9 @@ def configure(
     # Normalize prefix (strip trailing slash)
     auth_route_prefix = auth_route_prefix.rstrip("/")
 
+    # Convert webhook_secret to SecretStr if provided
+    webhook_secret_obj = _to_secret(webhook_secret) if webhook_secret else None
+
     _config = FastAPIConfig(
         client_id=client_id,
         client_secret=client_secret_obj,
@@ -139,6 +157,8 @@ def configure(
         cookie_max_age=cookie_max_age,
         auth_route_prefix=auth_route_prefix,
         redirect_unauthenticated=redirect_unauthenticated,
+        webhook_secret=webhook_secret_obj,
+        token_store=token_store,
     )
 
 

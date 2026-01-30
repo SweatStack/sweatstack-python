@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Annotated, NoReturn
 from urllib.parse import quote
 
@@ -15,7 +16,7 @@ from ..client import Client
 from ..constants import DEFAULT_URL
 from ..utils import decode_jwt_body
 from .config import get_config
-from .models import SessionData, TokenSet, extract_user_id
+from .models import SessionData, StoredTokens, TokenSet, extract_user_id
 from .session import (
     SESSION_COOKIE_NAME,
     clear_session_cookie,
@@ -56,6 +57,18 @@ def _is_token_expiring(token: str) -> bool:
         return body["exp"] - TOKEN_EXPIRY_MARGIN < time.time()
     except Exception:
         return True
+
+
+def _extract_expiry(access_token: str) -> datetime:
+    """Extract expiry time from JWT access token."""
+    body = decode_jwt_body(access_token)
+    return datetime.fromtimestamp(body["exp"], tz=timezone.utc)
+
+
+def _extract_timezone(access_token: str) -> str:
+    """Extract timezone from JWT access token."""
+    body = decode_jwt_body(access_token)
+    return body.get("tz", "UTC")
 
 
 def _refresh_access_token(
@@ -147,6 +160,81 @@ def _get_session_or_none(request: Request) -> SessionData | None:
 
 
 # ---------------------------------------------------------------------------
+# Webhook user loading
+# ---------------------------------------------------------------------------
+
+
+def _load_user_from_store(user_id: str) -> SweatStackUser:
+    """Load user from TokenStore for webhook context.
+
+    Args:
+        user_id: The user ID from the webhook payload.
+
+    Returns:
+        SweatStackUser with tokens loaded from the store.
+
+    Raises:
+        WebhookTokenStoreError: If token_store is not configured.
+        WebhookUserNotFoundError: If no tokens exist for the user.
+        WebhookTokenRefreshError: If token refresh fails.
+    """
+    # Import here to avoid circular imports
+    from .webhooks import (
+        WebhookTokenRefreshError,
+        WebhookTokenStoreError,
+        WebhookUserNotFoundError,
+    )
+
+    config = get_config()
+
+    if not config.token_store:
+        raise WebhookTokenStoreError(
+            "TokenStore required when using AuthenticatedUser in webhook handlers. "
+            "Configure with: configure(token_store=...)"
+        )
+
+    tokens = config.token_store.load(user_id)
+    if not tokens:
+        raise WebhookUserNotFoundError(
+            f"No stored tokens for user {user_id}. "
+            "User may not have authenticated with your app yet."
+        )
+
+    # Check if tokens need refresh
+    if _is_token_expiring(tokens.access_token):
+        try:
+            new_access_token = _refresh_access_token(
+                refresh_token=tokens.refresh_token,
+                client_id=config.client_id,
+                client_secret=config.client_secret.get_secret_value(),
+                tz=_extract_timezone(tokens.access_token),
+            )
+
+            tokens = StoredTokens(
+                user_id=tokens.user_id,
+                access_token=new_access_token,
+                refresh_token=tokens.refresh_token,
+                expires_at=_extract_expiry(new_access_token),
+            )
+
+            config.token_store.save(tokens)
+
+        except Exception as e:
+            raise WebhookTokenRefreshError(
+                f"Failed to refresh tokens for user {user_id}: {e}"
+            ) from e
+
+    return SweatStackUser(
+        client=Client(
+            api_key=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+            client_id=config.client_id,
+            client_secret=config.client_secret,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # Core dependency logic
 # ---------------------------------------------------------------------------
 
@@ -182,6 +270,16 @@ def _create_user(
             session = SessionData(principal=session.principal, delegated=refreshed)
         else:
             session = SessionData(principal=refreshed, delegated=session.delegated)
+            # Persist refreshed principal tokens to store if configured
+            if config.token_store:
+                config.token_store.save(
+                    StoredTokens(
+                        user_id=refreshed.user_id,
+                        access_token=refreshed.access_token,
+                        refresh_token=refreshed.refresh_token,
+                        expires_at=_extract_expiry(refreshed.access_token),
+                    )
+                )
         tokens = refreshed
         set_session_cookie(response, session.to_dict())
 
@@ -200,11 +298,26 @@ def _create_user(
 # ---------------------------------------------------------------------------
 
 
-def _require_authenticated_user(
+async def _require_authenticated_user(
     request: Request,
     response: Response,
 ) -> SweatStackUser:
-    """Dependency: always returns principal user."""
+    """Dependency: always returns principal user.
+
+    In webhook context (detected by X-Sweatstack-Signature header),
+    loads the user from TokenStore instead of session cookie.
+    """
+    # Import here to avoid circular imports
+    from .webhooks import WebhookPayloadModel, _detect_webhook_context
+
+    # Check if this is a webhook request
+    webhook_context: WebhookPayloadModel | None = await _detect_webhook_context(request)
+
+    if webhook_context:
+        # Webhook context: load from TokenStore
+        return _load_user_from_store(webhook_context.user_id)
+
+    # Browser context: load from cookie
     session = _get_session_or_raise(request)
     return _create_user(session, response, use_delegated=False)
 

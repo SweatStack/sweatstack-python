@@ -15,7 +15,8 @@ from fastapi.responses import RedirectResponse
 from ..constants import DEFAULT_URL
 from ..utils import decode_jwt_body
 from .config import get_config
-from .models import SessionData, TokenSet
+from .dependencies import _extract_expiry
+from .models import SessionData, StoredTokens, TokenSet
 from .session import (
     SESSION_COOKIE_NAME,
     STATE_COOKIE_NAME,
@@ -166,28 +167,34 @@ def create_router() -> APIRouter:
         code: str | None = None,
         state: str | None = None,
         error: str | None = None,
+        error_description: str | None = None,
     ) -> Response:
         """Handle OAuth callback from SweatStack."""
         config = get_config()
 
+        def error_redirect(error_code: str) -> Response:
+            """Redirect to / with error code in query params."""
+            response = RedirectResponse(url=f"/?auth_error={error_code}", status_code=302)
+            clear_state_cookie(response)
+            return response
+
         # Get state cookie
         state_cookie = request.cookies.get(STATE_COOKIE_NAME)
 
-        # Clear state cookie regardless of outcome
-        response = RedirectResponse(url="/", status_code=302)
-        clear_state_cookie(response)
-
-        # Handle OAuth errors
+        # Handle OAuth errors from provider
         if error:
-            return response
+            logger.warning("OAuth error from provider: %s - %s", error, error_description)
+            return error_redirect(error)
 
         # Verify state (CSRF protection)
         if not state or not state_cookie or state != state_cookie:
-            return Response(content="Invalid state", status_code=400)
+            logger.warning("OAuth state mismatch (possible CSRF)")
+            return error_redirect("invalid_state")
 
         # Exchange code for tokens
         if not code:
-            return Response(content="Missing authorization code", status_code=400)
+            logger.warning("OAuth callback missing authorization code")
+            return error_redirect("missing_code")
 
         try:
             token_response = httpx.post(
@@ -202,24 +209,31 @@ def create_router() -> APIRouter:
             )
             token_response.raise_for_status()
             tokens = token_response.json()
-        except Exception:
-            return response  # Redirect to / on token exchange failure
+        except httpx.HTTPStatusError as e:
+            logger.error("Token exchange failed: %s - %s", e.response.status_code, e.response.text)
+            return error_redirect("token_exchange_failed")
+        except Exception as e:
+            logger.error("Token exchange error: %s", e)
+            return error_redirect("token_exchange_failed")
 
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")
 
         if not access_token:
-            return response
+            logger.error("Token response missing access_token")
+            return error_redirect("invalid_token_response")
 
         # Extract user_id from JWT
         try:
             token_body = decode_jwt_body(access_token)
             user_id = token_body.get("sub")
-        except Exception:
-            return response
+        except Exception as e:
+            logger.error("Failed to decode access token: %s", e)
+            return error_redirect("invalid_token")
 
         if not user_id:
-            return response
+            logger.error("Access token missing 'sub' claim")
+            return error_redirect("invalid_token")
 
         # Create session
         session_data = {
@@ -227,6 +241,17 @@ def create_router() -> APIRouter:
             "refresh_token": refresh_token,
             "user_id": user_id,
         }
+
+        # Persist tokens to store if configured
+        if config.token_store:
+            config.token_store.save(
+                StoredTokens(
+                    user_id=user_id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_at=_extract_expiry(access_token),
+                )
+            )
 
         # Determine redirect URL from state
         state_data = parse_state(state)
@@ -238,8 +263,16 @@ def create_router() -> APIRouter:
         return response
 
     @router.post("/logout")
-    def logout() -> Response:
+    def logout(request: Request) -> Response:
         """Clear session and redirect to /."""
+        config = get_config()
+
+        # Delete tokens from store if configured
+        if config.token_store:
+            session = _get_session_data(request)
+            if session:
+                config.token_store.delete(session.principal.user_id)
+
         response = RedirectResponse(url="/", status_code=302)
         clear_session_cookie(response)
         return response
@@ -298,6 +331,39 @@ def create_router() -> APIRouter:
     return router
 
 
+def _warn_if_webhook_misconfigured(app: FastAPI) -> None:
+    """Log error if WebhookPayload is used but webhook_secret not configured."""
+    config = get_config()
+
+    if config.webhook_secret:
+        return  # Properly configured
+
+    # Import here to avoid circular imports
+    from .webhooks import _require_webhook_payload
+
+    # Check if any route uses WebhookPayload dependency
+    for route in app.routes:
+        if not hasattr(route, "dependant"):
+            continue
+
+        if _uses_dependency(route.dependant, _require_webhook_payload):
+            raise RuntimeError(
+                f"Route '{route.path}' uses WebhookPayload but webhook_secret is not configured. "
+                "Webhook signature verification will fail at runtime. "
+                "Configure with the SWEATSTACK_WEBHOOK_SECRET env variable or configure(webhook_secret='whsec_...')"
+            )
+
+
+def _uses_dependency(dependant, target_callable) -> bool:
+    """Check if a dependency tree includes the target callable."""
+    for dep in dependant.dependencies:
+        if dep.call is target_callable:
+            return True
+        if hasattr(dep, "dependant") and _uses_dependency(dep.dependant, target_callable):
+            return True
+    return False
+
+
 def instrument(app: FastAPI) -> None:
     """Add SweatStack auth routes to a FastAPI application.
 
@@ -310,3 +376,8 @@ def instrument(app: FastAPI) -> None:
     config = get_config()  # This will raise if not configured
     router = create_router()
     app.include_router(router, prefix=config.auth_route_prefix)
+
+    # Validate webhook configuration at startup (after all routes are registered)
+    @app.on_event("startup")
+    def _check_webhook_config():
+        _warn_if_webhook_misconfigured(app)

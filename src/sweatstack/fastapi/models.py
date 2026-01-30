@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import SecretStr
 
@@ -107,3 +108,68 @@ def extract_user_id(jwt_token: str | SecretStr) -> str:
         return user_id
     except (IndexError, KeyError) as e:
         raise ValueError(f"Malformed JWT token: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Token storage for webhook support
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class StoredTokens:
+    """Token data for persistent storage.
+
+    Used by TokenStore implementations to persist tokens for webhook handling.
+    The library does NOT encrypt tokens - see Security section in documentation.
+
+    Attributes:
+        user_id: The SweatStack user ID.
+        access_token: The OAuth access token.
+        refresh_token: The OAuth refresh token.
+        expires_at: When the access token expires.
+    """
+
+    user_id: str
+    access_token: str
+    refresh_token: str
+    expires_at: datetime
+
+    def __repr__(self) -> str:
+        """Hide sensitive data in logs."""
+        return (
+            f"StoredTokens(user_id={self.user_id!r}, "
+            f"access_token='***', refresh_token='***', "
+            f"expires_at={self.expires_at!r})"
+        )
+
+
+@runtime_checkable
+class TokenStore(Protocol):
+    """Protocol for persisting OAuth tokens.
+
+    Implement this interface to enable AuthenticatedUser in webhook handlers.
+    The library calls these methods automatically:
+    - save(): After OAuth callback and token refresh
+    - load(): When handling webhooks
+    - delete(): On logout
+
+    Thread Safety:
+        All methods may be called concurrently. Your implementation must be thread-safe.
+
+    Error Handling:
+        - save(): Use upsert semantics (don't raise on duplicate user_id)
+        - load(): Return None if user not found (don't raise)
+        - delete(): Be idempotent (don't raise if user doesn't exist)
+    """
+
+    def save(self, tokens: StoredTokens) -> None:
+        """Save or update tokens for a user."""
+        ...
+
+    def load(self, user_id: str) -> StoredTokens | None:
+        """Load tokens for a user. Returns None if not found."""
+        ...
+
+    def delete(self, user_id: str) -> None:
+        """Delete tokens for a user. Idempotent."""
+        ...
