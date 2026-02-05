@@ -1,8 +1,8 @@
-import sweatstack as ss
+import sweatstack
 
 
 print("\n")
 print(">>>>>>>>>> Sweat Stack Initialization <<<<<<<<<")
 print("Initializing....")
 
-ss.authenticate()
+sweatstack.authenticate()

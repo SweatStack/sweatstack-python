@@ -3,7 +3,7 @@ import os
 import shutil
 from pathlib import Path
 
-import sweatstack as ss
+import sweatstack
 from jupyterlab.labapp import LabApp
 
 
@@ -23,7 +23,7 @@ def start_jupyterlab_with_oauth():
         if not target_dir.exists():
             shutil.copytree(examples_dir, target_dir)
 
-    ss.authenticate()
+    sweatstack.authenticate()
 
 
     return LabApp.launch_instance(argv=remaining_args)
