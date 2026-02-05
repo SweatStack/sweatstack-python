@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [unreleased]
+
+### Fixed
+- Fixed token refresh failing when tokens were loaded from persistent storage.
+- Fixed refreshed tokens not being persisted to storage.
+
+### Changed
+- Simplified `authenticate()` signature: `force_login` → `force`, `persist_api_key` → `persist`.
+- Made `login()` private. Use `authenticate(force=True)` instead.
+
+### Added
+- Added `TokenRefreshError` exception for explicit refresh failure handling.
+
+
 ## [0.62.0] - 2026-02-02
 
 ### Added

@@ -34,6 +34,23 @@ from .schemas import (
 )
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
+logger = logging.getLogger(__name__)
+
+# Refresh tokens this many seconds before they expire to avoid race conditions
+TOKEN_EXPIRY_MARGIN_SECONDS = 5
+
+
+class TokenRefreshError(Exception):
+    """Raised when automatic token refresh fails.
+
+    This can happen when:
+    - The refresh token is missing
+    - The refresh token has expired
+    - The token refresh request fails
+    """
+
+    pass
+
 
 AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 <html>
@@ -85,7 +102,7 @@ class _LocalCacheMixin:
     def _get_user_id_from_token(self) -> str:
         """Extract user ID from the JWT token."""
         if not self.api_key:
-            raise ValueError("Not authenticated. Please call authenticate() or login() first.")
+            raise ValueError("Not authenticated. Please call authenticate() first.")
 
         try:
             jwt_body = decode_jwt_body(self.api_key.get_secret_value())
@@ -335,30 +352,14 @@ class _OAuth2Mixin:
 
         return token_response
 
-    def login(self, persist_api_key: bool = True):
-        """Initiates the OAuth2 login flow for SweatStack authentication.
+    def _open_browser_oauth(self, persist: bool = True) -> None:
+        """Open browser for OAuth authentication flow.
 
-        This method starts a local HTTP server to receive the OAuth2 callback,
-        opens a browser window for the user to authenticate with SweatStack,
-        and exchanges the authorization code for an access token.
-
-        The method uses PKCE (Proof Key for Code Exchange) for enhanced security
-        during the OAuth2 authorization code flow.
+        Starts a local HTTP server to receive the OAuth callback, opens a browser
+        for user authentication, and exchanges the authorization code for tokens.
 
         Args:
-            persist_api_key: Whether to save the API key to persistent storage for future use.
-                Defaults to True.
-
-        Returns:
-            None
-
-        Raises:
-            Exception: If the authentication process times out or fails.
-
-        Note:
-            This method requires a working internet connection and the ability
-            to open a browser window. It will also temporarily open a local HTTP
-            server on a random port between 8000-9000.
+            persist: Save tokens to persistent storage after successful auth.
         """
         class AuthHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
@@ -414,45 +415,47 @@ class _OAuth2Mixin:
                     code=server.code,
                     client_id=OAUTH2_CLIENT_ID,
                     code_verifier=code_verifier,
-                    persist=persist_api_key,
+                    persist=persist,
                 )
-                print("SweatStack Python login successful.")
+                print("SweatStack Python authentication successful.")
             except Exception as e:
-                raise Exception("SweatStack Python login failed. Please try again.") from e
+                raise Exception("SweatStack Python authentication failed. Please try again.") from e
         else:
-            raise Exception("SweatStack Python login failed. Please try again.")
+            raise Exception("SweatStack Python authentication failed. Please try again.")
 
-    def authenticate(self, *, persist_api_key: bool = True, force_login: bool = False) -> None:
-        """Ensures the client is authenticated, either using existing tokens or by initiating login.
+    def authenticate(self, force: bool = False, persist: bool = True) -> None:
+        """Ensure the client is authenticated.
 
-        This method checks for authentication in the following order:
-        1. Current instance tokens (if already set)
-        2. Environment variables (SWEATSTACK_API_KEY, SWEATSTACK_REFRESH_TOKEN)
-        3. Persistent storage tokens
-        4. If none found or force_login is True, initiates OAuth2 login flow
+        Checks for existing tokens in order: instance, environment variables,
+        persistent storage. Opens browser for OAuth only if no tokens are found
+        or if force=True.
+
+        For headless environments, set SWEATSTACK_API_KEY and SWEATSTACK_REFRESH_TOKEN
+        environment variables instead of calling this method.
 
         Args:
-            persist_api_key: Whether to save tokens to persistent storage after login.
-                Defaults to True.
-            force_login: Whether to force a new login even if tokens are available.
-                Defaults to False.
-
-        Returns:
-            None
+            force: Re-authenticate even if tokens exist.
+            persist: Save new tokens to persistent storage (default: True).
 
         Raises:
-            Exception: If the authentication process fails.
+            Exception: If the browser-based authentication fails.
+
+        Example:
+            client = Client()
+            client.authenticate()  # Opens browser only if needed
+
+            # Force fresh authentication
+            client.authenticate(force=True)
+
+            # Headless: use env vars, don't call authenticate()
+            # SWEATSTACK_API_KEY=... SWEATSTACK_REFRESH_TOKEN=... python script.py
         """
-        if force_login:
-            self.login(persist_api_key=persist_api_key)
-            return
+        if not force:
+            access_token, _ = self._load_token_pair()
+            if access_token is not None:
+                return
 
-        # Check if we already have valid tokens
-        if self.api_key:
-            return
-
-        # If no tokens available, initiate login
-        self.login(persist_api_key=persist_api_key)
+        self._open_browser_oauth(persist=persist)
 
 
 class _DelegationMixin:
@@ -698,69 +701,136 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self.streamlit_compatible = streamlit_compatible
         self.client_id = client_id or OAUTH2_CLIENT_ID
 
-    def _do_token_refresh(self, tz: str) -> str:
-        refresh_token = self._refresh_token
-        if refresh_token is None:
-            raise ValueError(
-                "Cannot refresh token: no refresh_token available. "
-                "If using Streamlit, ensure you're using StreamlitAuth which handles token refresh automatically."
-            )
+    def _load_token_pair(self) -> tuple[str | None, str | None]:
+        """Load access and refresh tokens from available sources.
 
+        Checks in order: instance, environment, persistent storage.
+
+        Returns:
+            Tuple of (access_token, refresh_token). Either or both may be None.
+        """
+        access_token: str | None = None
+        refresh_token: str | None = None
+
+        # Instance tokens take priority
+        if self._api_key is not None:
+            access_token = self._api_key.get_secret_value()
+        if self._refresh_token is not None:
+            refresh_token = self._refresh_token.get_secret_value()
+
+        # Fill gaps from environment variables
+        if access_token is None:
+            access_token = os.getenv("SWEATSTACK_API_KEY")
+        if refresh_token is None:
+            refresh_token = os.getenv("SWEATSTACK_REFRESH_TOKEN")
+
+        # Fill remaining gaps from persistent storage
+        if access_token is None or refresh_token is None:
+            stored_access, stored_refresh = self._load_persistent_tokens()
+            if access_token is None:
+                access_token = stored_access
+            if refresh_token is None:
+                refresh_token = stored_refresh
+
+        return access_token, refresh_token
+
+    def _do_token_refresh(self, tz: str, refresh_token: str) -> str:
+        """Exchange refresh token for a new access token.
+
+        Args:
+            tz: Timezone from the expired token's JWT claims.
+            refresh_token: The refresh token to use.
+
+        Returns:
+            New access token string.
+
+        Raises:
+            TokenRefreshError: If the refresh request fails.
+        """
         with self._http_client(skip_token_check=True) as client:
             response = client.post(
                 "/api/v1/oauth/token",
                 data={
                     "grant_type": "refresh_token",
-                    "refresh_token": refresh_token.get_secret_value(),
+                    "refresh_token": refresh_token,
                     "tz": tz,
                     "client_id": self.client_id,
                     "client_secret": self._client_secret.get_secret_value() if self._client_secret else None,
                 },
             )
-            self._raise_for_status(response)
+
+            try:
+                self._raise_for_status(response)
+            except httpx.HTTPStatusError as e:
+                raise TokenRefreshError(f"Token refresh request failed: {e}") from e
+
             return response.json()["access_token"]
 
-    def _check_token_expiry(self, token: str) -> str:
-        try:
-            body = decode_jwt_body(token)
-            # Margin in seconds to account for time to token validation of the next request
-            TOKEN_EXPIRY_MARGIN = 5  # 5 seconds. Meaning that if the token is within 5 seconds of expiring, it will be refreshed.
-            if body["exp"] - TOKEN_EXPIRY_MARGIN < time.time():
-                # Token is (almost) expired, refresh it
-                token = self._do_token_refresh(body["tz"])
-                self._api_key = SecretStr(token)
-        except Exception as exception:
-            logging.warning("Exception checking token expiry: %s", exception)
-            # If token can't be decoded, just return as-is
-            # @TODO: This probably should be handled differently
-            pass
+    def _refresh_if_expired(self, access_token: str, refresh_token: str | None) -> str:
+        """Check token expiry and refresh if needed.
 
-        return token
+        Args:
+            access_token: The current access token (JWT).
+            refresh_token: The refresh token, if available.
+
+        Returns:
+            Valid access token (original if not expired, refreshed otherwise).
+
+        Raises:
+            TokenRefreshError: If the token is expired and refresh fails.
+        """
+        try:
+            payload = decode_jwt_body(access_token)
+        except Exception as e:
+            raise TokenRefreshError(f"Invalid access token: {e}") from e
+
+        expires_at = payload.get("exp")
+        if expires_at is None:
+            raise TokenRefreshError("Access token missing 'exp' claim")
+
+        is_expired = expires_at - TOKEN_EXPIRY_MARGIN_SECONDS < time.time()
+        if not is_expired:
+            return access_token
+
+        # Token needs refresh
+        if refresh_token is None:
+            raise TokenRefreshError(
+                "Access token expired but no refresh token available. "
+                "Call client.authenticate(force=True) to re-authenticate."
+            )
+
+        tz = payload.get("tz", "UTC")
+        new_access_token = self._do_token_refresh(tz, refresh_token)
+
+        # Update instance state
+        self._api_key = SecretStr(new_access_token)
+
+        # Persist refreshed token
+        self._save_tokens(new_access_token, refresh_token)
+        logger.debug("Refreshed and persisted access token")
+
+        return new_access_token
 
     @property
     def api_key(self) -> SecretStr | None:
         """The current API access token.
 
-        Automatically loads from instance, environment (SWEATSTACK_API_KEY),
-        or persistent storage. Refreshes expired tokens automatically.
+        Loads from instance, environment (SWEATSTACK_API_KEY), or persistent
+        storage. Automatically refreshes expired tokens.
 
-        Returns a SecretStr to prevent accidental logging of the token.
-        Use .get_secret_value() to get the actual token string.
+        Returns:
+            SecretStr containing the access token, or None if not authenticated.
+
+        Raises:
+            TokenRefreshError: If the token is expired and refresh fails.
         """
-        if self._api_key is not None:
-            value = self._api_key.get_secret_value()
-        elif value := os.getenv("SWEATSTACK_API_KEY"):
-            pass
-        else:
-            value, _ = self._load_persistent_tokens()
+        access_token, refresh_token = self._load_token_pair()
 
-        if value is None:
-            # A non-authenticated client is a potentially valid use-case.
+        if access_token is None:
             return None
 
-        # Check expiry and potentially refresh (returns the string value)
-        checked_value = self._check_token_expiry(value)
-        return SecretStr(checked_value)
+        valid_token = self._refresh_if_expired(access_token, refresh_token)
+        return SecretStr(valid_token)
 
     @api_key.setter
     def api_key(self, value: str | SecretStr | None):
@@ -1792,7 +1862,6 @@ def _generate_singleton_methods(method_names: List[str]) -> None:
 
 _generate_singleton_methods(
     [
-        "login",
         "authenticate",
         "get_authorization_url",
         "exchange_code_for_token",
