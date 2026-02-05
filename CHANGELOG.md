@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed token refresh failing when tokens were loaded from persistent storage.
 - Fixed refreshed tokens not being persisted to storage.
+- Fixed `switch_user()` and `get_user()` not recognizing ULID format for user IDs.
 
 ### Changed
 - Simplified `authenticate()` signature: `force_login` → `force`, `persist_api_key` → `persist`.

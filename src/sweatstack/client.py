@@ -481,6 +481,8 @@ class _DelegationMixin:
     def _is_user_id(self, user: str) -> bool:
         """Check if a string is a valid user ID.
 
+        Supports both legacy 16-character IDs and 26-character ULIDs.
+
         Args:
             user: The string to check.
 
@@ -490,7 +492,7 @@ class _DelegationMixin:
         if not isinstance(user, str):
             return False
 
-        return len(user) == 16 and user.isalnum()
+        return len(user) in (16, 26) and user.isalnum()
 
     def _get_user_by_name(self, name: str) -> UserSummary:
         """Get a user by name.
