@@ -2,9 +2,96 @@ import base64
 import json
 from enum import Enum
 
+import numpy as np
 import pandas as pd
 
 from .schemas import Sport
+
+
+def convert_to_standard_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert optimized dtypes to standard dtypes for ease of use.
+
+    The SweatStack API returns parquet files with space-optimized dtypes (Int16,
+    float16, datetime64[s], etc.) to reduce bandwidth. While efficient for transfer,
+    these types can cause friction in analysis workflows:
+
+    - Int16 overflows on cumulative operations (cumsum fails at 32,767)
+    - float16 cannot be used as a pandas index
+    - float16 has limited precision (~3 decimal digits)
+    - Some numpy/scipy/sklearn functions expect float64
+
+    This function converts all numeric columns to float64 and all datetime/timedelta
+    columns to nanosecond precision, giving you DataFrames that "just work" with the
+    entire Python data ecosystem.
+
+    The function is:
+    - **Idempotent**: Safe to call multiple times; no-op on already-standard dtypes
+    - **Backwards compatible**: Works whether API returns optimized or standard dtypes
+    - **Robust**: Handles any column via dtype detection, not column names
+
+    Args:
+        df: DataFrame with any dtypes
+
+    Returns:
+        DataFrame with standard dtypes (float64, datetime64[ns], timedelta64[ns])
+
+    Example:
+        >>> df = client.get_activity_data("abc123")
+        >>> df["power"].dtype  # Already converted
+        dtype('float64')
+        >>> df["power"].cumsum()  # No overflow issues
+    """
+    df = df.copy()
+
+    for col in df.columns:
+        dtype = df[col].dtype
+
+        # Integer types (Int8, Int16, int32, etc.) → float64
+        # Supports NaN and prevents overflow on cumulative operations
+        if pd.api.types.is_integer_dtype(dtype):
+            df[col] = df[col].astype(np.float64)
+
+        # Float16/float32 → float64
+        # Full precision, can be used as index, compatible with all libraries
+        elif pd.api.types.is_float_dtype(dtype) and dtype != np.float64:
+            df[col] = df[col].astype(np.float64)
+
+        # Timedelta columns → nanosecond precision
+        elif pd.api.types.is_timedelta64_dtype(dtype):
+            if df[col].dt.unit != "ns":
+                df[col] = df[col].astype("timedelta64[ns]")
+
+        # Datetime columns → nanosecond precision (preserve timezone)
+        elif pd.api.types.is_datetime64_any_dtype(dtype):
+            if df[col].dt.unit != "ns":
+                if df[col].dt.tz is not None:
+                    df[col] = df[col].dt.as_unit("ns")
+                else:
+                    df[col] = df[col].astype("datetime64[ns]")
+
+    # Handle DatetimeIndex
+    if isinstance(df.index, pd.DatetimeIndex):
+        if df.index.unit != "ns":
+            df.index = df.index.as_unit("ns")
+
+    # Handle TimedeltaIndex
+    elif isinstance(df.index, pd.TimedeltaIndex):
+        if df.index.unit != "ns":
+            df.index = df.index.as_unit("ns")
+
+    # Handle MultiIndex with datetime/timedelta levels
+    elif isinstance(df.index, pd.MultiIndex):
+        new_levels = list(df.index.levels)
+        changed = False
+        for i, level in enumerate(new_levels):
+            if isinstance(level, (pd.DatetimeIndex, pd.TimedeltaIndex)):
+                if level.unit != "ns":
+                    new_levels[i] = level.as_unit("ns")
+                    changed = True
+        if changed:
+            df.index = df.index.set_levels(new_levels)
+
+    return df
 
 
 def decode_jwt_body(jwt: str) -> dict:

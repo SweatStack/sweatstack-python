@@ -32,7 +32,7 @@ from .schemas import (
     ActivityDetails, ActivitySummary, BackfillStatus, Metric, Sport,
     TokenResponse, TraceDetails, UserInfoResponse, UserSummary
 )
-from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
+from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
 
@@ -1005,10 +1005,16 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params["offset"] += default_limit
 
     def _postprocess_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Post-process DataFrame returned from API.
+
+        Converts optimized dtypes (Int16, float16, etc.) to standard dtypes
+        (float64) for ease of use, and optionally converts enums to strings
+        for Streamlit compatibility.
+        """
+        df = convert_to_standard_dtypes(df)
         if self.streamlit_compatible:
-            return make_dataframe_streamlit_compatible(df)
-        else:
-            return df
+            df = make_dataframe_streamlit_compatible(df)
+        return df
 
     def _create_empty_dataframe_from_model(self, model_class, normalize_columns: list[str] | None = None) -> pd.DataFrame:
         """Create an empty DataFrame with proper schema from a Pydantic model.
