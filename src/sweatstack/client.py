@@ -259,7 +259,7 @@ class _OAuth2Mixin:
         redirect_uri: str,
         code_challenge: str | None = None,
         scope: str = "data:read data:write profile",
-        prompt: str = "none",
+        prompt: str | None = "none",
         state: str | None = None,
     ) -> str:
         """Generate OAuth2 authorization URL.
@@ -269,7 +269,7 @@ class _OAuth2Mixin:
             redirect_uri: Redirect URI for OAuth callback
             code_challenge: Optional PKCE code challenge for enhanced security
             scope: OAuth2 scopes (default: "data:read data:write profile")
-            prompt: OAuth2 prompt parameter (default: "none")
+            prompt: OAuth2 prompt parameter (default: "none"). Set to None to omit.
             state: Optional state parameter for CSRF protection
 
         Returns:
@@ -279,8 +279,9 @@ class _OAuth2Mixin:
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "scope": scope,
-            "prompt": prompt,
         }
+        if prompt is not None:
+            params["prompt"] = prompt
         if code_challenge:
             params["code_challenge"] = code_challenge
             params["code_challenge_method"] = "S256"
@@ -393,8 +394,8 @@ class _OAuth2Mixin:
             client_id=OAUTH2_CLIENT_ID,
             redirect_uri=redirect_uri,
             code_challenge=code_challenge,
-            scope="data:read data:write profile",
-            prompt="none",
+            scope="data:read data:write profile offline_access",
+            prompt=None,
         )
 
         webbrowser.open(authorization_url)
