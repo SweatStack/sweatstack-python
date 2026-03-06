@@ -167,7 +167,7 @@ class StreamlitAuth:
         token = st.context.headers.get(header_name)
         if token:
             instance.api_key = token
-            instance.client = Client(token, streamlit_compatible=True)
+            instance.client = Client(token, streamlit_compatible=True, skip_token_expiry_check=True)
 
         return instance
 

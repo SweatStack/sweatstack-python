@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Fixed
+- Fixed `TokenRefreshError` when using `StreamlitAuth.behind_proxy()` with an expired access token. The SDK no longer checks token expiry in proxy mode, since token lifecycle is managed by the proxy.
+
+### Added
+- Added `skip_token_expiry_check` parameter to `Client` for cases where token lifecycle is managed externally.
+
+
 ## [0.65.0] - 2026-02-12
 
 ### Added

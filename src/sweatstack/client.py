@@ -686,6 +686,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         streamlit_compatible: bool = False,
         client_id: str | None = None,
         client_secret: str | SecretStr | None = None,
+        skip_token_expiry_check: bool = False,
     ):
         """Initialize a SweatStack client.
 
@@ -696,12 +697,15 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             streamlit_compatible: Set to True when using in Streamlit apps.
             client_id: Optional OAuth client ID. Defaults to the public client ID.
             client_secret: Optional OAuth client secret for confidential clients.
+            skip_token_expiry_check: If True, skip JWT expiry validation and use the token as-is.
+                Use this when token lifecycle is managed externally (e.g. by a proxy).
         """
         self._api_key: SecretStr | None = _to_secret(api_key)
         self._refresh_token: SecretStr | None = _to_secret(refresh_token)
         self._client_secret: SecretStr | None = _to_secret(client_secret)
         self.url = url
         self.streamlit_compatible = streamlit_compatible
+        self.skip_token_expiry_check = skip_token_expiry_check
         self.client_id = client_id or OAUTH2_CLIENT_ID
 
     def _load_token_pair(self) -> tuple[str | None, str | None]:
@@ -831,6 +835,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         if access_token is None:
             return None
+
+        if self.skip_token_expiry_check:
+            return SecretStr(access_token)
 
         valid_token = self._refresh_if_expired(access_token, refresh_token)
         return SecretStr(valid_token)
