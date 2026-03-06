@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.67.0] - 2026-03-06
+
+### Added
+- Added `login_uri` parameter to `StreamlitAuth.behind_proxy()` (defaults to `"/login"`). In proxy mode the login button now points to the proxy's login endpoint instead of building an OAuth URL directly, enabling custom login flows such as PWA popup authentication.
+
+
 ## [0.66.0] - 2026-03-06
 
 ### Fixed

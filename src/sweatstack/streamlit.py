@@ -133,6 +133,7 @@ class StreamlitAuth:
         redirect_uri: str,
         header_name: str = "X-SweatStack-Token",
         logout_uri: str = "/logout",
+        login_uri: str = "/login",
     ) -> "StreamlitAuth":
         """Create a StreamlitAuth instance for use behind a proxy.
 
@@ -145,6 +146,8 @@ class StreamlitAuth:
                          Defaults to "X-SweatStack-Token".
             logout_uri: The URI to redirect to for logout.
                         Defaults to "/logout".
+            login_uri: The URI to redirect to for login.
+                       Defaults to "/login".
 
         Returns:
             StreamlitAuth: An instance configured for proxy mode.
@@ -163,6 +166,7 @@ class StreamlitAuth:
         instance = cls(redirect_uri=redirect_uri)
         instance._proxy_mode = True
         instance._logout_uri = logout_uri
+        instance._login_uri = login_uri
 
         token = st.context.headers.get(header_name)
         if token:
@@ -235,12 +239,15 @@ class StreamlitAuth:
         Args:
             login_label: Text to display on the login button.
         """
-        authorization_url = self.get_authorization_url()
+        if self._proxy_mode:
+            url = self._login_uri
+        else:
+            url = self.get_authorization_url()
         login_label = login_label or "Connect with SweatStack"
         if not self._running_on_streamlit_cloud():
-            self._show_styled_link_button(login_label, authorization_url)
+            self._show_styled_link_button(login_label, url)
         else:
-            st.link_button(login_label, authorization_url)
+            st.link_button(login_label, url)
 
     def get_authorization_url(self):
         """Generates the OAuth2 authorization URL for SweatStack.
