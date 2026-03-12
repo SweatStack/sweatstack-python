@@ -106,7 +106,8 @@ urls.login()                              # /auth/sweatstack/login
 urls.login(next="/dashboard")             # /auth/sweatstack/login?next=/dashboard
 urls.logout()                             # /auth/sweatstack/logout
 urls.select_user("user_id")              # /auth/sweatstack/select-user/user_id
-urls.select_user("user_id", next="/app") # /auth/sweatstack/select-user/user_id?next=/app
+urls.select_user("user_id", next="/app") # ...?next=/app
+urls.select_user("user_id", team_id="t") # ...?team_id=t (delegate via team)
 urls.select_self()                        # /auth/sweatstack/select-self
 ```
 

@@ -91,14 +91,20 @@ def _get_session_data(request: Request) -> SessionData | None:
         return None
 
 
-def _fetch_delegated_token(principal_tokens: TokenSet, target_user_id: str) -> TokenSet:
+def _fetch_delegated_token(
+    principal_tokens: TokenSet, target_user_id: str, *, team_id: str | None = None,
+) -> TokenSet:
     """Fetch a delegated token for the target user using principal credentials."""
     config = get_config()
+
+    body = {"sub": target_user_id}
+    if team_id is not None:
+        body["team_id"] = team_id
 
     response = httpx.post(
         f"{DEFAULT_URL}/api/v1/oauth/delegated-token",
         headers={"Authorization": f"Bearer {principal_tokens.access_token}"},
-        json={"sub": target_user_id},
+        json=body,
     )
 
     if response.status_code == 403:
@@ -278,7 +284,9 @@ def create_router() -> APIRouter:
         return response
 
     @router.post("/select-user/{user_id}")
-    def select_user(request: Request, user_id: str, next: str | None = None) -> Response:
+    def select_user(
+        request: Request, user_id: str, next: str | None = None, team_id: str | None = None,
+    ) -> Response:
         """Switch to viewing as another user.
 
         Fetches a delegated token for the target user and stores it in the session.
@@ -290,7 +298,7 @@ def create_router() -> APIRouter:
 
         # Fetch delegated token for the target user
         try:
-            delegated_tokens = _fetch_delegated_token(session.principal, user_id)
+            delegated_tokens = _fetch_delegated_token(session.principal, user_id, team_id=team_id)
         except httpx.HTTPStatusError as e:
             logger.warning("Failed to fetch delegated token for user %s: %s", user_id, e)
             raise HTTPException(status_code=403, detail="You don't have access to this user")

@@ -206,12 +206,13 @@ class _Urls:
         """Get the logout URL."""
         return f"{get_config().auth_route_prefix}/logout"
 
-    def select_user(self, user_id: str, next: str | None = None) -> str:
+    def select_user(self, user_id: str, next: str | None = None, team_id: str | None = None) -> str:
         """Get the URL to switch to viewing as another user.
 
         Args:
             user_id: The ID of the user to view as.
             next: Optional path to redirect to after switching.
+            team_id: Optional team ID to delegate via team membership.
 
         Example:
             <form method="post" action="{{ urls.select_user(athlete.id) }}">
@@ -219,8 +220,14 @@ class _Urls:
             </form>
         """
         base = f"{get_config().auth_route_prefix}/select-user/{user_id}"
+        params = {}
         if next:
-            return f"{base}?next={quote(next)}"
+            params["next"] = next
+        if team_id:
+            params["team_id"] = team_id
+        if params:
+            query = "&".join(f"{k}={quote(v)}" for k, v in params.items())
+            return f"{base}?{query}"
         return base
 
     def select_self(self, next: str | None = None) -> str:

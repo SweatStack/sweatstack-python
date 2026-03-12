@@ -81,6 +81,7 @@ metrics = auth.select_metric(allow_multiple=True)
 
 # User selector (for admin/delegation)
 user = auth.select_user()  # Switches client to selected user automatically
+user = auth.select_user(team_id="team_abc")  # via team membership
 ```
 
 ## Behind-Proxy Mode

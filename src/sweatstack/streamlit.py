@@ -377,13 +377,17 @@ class StreamlitAuth:
         else:
             self._show_sweatstack_login(login_label)
 
-    def select_user(self):
+    def select_user(self, *, team_id: str | None = None):
         """Displays a user selection dropdown and switches the client to the selected user.
 
         This method retrieves a list of users accessible to the current user and displays
         them in a dropdown. When a user is selected, the client is switched to operate on
         behalf of that user. The method first switches back to the principal user to ensure
         the full list of available users is displayed.
+
+        Args:
+            team_id: Optional team ID. When provided, delegates via team membership
+                instead of direct user permissions.
 
         Returns:
             UserSummary: The selected user object.
@@ -399,7 +403,7 @@ class StreamlitAuth:
             other_users,
             format_func=lambda user: user.display_name,
         )
-        self.client.switch_user(selected_user)
+        self.client.switch_user(selected_user, team_id=team_id)
         self._set_api_key(self.client.api_key)
 
         return selected_user

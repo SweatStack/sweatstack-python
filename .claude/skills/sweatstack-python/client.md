@@ -183,17 +183,21 @@ client.authorize_team(team_id="team_abc", scopes=[Scope.data_read])
 
 Operate on behalf of another user (requires appropriate permissions).
 
-```python
-# Modify current client in-place
-client.switch_user("john")                # by name
-client.switch_user(user_summary)          # by UserSummary object
-client.switch_user("john", team_id="team_abc")  # via team membership
-# ... all subsequent calls act as "john"
-client.switch_back()                      # revert to principal user
+**Prefer `delegated_client()`** — creates a separate client, keeping the scope explicit:
 
-# Or create a separate client (does not modify original)
+```python
 other = client.delegated_client("john")
+other = client.delegated_client("john", team_id="team_abc")  # via team
 other_activities = other.get_activities()
+# original client is unchanged
+```
+
+`switch_user()` modifies the client in-place — useful in interactive/notebook contexts but avoid in scripts:
+
+```python
+client.switch_user("john")                # mutates client
+client.switch_user("john", team_id="team_abc")
+client.switch_back()                      # revert to principal
 ```
 
 ## File Uploads
