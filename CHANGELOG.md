@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [unreleased]
+
+### Added
+- Added `create_user()` method for creating managed users (no login credentials).
+- Added `get_team_users()` method to list users who have authorized a team.
+- Added `authorize_team()` method to grant a team access to user data.
+- Added `upload()` method for uploading activity files (CSV or FIT).
+- Added `team_id` parameter to `switch_user()` and `delegated_client()` to support delegation via team membership.
+
+### Fixed
+- In proxy mode, the Streamlit login button now opens with `target="_blank"` so iOS standalone PWAs use real Safari (with existing sessions) instead of the in-app browser overlay.
+
 
 ## [0.67.0] - 2026-03-06
 

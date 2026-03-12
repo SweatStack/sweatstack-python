@@ -29,8 +29,8 @@ from platformdirs import user_data_dir
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, BackfillStatus, Metric, Sport,
-    TokenResponse, TraceDetails, UserInfoResponse, UserSummary
+    ActivityDetails, ActivitySummary, BackfillStatus, Metric, Scope, Sport,
+    TokenResponse, TraceDetails, UserInfoResponse, UserResponse, UserSummary
 )
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -468,12 +468,15 @@ class _DelegationMixin:
         else:
             return user
 
-    def _get_delegated_token(self, user: str | UserSummary):
+    def _get_delegated_token(self, user: str | UserSummary, *, team_id: str | None = None):
         user_id = self._validate_user(user)
+        body = {"sub": user_id}
+        if team_id is not None:
+            body["team_id"] = team_id
         with self._http_client() as client:
             response = client.post(
                 "/api/v1/oauth/delegated-token",
-                json={"sub": user_id},
+                json=body,
             )
             self._raise_for_status(response)
 
@@ -566,6 +569,7 @@ class _DelegationMixin:
         self,
         user: str | UserSummary,
         *,
+        team_id: str | None = None,
         search_mode: Literal["auto", "id", "name"] = "auto",
     ):
         """Switches the client to operate on behalf of another user.
@@ -575,6 +579,9 @@ class _DelegationMixin:
 
         Args:
             user: Either a UserSummary object or a string representing the user id or (part of) the user name to switch to.
+
+            team_id: Optional team ID. When provided, delegates via team membership
+                instead of direct user permissions.
 
             search_mode:
                 The mode to use when searching for the user.
@@ -593,7 +600,7 @@ class _DelegationMixin:
         if not isinstance(user, UserSummary):
             user = self.get_user(user, search_mode=search_mode)
 
-        token_response = self._get_delegated_token(user)
+        token_response = self._get_delegated_token(user, team_id=team_id)
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
 
@@ -622,7 +629,7 @@ class _DelegationMixin:
         self.api_key = token_response["access_token"]
         self.refresh_token = token_response["refresh_token"]
 
-    def delegated_client(self, user: str | UserSummary):
+    def delegated_client(self, user: str | UserSummary, *, team_id: str | None = None):
         """Creates a new client instance that operates on behalf of another user.
 
         This method creates a new client instance with delegated authentication for the specified user.
@@ -630,6 +637,8 @@ class _DelegationMixin:
 
         Args:
             user: Either a UserSummary object or a string user ID representing the user to delegate to.
+            team_id: Optional team ID. When provided, delegates via team membership
+                instead of direct user permissions.
 
         Returns:
             Client: A new client instance authenticated as the delegated user.
@@ -637,7 +646,7 @@ class _DelegationMixin:
         Raises:
             HTTPStatusError: If the delegation request fails.
         """
-        token_response = self._get_delegated_token(user)
+        token_response = self._get_delegated_token(user, team_id=team_id)
         return self.__class__(
             api_key=token_response["access_token"],
             refresh_token=token_response["refresh_token"],
@@ -1733,6 +1742,128 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             return [UserSummary.model_validate(user) for user in response.json()]
 
+    def create_user(self, first_name: str, last_name: str | None = None) -> UserResponse:
+        """Creates a managed user.
+
+        Managed users have no login credentials — their data is controlled
+        by the creating user via delegated tokens.
+
+        Args:
+            first_name: The user's first name.
+            last_name: Optional last name.
+
+        Returns:
+            UserResponse: The created user.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.post(
+                url="/api/v1/users/",
+                json={"first_name": first_name, "last_name": last_name},
+            )
+            self._raise_for_status(response)
+            return UserResponse.model_validate(response.json())
+
+    def get_team_users(self, team_id: str) -> list[UserSummary]:
+        """Lists all users who have authorized a team to access their data.
+
+        Only accessible to members of the team.
+
+        Args:
+            team_id: The team's ID.
+
+        Returns:
+            list[UserSummary]: Users who have authorized the team, with their granted scopes.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.get(
+                url=f"/api/v1/teams/{team_id}/users",
+            )
+            self._raise_for_status(response)
+            return [UserSummary.model_validate(user) for user in response.json()]
+
+    def authorize_team(self, team_id: str, scopes: list[Scope | str] | None = None):
+        """Authorizes a team to access the current user's data.
+
+        When called as a delegated user, authorizes the team for that user.
+
+        Args:
+            team_id: The team's ID.
+            scopes: Scopes to grant. Defaults to ``[Scope.data_read]``.
+
+        Returns:
+            dict: Confirmation with team_id, user_id, and granted scopes.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        if scopes is None:
+            scopes = [Scope.data_read]
+        scopes = self._enums_to_strings(scopes)
+        with self._http_client() as client:
+            response = client.post(
+                url=f"/api/v1/teams/{team_id}/authorize",
+                json={"scopes": scopes},
+            )
+            self._raise_for_status(response)
+            return response.json()
+
+    def upload(
+        self,
+        files: str | Path | list[str | Path],
+        *,
+        sport: Sport | str | None = None,
+    ):
+        """Uploads activity files (CSV or FIT).
+
+        CSV files require the ``sport`` parameter and must contain a ``timestamp``
+        column with ISO 8601 datetimes.  FIT files include sport metadata so
+        ``sport`` is optional for them.
+
+        Args:
+            files: A file path, or a list of file paths, to upload.
+            sport: Sport for the activity. Required for CSV files.
+
+        Returns:
+            dict: Confirmation message.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+            FileNotFoundError: If a file does not exist.
+        """
+        if isinstance(files, (str, Path)):
+            files = [files]
+
+        multipart_files = []
+        opened = []
+        try:
+            for path in files:
+                path = Path(path)
+                f = path.open("rb")
+                opened.append(f)
+                multipart_files.append(("files", (path.name, f)))
+
+            data = {}
+            if sport is not None:
+                data["sport"] = sport.value if isinstance(sport, Enum) else sport
+
+            with self._http_client() as client:
+                response = client.post(
+                    url="/api/v1/activities/upload",
+                    files=multipart_files,
+                    data=data,
+                )
+                self._raise_for_status(response)
+                return response.json()
+        finally:
+            for f in opened:
+                f.close()
+
     def get_userinfo(self) -> UserInfoResponse:
         """Gets detailed information about the current user.
 
@@ -1885,8 +2016,13 @@ _generate_singleton_methods(
 
         "get_user",
         "get_users",
+        "create_user",
+        "get_team_users",
+        "authorize_team",
         "get_userinfo",
         "whoami",
+
+        "upload",
 
         "get_backfill_status",
         "watch_backfill_status",

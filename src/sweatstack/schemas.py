@@ -15,7 +15,7 @@ from typing import List, Union
 
 from .openapi_schemas import (
     ActivityDetails, ActivitySummary, BackfillStatus, Metric, Scope, Sport,
-    TokenResponse, TraceDetails, UserInfoResponse, UserSummary
+    TokenResponse, TraceDetails, UserInfoResponse, UserResponse, UserSummary
 )
 
 

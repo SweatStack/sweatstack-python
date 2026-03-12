@@ -116,6 +116,7 @@ class StreamlitAuth:
 
         self._proxy_mode = False
         self._logout_uri = None
+        self._login_uri = None
 
         self.api_key = st.session_state.get("sweatstack_api_key")
         self.refresh_token = st.session_state.get("sweatstack_refresh_token")
@@ -182,6 +183,10 @@ class StreamlitAuth:
             label: Text to display on the button.
             url: The URL to navigate to when clicked.
         """
+        # In proxy mode use target="_blank" so that on iOS standalone PWAs
+        # the link opens in real Safari (with existing sessions) instead of
+        # the in-app browser overlay (SFSafariViewController).
+        target = "_blank" if self._proxy_mode else "_top"
         st.markdown(
             f"""
             <style>
@@ -195,7 +200,7 @@ class StreamlitAuth:
                 }}
             </style>
             <a href="{url}"
-                target="_top"
+                target="{target}"
                 class="animated-button"
                 style="display: inline-block;
                     padding: 10px 20px;
