@@ -176,6 +176,7 @@ user = client.create_user(first_name="John", last_name="Doe")
 
 # Team management
 team_users = client.get_team_users(team_id="team_abc")
+athlete = client.get_team_user(team_id="team_abc", user="john")  # by name or ID
 client.authorize_team(team_id="team_abc", scopes=[Scope.data_read])
 ```
 
@@ -187,9 +188,12 @@ Operate on behalf of another user (requires appropriate permissions).
 
 ```python
 other = client.delegated_client("john")
-other = client.delegated_client("john", team_id="team_abc")  # via team
 other_activities = other.get_activities()
 # original client is unchanged
+
+# Via team membership
+athlete = client.get_team_user(team_id="team_abc", user="john")
+other = client.delegated_client(athlete, team_id="team_abc")
 ```
 
 `switch_user()` modifies the client in-place — useful in interactive/notebook contexts but avoid in scripts:

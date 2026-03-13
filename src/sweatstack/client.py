@@ -498,72 +498,77 @@ class _DelegationMixin:
 
         return len(user) in (16, 26) and user.isalnum()
 
-    def _get_user_by_name(self, name: str) -> UserSummary:
-        """Get a user by name.
+    def _find_user_by_name(self, name: str, users: list) -> UserSummary:
+        """Find a user by name from a list of users.
 
         Args:
-            name: The name of the user to get.
+            name: The (partial) display name to search for.
+            users: The list of UserSummary objects to search.
 
         Returns:
-            UserSummary: The user object.
+            UserSummary: The matching user.
 
         Raises:
-            ValueError: If the user is not found.
-            ValueError: If multiple users are found with the same name.
+            ValueError: If no match or multiple matches found.
         """
-        matches = []
-        for user in self.get_users():
-            if name in user.display_name.lower():
-                matches.append(user)
+        matches = [u for u in users if name in u.display_name.lower()]
 
         if len(matches) == 0:
             raise ValueError(f"User with name {name} not found")
         elif len(matches) > 1:
-            raise ValueError(f"Multiple users found with name {name}: {', '.join([user.display_name for user in matches])}")
+            raise ValueError(f"Multiple users found with name {name}: {', '.join([u.display_name for u in matches])}")
         return matches[0]
 
-    def _get_user_by_id(self, id: str) -> UserSummary:
-        """Get a user by ID.
+    def _find_user_by_id(self, id: str, users: list) -> UserSummary:
+        """Find a user by ID from a list of users.
 
         Args:
-            id: The ID of the user to get.
+            id: The user ID to search for.
+            users: The list of UserSummary objects to search.
 
         Returns:
-            UserSummary: The user object.
-
-        Raises:
-            HTTPStatusError: If the user is not found.
+            UserSummary: The matching user, or None if not found.
         """
-        # TODO: Implement this using a user detail endpoint
-        return next((user for user in self.get_users() if user.id == id), None)
+        return next((u for u in users if u.id == id), None)
+
+    def _find_user(self, user: str, users: list, search_mode: Literal["auto", "id", "name"] = "auto") -> UserSummary:
+        """Find a user by ID or name from a list of users.
+
+        Args:
+            user: User ID or (part of) display name.
+            users: The list of UserSummary objects to search.
+            search_mode: "auto" (detect), "id", or "name".
+
+        Returns:
+            UserSummary: The matching user.
+        """
+        if search_mode == "auto":
+            if self._is_user_id(user):
+                return self._find_user_by_id(user, users)
+            else:
+                return self._find_user_by_name(user, users)
+        elif search_mode == "id":
+            return self._find_user_by_id(user, users)
+        elif search_mode == "name":
+            return self._find_user_by_name(user, users)
 
     def get_user(self, user: str, *, search_mode: Literal["auto", "id", "name"] = "auto") -> UserSummary:
         """Get a user by ID or name.
         This method will always authenticate as the principal user.
 
         Args:
-            user: Either a UserSummary object or a string representing the user id or (part of) the user name to get.
-            search_mode: The mode to use when searching for the user.
-                - "auto": Automatically determine the search mode based on the type of user argument.
-                - "id": Search for the user by ID.
-                - "name": Search for the user by name.
+            user: User ID or (part of) display name.
+            search_mode: "auto" (detect), "id", or "name".
 
         Returns:
             UserSummary: The user object.
 
         Raises:
-            HTTPStatusError: If the user is not found.
+            ValueError: If no match or multiple matches found.
         """
         client = self.principal_client()
-        if search_mode == "auto":
-            if client._is_user_id(user):
-                return client._get_user_by_id(user)
-            else:
-                return client._get_user_by_name(user)
-        elif search_mode == "id":
-            return client._get_user_by_id(user)
-        elif search_mode == "name":
-            return client._get_user_by_name(user)
+        users = client.get_users()
+        return client._find_user(user, users, search_mode)
 
     def switch_user(
         self,
@@ -1787,6 +1792,30 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             return [UserSummary.model_validate(user) for user in response.json()]
 
+    def get_team_user(
+        self,
+        *,
+        team_id: str,
+        user: str,
+        search_mode: Literal["auto", "id", "name"] = "auto",
+    ) -> UserSummary:
+        """Get a team-authorized user by ID or name.
+
+        Args:
+            team_id: The team's ID.
+            user: User ID or (part of) display name.
+            search_mode: "auto" (detect), "id", or "name".
+
+        Returns:
+            UserSummary: The matching user.
+
+        Raises:
+            ValueError: If no match or multiple matches found.
+            HTTPStatusError: If the API request fails.
+        """
+        users = self.get_team_users(team_id)
+        return self._find_user(user, users, search_mode)
+
     def authorize_team(self, team_id: str, scopes: list[Scope | str] | None = None):
         """Authorizes a team to access the current user's data.
 
@@ -2018,6 +2047,7 @@ _generate_singleton_methods(
         "get_users",
         "create_user",
         "get_team_users",
+        "get_team_user",
         "authorize_team",
         "get_userinfo",
         "whoami",
