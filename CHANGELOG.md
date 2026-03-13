@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Cache directory now defaults to the platform cache dir (`platformdirs.user_cache_dir`) instead of the system temp directory.
 
+### Fixed
+- `AttributeError` on Python <3.11 when the API returns an error response (`add_note` is a Python 3.11+ feature).
+
 ### Removed
 - `SWEATSTACK_LOCAL_CACHE` and `SWEATSTACK_CACHE_DIR` environment variables. Use `sweatstack.enable_cache()` instead.
 

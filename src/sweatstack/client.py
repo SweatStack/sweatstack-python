@@ -951,12 +951,23 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
             yield client
 
+    @staticmethod
+    def _add_note(exception: Exception, note: str):
+        """Add a note to an exception, compatible with Python <3.11."""
+        if hasattr(exception, "add_note"):
+            exception.add_note(note)
+        else:
+            if not exception.args:
+                exception.args = (note,)
+            else:
+                exception.args = (f"{exception.args[0]}\n{note}",) + exception.args[1:]
+
     def _print_response_and_raise(self, response: httpx.Response):
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exception:
             additional_info = response.text
-            exception.add_note(additional_info)
+            self._add_note(exception, additional_info)
             raise exception
 
     def _raise_for_status(self, response: httpx.Response):
@@ -976,7 +987,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                             "\nStreamlit environment detected. Use StreamlitAuth.client instance.\n"
                             "Docs: https://developer.sweatstack.no/learn/integrations/streamlit/"
                         )
-                        exception.add_note(streamlit_error_message)
+                        self._add_note(exception, streamlit_error_message)
                     raise
 
         else:
