@@ -131,12 +131,14 @@ df = client.get_longitudinal_awd(
 
 The DataFrame has a timezone-aware datetime index and includes an `activity_id` column — group by it for per-activity aggregation.
 
-**Local caching** for reproducible analysis (avoids re-fetching on reruns):
+**Local caching** for reproducible analysis (avoids re-fetching on reruns). Caches `get_longitudinal_data()` and `get_longitudinal_mean_max()`:
 ```python
-import os
-os.environ["SWEATSTACK_LOCAL_CACHE"] = "true"
+import sweatstack
+sweatstack.enable_cache()                    # platform cache dir
+sweatstack.enable_cache(path="./my_cache")   # custom dir
 # Use fixed end dates (not "today") to get stable cache hits
 df = client.get_longitudinal_data(sports=[Sport.cycling], start=date(2025, 1, 1), end=date(2025, 3, 31))
+df = client.get_longitudinal_mean_max(sports=[Sport.cycling], metric="power", start=date(2025, 1, 1))
 ```
 
 ## Traces

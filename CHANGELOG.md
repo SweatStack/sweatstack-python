@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [unreleased]
+
+### Added
+- `sweatstack.enable_cache()` function to enable local caching via a simple API call instead of environment variables.
+- Local caching for `get_longitudinal_mean_max()` responses (previously only `get_longitudinal_data()` was cached).
+
+### Changed
+- Cache directory now defaults to the platform cache dir (`platformdirs.user_cache_dir`) instead of the system temp directory.
+
+### Removed
+- `SWEATSTACK_LOCAL_CACHE` and `SWEATSTACK_CACHE_DIR` environment variables. Use `sweatstack.enable_cache()` instead.
+
+
 ## [0.71.0] - 2026-03-13
 
 ### Added
