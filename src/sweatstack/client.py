@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import time
 import urllib
+import warnings
 import webbrowser
 from datetime import date, datetime
 from enum import Enum
@@ -1002,7 +1003,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         if end is not None:
             params["end"] = end.isoformat()
         if sports is not None:
-            params["sports"] = self._enums_to_strings(sports)
+            params["sport"] = self._enums_to_strings(sports)
         if tags is not None:
             params["tags"] = tags
 
@@ -1336,8 +1337,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def get_longitudinal_data(
         self,
         *,
-        sport: Sport | str | None = None,
         sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
@@ -1349,10 +1350,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         including sport type and date range. The data is returned as a pandas DataFrame.
 
         Args:
-            sport: Optional single sport to filter by. Can be a Sport enum or string.
-                Cannot be used together with 'sports'.
             sports: Optional list of sports to filter by. Can be a list of Sport enums or strings.
-                Cannot be used together with 'sport'.
+            sport: Deprecated. Use ``sports`` instead.
             start: The start date for the data range. Can be a date object or string in ISO format.
             end: Optional end date for the data range. Can be a date object or string in ISO format.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
@@ -1366,15 +1365,19 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             ValueError: If both 'sport' and 'sports' parameters are provided.
             HTTPStatusError: If the API request fails.
         """
-        if sport and sports:
-            raise ValueError("Cannot specify both sport and sports")
+        if sport is not None and sports is not None:
+            raise ValueError("Cannot specify both 'sport' and 'sports'.")
         if sport is not None:
+            warnings.warn(
+                "'sport' is deprecated, use 'sports' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             sports = [sport]
-        elif sports is None:
-            sports = []
+        resolved = sports if sports is not None else []
 
         params = {
-            "sports": self._enums_to_strings(sports),
+            "sport": self._enums_to_strings(resolved),
             "start": start
         }
         if end is not None:
@@ -1407,42 +1410,64 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def get_longitudinal_mean_max(
         self,
         *,
-        sport: Sport | str,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
         date: date | str | None = None,
         window_days: int | None = None,
     ) -> pd.DataFrame:
-        """Gets the mean-max curve for a specific sport and metric.
-
-        This method retrieves the mean-max curve data for a given sport and metric,
-        optionally filtered by date and window size.
+        """Gets the mean-max curve for one or more sports and a metric.
 
         Args:
-            sport: The sport to get mean-max data for. Can be a Sport enum or string ID.
+            sports: List of sports to get mean-max data for. Can be Sport enums or strings.
+            sport: Deprecated. Use ``sports`` instead.
             metric: The metric to calculate mean-max for. Must be either "power" or "speed".
-            date: Optional reference date for the mean-max calculation. If provided,
-                the mean-max curve will be calculated up to this date. Can be a date object
-                or string in ISO format.
-            window_days: Optional number of days to include in the calculation window
-                before the reference date. If None, all available data is used.
+            start: Start of the date range. Preferred over ``date``/``window_days``.
+            end: End of the date range (defaults to today). Used with ``start``.
+            date: Deprecated. Use ``start`` and ``end`` instead.
+            window_days: Deprecated. Use ``start`` and ``end`` instead.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
 
         Raises:
+            ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
             HTTPStatusError: If the API request fails.
         """
-        sport = self._enums_to_strings([sport])[0]
+        if sport is not None and sports is not None:
+            raise ValueError("Cannot specify both 'sport' and 'sports'.")
+        if sport is not None:
+            warnings.warn(
+                "'sport' is deprecated, use 'sports' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            sports = [sport]
+        if sports is None:
+            raise ValueError("'sports' is required.")
         metric = self._enums_to_strings([metric])[0]
 
         params = {
-            "sport": sport,
+            "sport": self._enums_to_strings(sports),
             "metric": metric,
         }
-        if date is not None:
-            params["date"] = date
-        if window_days is not None:
-            params["window_days"] = window_days
+        if start is not None:
+            params["start"] = start
+            if end is not None:
+                params["end"] = end
+        else:
+            if date is not None or window_days is not None:
+                warnings.warn(
+                    "'date' and 'window_days' are deprecated, use 'start' and 'end' instead",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            if date is not None:
+                params["date"] = date
+            if window_days is not None:
+                params["window_days"] = window_days
 
         with self._http_client() as client:
             response = client.get(
@@ -1457,12 +1482,15 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def get_longitudinal_awd(
         self,
         *,
-        sport: Sport | str,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
         date: date | str | None = None,
         window_days: int | None = None,
     ) -> pd.DataFrame:
-        """Gets the longitudinal accumulated work duration (AWD) for a specific sport and metric.
+        """Gets the longitudinal accumulated work duration (AWD) for one or more sports.
 
         This method retrieves AWD values across four intensity levels: max (highest daily AWD),
         hard, medium, and easy (sustainable durations for respective workout intensities).
@@ -1470,31 +1498,53 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Note: This endpoint is in development and subject to change.
 
         Args:
-            sport: The sport to get AWD data for. Can be a Sport enum or string ID.
+            sports: List of sports to get AWD data for. Can be Sport enums or strings.
+            sport: Deprecated. Use ``sports`` instead.
             metric: The metric to calculate AWD for. Must be either "power" or "speed".
-            date: Optional reference date for the AWD calculation. If provided,
-                the AWD will be calculated up to this date. Can be a date object
-                or string in ISO format.
-            window_days: Optional number of days to include in the calculation window
-                before the reference date. If None, all available data is used.
+            start: Start of the date range. Preferred over ``date``/``window_days``.
+            end: End of the date range (defaults to today). Used with ``start``.
+            date: Deprecated. Use ``start`` and ``end`` instead.
+            window_days: Deprecated. Use ``start`` and ``end`` instead.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the longitudinal AWD data with intensity levels.
 
         Raises:
+            ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
             HTTPStatusError: If the API request fails.
         """
-        sport = self._enums_to_strings([sport])[0]
+        if sport is not None and sports is not None:
+            raise ValueError("Cannot specify both 'sport' and 'sports'.")
+        if sport is not None:
+            warnings.warn(
+                "'sport' is deprecated, use 'sports' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            sports = [sport]
+        if sports is None:
+            raise ValueError("'sports' is required.")
         metric = self._enums_to_strings([metric])[0]
 
         params = {
-            "sport": sport,
+            "sport": self._enums_to_strings(sports),
             "metric": metric,
         }
-        if date is not None:
-            params["date"] = date
-        if window_days is not None:
-            params["window_days"] = window_days
+        if start is not None:
+            params["start"] = start
+            if end is not None:
+                params["end"] = end
+        else:
+            if date is not None or window_days is not None:
+                warnings.warn(
+                    "'date' and 'window_days' are deprecated, use 'start' and 'end' instead",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            if date is not None:
+                params["date"] = date
+            if window_days is not None:
+                params["window_days"] = window_days
 
         with self._http_client() as client:
             response = client.get(
@@ -1526,7 +1576,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         if end is not None:
             params["end"] = end.isoformat()
         if sports is not None:
-            params["sports"] = self._enums_to_strings(sports)
+            params["sport"] = self._enums_to_strings(sports)
         if tags is not None:
             params["tags"] = tags
 

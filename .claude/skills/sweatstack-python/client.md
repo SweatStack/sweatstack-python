@@ -102,23 +102,31 @@ Aggregated time-series across multiple activities. One request instead of loopin
 
 ```python
 df = client.get_longitudinal_data(
-    sport=Sport.cycling,                # single sport
+    sports=[Sport.cycling_road],        # list of Sport enum or strings
     start=date(2025, 1, 1),             # required
     end=date(2025, 12, 31),             # optional (defaults to today)
     metrics=[Metric.power, Metric.heart_rate],  # optional
 )
 
-# Or filter by multiple sports
+# Multiple sports
 df = client.get_longitudinal_data(
     sports=[Sport.cycling_road, Sport.cycling_gravel],
     start=date(2025, 1, 1),
 )
 
 # Longitudinal mean-max (best efforts across time range)
-df = client.get_longitudinal_mean_max(sport=Sport.cycling, start=date(2025, 1, 1))
+df = client.get_longitudinal_mean_max(
+    sports=[Sport.cycling_road],
+    metric="power",
+    start=date(2025, 1, 1),
+)
 
 # Longitudinal AWD
-df = client.get_longitudinal_awd(sport=Sport.cycling, start=date(2025, 1, 1))
+df = client.get_longitudinal_awd(
+    sports=[Sport.cycling_road],
+    metric="power",
+    start=date(2025, 1, 1),
+)
 ```
 
 The DataFrame has a timezone-aware datetime index and includes an `activity_id` column — group by it for per-activity aggregation.
@@ -128,7 +136,7 @@ The DataFrame has a timezone-aware datetime index and includes an `activity_id` 
 import os
 os.environ["SWEATSTACK_LOCAL_CACHE"] = "true"
 # Use fixed end dates (not "today") to get stable cache hits
-df = client.get_longitudinal_data(sport=Sport.cycling, start=date(2025, 1, 1), end=date(2025, 3, 31))
+df = client.get_longitudinal_data(sports=[Sport.cycling], start=date(2025, 1, 1), end=date(2025, 3, 31))
 ```
 
 ## Traces
@@ -252,7 +260,7 @@ df = sweatstack.get_latest_activity_data()
 
 - **Sport enum uses underscores:** `Sport.cycling_road`, not `Sport("road")` or `Sport.cycling.road`. String values use dots: `"cycling.road"`.
 - **`start` is required for longitudinal endpoints.** Unlike `get_activities()` where all filters are optional.
-- **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` takes one. `get_activities(sports=[...])` and `get_longitudinal_data(sports=[...])` take a list.
+- **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` and `create_trace(sport=...)` take a single sport. All other methods that filter by sport use `sports=[...]` (list). The singular `sport` parameter on longitudinal methods is deprecated.
 - **DataFrames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] automatically.
 - **`as_dataframe=True`** is available on `get_activities()` and `get_traces()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
 - **`summary` fields are optional.** Always null-check: `activity.summary.power.mean if activity.summary and activity.summary.power else None`.
