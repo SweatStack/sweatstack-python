@@ -3,10 +3,31 @@ name = "sweatstack"
 version = "0.71.0"
 description = "The official Python client for SweatStack"
 readme = "README.md"
+license = "MIT"
 authors = [
-    { name = "Aart Goossens", email = "aart@gssns.io" }
+    { name = "Aart Goossens", email = "aart@sweatstack.no" }
 ]
 requires-python = ">=3.9"
+keywords = ["sweatstack", "sports", "fitness", "api", "client"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://sweatstack.no"
+Documentation = "https://developer.sweatstack.no/getting-started/"
+Repository = "https://github.com/SweatStack/sweatstack-python"
+Issues = "https://github.com/SweatStack/sweatstack-python/issues"
+Changelog = "https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md"
 dependencies = [
     "email-validator>=2.2.0",
     "httpx>=0.28.1",

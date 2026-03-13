@@ -9,8 +9,36 @@ wheels/
 # Virtual environments
 .venv
 
+# Environment variables and secrets
+.env
+.env.*
+
+# Databases and local storage
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and editor configuration
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+
+# Test artifacts
+.pytest_cache/
+
 # Documentation
 docs/_build/
+
+# Internal docs dump
+dump/
+
+# Playground
+playground/
 
 # Claude skills (except our own)
 .claude/skills/*
