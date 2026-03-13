@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.70.0] - 2026-03-13
 
 ### Added
 - Added `get_team_user(*, team_id, user, search_mode)` method to find a single team-authorized user by ID or name.
