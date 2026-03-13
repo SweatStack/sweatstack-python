@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.71.0] - 2026-03-13
 
 ### Added
 - `sports` (list) parameter on `get_longitudinal_mean_max()` and `get_longitudinal_awd()` for multi-sport support. The existing `sport` (single) parameter remains for backwards compatibility.
