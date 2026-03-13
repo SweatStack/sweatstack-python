@@ -21,13 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-
-[project.urls]
-Homepage = "https://sweatstack.no"
-Documentation = "https://developer.sweatstack.no/getting-started/"
-Repository = "https://github.com/SweatStack/sweatstack-python"
-Issues = "https://github.com/SweatStack/sweatstack-python/issues"
-Changelog = "https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md"
 dependencies = [
     "email-validator>=2.2.0",
     "httpx>=0.28.1",
@@ -36,6 +29,13 @@ dependencies = [
     "pyarrow>=18.0.0",
     "pydantic>=2.10.5",
 ]
+
+[project.urls]
+Homepage = "https://sweatstack.no"
+Documentation = "https://developer.sweatstack.no/getting-started/"
+Repository = "https://github.com/SweatStack/sweatstack-python"
+Issues = "https://github.com/SweatStack/sweatstack-python/issues"
+Changelog = "https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 streamlit = [
@@ -50,6 +50,11 @@ fastapi = [
     "fastapi[standard]>=0.100.0",
     "cryptography>=41.0.0",
 ]
+
+[project.scripts]
+generate-response-models = "sweatstack.cli:generate_response_models"
+sweatshell = "sweatstack.sweatshell:run_ipython"
+sweatlab = "sweatstack.jupyterlab_oauth2_startup:start_jupyterlab_with_oauth"
 
 [build-system]
 requires = ["hatchling"]
@@ -66,8 +71,3 @@ dev = [
 
 [tool.uv.workspace]
 members = ["playground"]
-
-[project.scripts]
-generate-response-models = "sweatstack.cli:generate_response_models"
-sweatshell = "sweatstack.sweatshell:run_ipython"
-sweatlab = "sweatstack.jupyterlab_oauth2_startup:start_jupyterlab_with_oauth"
