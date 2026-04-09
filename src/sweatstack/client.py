@@ -29,7 +29,8 @@ from platformdirs import user_cache_dir, user_data_dir
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, BackfillStatus, Marker, Metric, Scope, Sport,
+    ActivityDetails, ActivitySummary, BackfillStatus, DailyMeasure, DailyResponse,
+    Marker, Metric, Scope, Sport,
     TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     UserInfoResponse, UserResponse, UserSummary
 )
@@ -1980,6 +1981,106 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
 
     # -------------------------------------------------------------------------
+    # Dailies (daily health metrics)
+    # -------------------------------------------------------------------------
+
+    def get_dailies(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        start: date,
+        end: date,
+        interpolate: bool = True,
+        as_dataframe: bool = False,
+    ) -> list[DailyResponse] | pd.DataFrame:
+        """Gets daily values for a measure over a date range.
+
+        Args:
+            measure: The daily measure to retrieve (e.g. DailyMeasure.body_mass).
+            start: Start date (inclusive).
+            end: End date (inclusive).
+            interpolate: Whether to apply server-side estimation/interpolation.
+                Defaults to True. When False, missing dates return value=None
+                with source="missing".
+            as_dataframe: Whether to return results as a pandas DataFrame.
+                Defaults to False.
+
+        Returns:
+            Either a list of DailyResponse objects or a pandas DataFrame with
+            date as index. Always returns one entry per date in the range.
+        """
+        measure_str = measure.value if isinstance(measure, Enum) else measure
+        with self._http_client() as client:
+            response = client.get(
+                url=f"/api/v1/dailies/{measure_str}",
+                params={
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "interpolate": interpolate,
+                },
+            )
+            self._raise_for_status(response)
+            dailies = [DailyResponse.model_validate(item) for item in response.json()]
+        if as_dataframe:
+            if not dailies:
+                df = pd.DataFrame(columns=["date", "value", "source"])
+                df = df.set_index("date")
+            else:
+                df = pd.DataFrame([d.model_dump() for d in dailies])
+                df = df.set_index("date")
+            return self._postprocess_dataframe(df)
+        return dailies
+
+    def set_daily(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        date: date,
+        value: float,
+    ) -> DailyResponse:
+        """Sets a daily value (creates or updates).
+
+        Args:
+            measure: The daily measure (e.g. DailyMeasure.body_mass).
+            date: The date for the measurement.
+            value: The measurement value.
+
+        Returns:
+            DailyResponse: The created/updated daily entry.
+        """
+        measure_str = measure.value if isinstance(measure, Enum) else measure
+        with self._http_client() as client:
+            response = client.post(
+                url=f"/api/v1/dailies/{measure_str}",
+                json={"date": date.isoformat(), "value": value},
+            )
+            self._raise_for_status(response)
+            return DailyResponse.model_validate(response.json())
+
+    def delete_daily(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        date: date,
+    ) -> None:
+        """Deletes a daily value.
+
+        Args:
+            measure: The daily measure to delete.
+            date: The date of the entry to delete.
+
+        Raises:
+            HTTPStatusError: 404 if entry does not exist.
+        """
+        measure_str = measure.value if isinstance(measure, Enum) else measure
+        with self._http_client() as client:
+            response = client.delete(
+                url=f"/api/v1/dailies/{measure_str}",
+                params={"date": date.isoformat()},
+            )
+            self._raise_for_status(response)
+
+    # -------------------------------------------------------------------------
     # App Metadata
     # -------------------------------------------------------------------------
 
@@ -2486,6 +2587,10 @@ _generate_singleton_methods(
         "create_test",
         "update_test",
         "delete_test",
+
+        "get_dailies",
+        "set_daily",
+        "delete_daily",
 
         "set_activity_app_metadata",
         "delete_activity_app_metadata",

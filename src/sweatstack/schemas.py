@@ -14,7 +14,8 @@ from enum import Enum
 from typing import List, Union
 
 from .openapi_schemas import (
-    ActivityDetails, ActivitySummary, BackfillStatus, Marker, Metric, Scope, Sport,
+    ActivityDetails, ActivitySummary, BackfillStatus, DailyMeasure, DailyResponse,
+    Marker, Metric, Scope, Sport,
     TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     UserInfoResponse, UserResponse, UserSummary
 )
@@ -182,3 +183,31 @@ def _scope_missing(cls, value: str):
 
 
 Scope._missing_ = _scope_missing
+
+
+def _daily_measure_display_name(measure: DailyMeasure) -> str:
+    """Returns a human-readable display name for a daily measure.
+
+    This function converts a DailyMeasure enum value into a formatted string suitable for display.
+    """
+    return measure.value.replace("_", " ")
+
+
+@classmethod
+def _daily_measure_missing(cls, value: str):
+    """Handle unknown daily measure values from newer API versions.
+
+    This allows the client to gracefully handle new measures added to the API
+    without requiring a client library update. Unknown values become dynamic
+    enum members that behave like regular DailyMeasure values.
+    """
+    pseudo_member = object.__new__(cls)
+    pseudo_member._name_ = value
+    pseudo_member._value_ = value
+    cls._value2member_map_[value] = pseudo_member  # Cache for future lookups
+    return pseudo_member
+
+
+DailyMeasure._missing_ = _daily_measure_missing
+DailyMeasure.display_name = _daily_measure_display_name
+DailyMeasure.display_name.__doc__ = _daily_measure_display_name.__doc__

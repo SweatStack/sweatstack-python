@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Full support for fitness tests — create, retrieve, update, and delete physiological assessments (threshold tests, VO2max tests, etc.) and their results.
 - App metadata — store and retrieve per-app JSON data on activities, traces, tests, and users.
+- Dailies — get, set, and delete daily health metrics (body mass, HRV, resting HR, etc.) with optional server-side interpolation.
 
 
 ## [0.72.0] - 2026-03-13

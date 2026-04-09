@@ -9,6 +9,7 @@
 - [Longitudinal Data](#longitudinal-data)
 - [Traces](#traces)
 - [Tests](#tests)
+- [Dailies](#dailies-daily-health-metrics)
 - [App Metadata](#app-metadata)
 - [Profile](#profile)
 - [Users and Teams](#users-and-teams)
@@ -213,6 +214,31 @@ client.update_test(
 client.delete_test("test_id")
 ```
 
+## Dailies (Daily Health Metrics)
+
+```python
+from sweatstack import DailyMeasure
+
+# Get daily values over a date range (returns list[DailyResponse])
+dailies = client.get_dailies(
+    DailyMeasure.body_mass,
+    start=date(2026, 1, 1),
+    end=date(2026, 3, 31),
+    interpolate=True,            # default; server fills gaps
+)
+
+# As DataFrame (date as index)
+df = client.get_dailies(DailyMeasure.body_mass, start=date(2026, 1, 1), end=date(2026, 3, 31), as_dataframe=True)
+
+# Set a daily value (upsert — creates or updates)
+daily = client.set_daily(DailyMeasure.body_mass, date=date(2026, 4, 1), value=75.2)
+
+# Delete a daily value
+client.delete_daily(DailyMeasure.body_mass, date=date(2026, 4, 1))
+```
+
+Available measures: `body_mass`, `body_fat_pct`, `resting_hr`, `hrv`, `sleep_duration`, `sleep_altitude`, `menstrual_cycle_day`. The `measure` parameter is positional (part of the URL path). With `interpolate=False`, missing dates return `value=None, source="missing"`.
+
 ## App Metadata
 
 Store arbitrary JSON data on entities, scoped per app. Requires an app token (token with `aud` claim).
@@ -340,7 +366,7 @@ df = sweatstack.get_latest_activity_data()
 - **`start` is required for longitudinal endpoints.** Unlike `get_activities()` where all filters are optional.
 - **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` and `create_trace(sport=...)` take a single sport. All other methods that filter by sport use `sports=[...]` (list). The singular `sport` parameter on longitudinal methods is deprecated.
 - **DataFrames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] automatically.
-- **`as_dataframe=True`** is available on `get_activities()`, `get_traces()`, and `get_tests()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
+- **`as_dataframe=True`** is available on `get_activities()`, `get_traces()`, `get_tests()`, and `get_dailies()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
 - **`update_test()` is a full replace.** Omitted optional fields are set to null. Always re-pass all fields you want to keep (e.g. `results=test.results`).
 - **`summary` fields are optional.** Always null-check: `activity.summary.power.mean if activity.summary and activity.summary.power else None`.
 - **`metrics` on ActivitySummary** lists available data streams, not the data itself. Use to check availability before calling `get_activity_data()`.
