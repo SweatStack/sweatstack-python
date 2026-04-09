@@ -1979,6 +1979,116 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             response = client.delete(url=f"/api/v1/tests/{test_id}")
             self._raise_for_status(response)
 
+    # -------------------------------------------------------------------------
+    # App Metadata
+    # -------------------------------------------------------------------------
+
+    def _set_app_metadata(self, path: str, data: dict) -> None:
+        with self._http_client() as client:
+            response = client.put(url=path, json=data)
+            self._raise_for_status(response)
+
+    def _delete_app_metadata(self, path: str) -> None:
+        with self._http_client() as client:
+            response = client.delete(url=path)
+            self._raise_for_status(response)
+
+    def set_activity_app_metadata(self, activity_id: str, *, data: dict) -> None:
+        """Sets app metadata on an activity (requires app token).
+
+        Replaces the entire metadata dict for this app on the given activity.
+
+        Args:
+            activity_id: The activity to attach metadata to.
+            data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+        """
+        self._set_app_metadata(f"/api/v1/activities/{activity_id}/app-metadata", data)
+
+    def delete_activity_app_metadata(self, activity_id: str) -> None:
+        """Deletes app metadata from an activity (requires app token).
+
+        Args:
+            activity_id: The activity to remove metadata from.
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token.
+        """
+        self._delete_app_metadata(f"/api/v1/activities/{activity_id}/app-metadata")
+
+    def set_trace_app_metadata(self, trace_id: str, *, data: dict) -> None:
+        """Sets app metadata on a trace (requires app token).
+
+        Replaces the entire metadata dict for this app on the given trace.
+
+        Args:
+            trace_id: The trace to attach metadata to.
+            data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+        """
+        self._set_app_metadata(f"/api/v1/traces/{trace_id}/app-metadata", data)
+
+    def delete_trace_app_metadata(self, trace_id: str) -> None:
+        """Deletes app metadata from a trace (requires app token).
+
+        Args:
+            trace_id: The trace to remove metadata from.
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token.
+        """
+        self._delete_app_metadata(f"/api/v1/traces/{trace_id}/app-metadata")
+
+    def set_test_app_metadata(self, test_id: str, *, data: dict) -> None:
+        """Sets app metadata on a test (requires app token).
+
+        Replaces the entire metadata dict for this app on the given test.
+
+        Args:
+            test_id: The test to attach metadata to.
+            data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+        """
+        self._set_app_metadata(f"/api/v1/tests/{test_id}/app-metadata", data)
+
+    def delete_test_app_metadata(self, test_id: str) -> None:
+        """Deletes app metadata from a test (requires app token).
+
+        Args:
+            test_id: The test to remove metadata from.
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token.
+        """
+        self._delete_app_metadata(f"/api/v1/tests/{test_id}/app-metadata")
+
+    def set_user_app_metadata(self, *, data: dict) -> None:
+        """Sets app metadata on the authenticated user (requires app token).
+
+        Replaces the entire metadata dict for this app on the current user.
+
+        Args:
+            data: Arbitrary JSON-serializable dict (max 4KB, max nesting depth 32).
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+        """
+        self._set_app_metadata("/api/v1/profile/app-metadata", data)
+
+    def delete_user_app_metadata(self) -> None:
+        """Deletes app metadata from the authenticated user (requires app token).
+
+        Raises:
+            HTTPStatusError: 403 if not using an app token.
+        """
+        self._delete_app_metadata("/api/v1/profile/app-metadata")
+
     def get_sports(self, only_root: bool = False) -> list[Sport]:
         """Gets a list of available sports.
 
@@ -2376,6 +2486,15 @@ _generate_singleton_methods(
         "create_test",
         "update_test",
         "delete_test",
+
+        "set_activity_app_metadata",
+        "delete_activity_app_metadata",
+        "set_trace_app_metadata",
+        "delete_trace_app_metadata",
+        "set_test_app_metadata",
+        "delete_test_app_metadata",
+        "set_user_app_metadata",
+        "delete_user_app_metadata",
 
         "get_sports",
         "get_tags",

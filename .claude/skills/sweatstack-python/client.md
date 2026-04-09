@@ -9,6 +9,7 @@
 - [Longitudinal Data](#longitudinal-data)
 - [Traces](#traces)
 - [Tests](#tests)
+- [App Metadata](#app-metadata)
 - [Profile](#profile)
 - [Users and Teams](#users-and-teams)
 - [User Delegation](#user-delegation)
@@ -211,6 +212,30 @@ client.update_test(
 # Delete a test
 client.delete_test("test_id")
 ```
+
+## App Metadata
+
+Store arbitrary JSON data on entities, scoped per app. Requires an app token (token with `aud` claim).
+
+```python
+# Set metadata on an activity (full replace, max 1KB)
+client.set_activity_app_metadata("activity_id", data={"score": 8.5, "notes": "good"})
+
+# Delete it
+client.delete_activity_app_metadata("activity_id")
+
+# Same pattern for traces, tests, and the current user
+client.set_trace_app_metadata("trace_id", data={"source": "lab"})
+client.set_test_app_metadata("test_id", data={"protocol": "ramp"})
+client.set_user_app_metadata(data={"preferences": {"unit": "metric"}})  # max 4KB
+
+# Delete
+client.delete_trace_app_metadata("trace_id")
+client.delete_test_app_metadata("test_id")
+client.delete_user_app_metadata()
+```
+
+Metadata appears as `app_metadata` on entity responses when accessed via app token.
 
 ## Profile
 

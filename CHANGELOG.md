@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Full support for fitness tests — create, retrieve, update, and delete physiological assessments (threshold tests, VO2max tests, etc.) and their results.
+- App metadata — store and retrieve per-app JSON data on activities, traces, tests, and users.
 
 
 ## [0.72.0] - 2026-03-13
