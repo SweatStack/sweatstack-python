@@ -29,8 +29,9 @@ from platformdirs import user_cache_dir, user_data_dir
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, BackfillStatus, Metric, Scope, Sport,
-    TokenResponse, TraceDetails, UserInfoResponse, UserResponse, UserSummary
+    ActivityDetails, ActivitySummary, BackfillStatus, Marker, Metric, Scope, Sport,
+    TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
+    UserInfoResponse, UserResponse, UserSummary
 )
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -1438,10 +1439,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             sports: List of sports to get mean-max data for. Can be Sport enums or strings.
             sport: Deprecated. Use ``sports`` instead.
             metric: The metric to calculate mean-max for. Must be either "power" or "speed".
-            start: Start of the date range. Preferred over ``date``/``window_days``.
-            end: End of the date range (defaults to today). Used with ``start``.
-            date: Deprecated. Use ``start`` and ``end`` instead.
-            window_days: Deprecated. Use ``start`` and ``end`` instead.
+            start: Start of the date range.
+            end: End of the date range (defaults to today).
+            date: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
+            window_days: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
@@ -1524,10 +1525,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             sports: List of sports to get AWD data for. Can be Sport enums or strings.
             sport: Deprecated. Use ``sports`` instead.
             metric: The metric to calculate AWD for. Must be either "power" or "speed".
-            start: Start of the date range. Preferred over ``date``/``window_days``.
-            end: End of the date range (defaults to today). Used with ``start``.
-            date: Deprecated. Use ``start`` and ``end`` instead.
-            window_days: Deprecated. Use ``start`` and ``end`` instead.
+            start: Start of the date range.
+            end: End of the date range (defaults to today).
+            date: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
+            window_days: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the longitudinal AWD data with intensity levels.
@@ -1755,6 +1756,228 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             )
             self._raise_for_status(response)
             return TraceDetails.model_validate(response.json())
+
+    # -------------------------------------------------------------------------
+    # Tests
+    # -------------------------------------------------------------------------
+
+    def _get_tests_generator(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        created_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Generator[TestSummary, None, None]:
+        num_returned = 0
+        default_limit = 50
+        params = {
+            "limit": default_limit,
+            "offset": offset,
+        }
+        if start is not None:
+            params["start"] = start.isoformat()
+        if end is not None:
+            params["end"] = end.isoformat()
+        if sports is not None:
+            params["sport"] = self._enums_to_strings(sports)
+        if tags is not None:
+            params["tags"] = tags
+        if created_by is not None:
+            params["created_by"] = created_by
+
+        with self._http_client() as client:
+            while True:
+                response = client.get(
+                    url="/api/v1/tests/",
+                    params=params,
+                )
+                self._raise_for_status(response)
+                tests = response.json()
+                for test in tests:
+                    yield TestSummary.model_validate(test)
+
+                    num_returned += 1
+                    if num_returned >= limit:
+                        return
+                if len(tests) < default_limit:
+                    return
+
+                params["limit"] = min(default_limit, limit - num_returned)
+                params["offset"] += default_limit
+
+    def get_tests(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        created_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        as_dataframe: bool = False,
+    ) -> list[TestSummary] | pd.DataFrame:
+        """Gets a list of tests based on specified filters.
+
+        Args:
+            start: Optional start date to filter tests.
+            end: Optional end date to filter tests.
+            sports: Optional list of sports to filter tests by. Can be Sport objects or string IDs.
+            tags: Optional list of tags to filter tests by.
+            created_by: Optional app ID to filter tests by creator.
+            limit: Maximum number of tests to return. Defaults to 50.
+            offset: Number of tests to skip. Defaults to 0.
+            as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
+
+        Returns:
+            Either a list of TestSummary objects or a pandas DataFrame containing
+            the tests data, depending on the value of as_dataframe.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        tests = list(self._get_tests_generator(
+            start=start,
+            end=end,
+            sports=sports,
+            tags=tags,
+            created_by=created_by,
+            limit=limit,
+            offset=offset,
+        ))
+        if as_dataframe:
+            if not tests:
+                df = self._create_empty_dataframe_from_model(
+                    TestSummary,
+                    normalize_columns=["results"]
+                )
+            else:
+                df = pd.DataFrame([test.model_dump() for test in tests])
+                if "results" in df.columns:
+                    df = self._normalize_dataframe_column(df, "results")
+            return self._postprocess_dataframe(df)
+        else:
+            return tests
+
+    def get_test(self, test_id: str) -> TestDetails:
+        """Gets details for a specific test by ID.
+
+        Args:
+            test_id: The unique identifier of the test to retrieve.
+
+        Returns:
+            TestDetails: The test details including resolved traces and overlapping activities.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.get(url=f"/api/v1/tests/{test_id}")
+            self._raise_for_status(response)
+            return TestDetails.model_validate(response.json())
+
+    def create_test(
+        self,
+        *,
+        sport: Sport | str,
+        start: datetime,
+        title: str | None = None,
+        end: datetime | None = None,
+        results: TestResults | None = None,
+        tags: list[str] | None = None,
+    ) -> TestSummary:
+        """Creates a new test.
+
+        Args:
+            sport: The sport for this test. Can be a Sport enum or string ID.
+            start: The start time of the test.
+            title: Optional title for the test.
+            end: Optional end time. Defaults to start + 3 hours server-side.
+            results: Optional structured test results (thresholds, capacities, etc.).
+            tags: Optional list of tags to associate with this test.
+
+        Returns:
+            TestSummary: The created test.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        sport = self._enums_to_strings([sport])[0]
+        with self._http_client() as client:
+            response = client.post(
+                url="/api/v1/tests/",
+                json={
+                    "title": title,
+                    "sport": sport,
+                    "start": start.isoformat(),
+                    "end": end.isoformat() if end is not None else None,
+                    "results": results.model_dump() if results is not None else None,
+                    "tags": tags,
+                },
+            )
+            self._raise_for_status(response)
+            return TestSummary.model_validate(response.json())
+
+    def update_test(
+        self,
+        test_id: str,
+        *,
+        sport: Sport | str,
+        start: datetime,
+        title: str | None = None,
+        end: datetime | None = None,
+        results: TestResults | None = None,
+        tags: list[str] | None = None,
+    ) -> None:
+        """Updates a test by replacing all fields.
+
+        This is a full replace operation. Fields not provided will be set to null
+        server-side. To modify a single field, first fetch the test with
+        ``get_test()``, then pass all fields back.
+
+        Args:
+            test_id: The unique identifier of the test to update.
+            sport: The sport for this test. Can be a Sport enum or string ID.
+            start: The start time of the test.
+            title: Optional title for the test.
+            end: Optional end time. Defaults to start + 3 hours server-side.
+            results: Optional structured test results (thresholds, capacities, etc.).
+            tags: Optional list of tags to associate with this test.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        sport = self._enums_to_strings([sport])[0]
+        with self._http_client() as client:
+            response = client.put(
+                url=f"/api/v1/tests/{test_id}",
+                json={
+                    "title": title,
+                    "sport": sport,
+                    "start": start.isoformat(),
+                    "end": end.isoformat() if end is not None else None,
+                    "results": results.model_dump() if results is not None else None,
+                    "tags": tags,
+                },
+            )
+            self._raise_for_status(response)
+
+    def delete_test(self, test_id: str) -> None:
+        """Deletes a test.
+
+        Args:
+            test_id: The unique identifier of the test to delete.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.delete(url=f"/api/v1/tests/{test_id}")
+            self._raise_for_status(response)
 
     def get_sports(self, only_root: bool = False) -> list[Sport]:
         """Gets a list of available sports.
@@ -2147,6 +2370,12 @@ _generate_singleton_methods(
 
         "get_traces",
         "create_trace",
+
+        "get_tests",
+        "get_test",
+        "create_test",
+        "update_test",
+        "delete_test",
 
         "get_sports",
         "get_tags",

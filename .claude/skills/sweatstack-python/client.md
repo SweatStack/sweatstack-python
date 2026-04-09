@@ -8,6 +8,7 @@
 - [Mean-Max and AWD](#mean-max-and-awd)
 - [Longitudinal Data](#longitudinal-data)
 - [Traces](#traces)
+- [Tests](#tests)
 - [Profile](#profile)
 - [Users and Teams](#users-and-teams)
 - [User Delegation](#user-delegation)
@@ -136,6 +137,7 @@ The DataFrame has a timezone-aware datetime index and includes an `activity_id` 
 import sweatstack
 sweatstack.enable_cache()                    # platform cache dir
 sweatstack.enable_cache(path="./my_cache")   # custom dir
+client.clear_cache()                         # remove all cached data for current user
 # Use fixed end dates (not "today") to get stable cache hits
 df = client.get_longitudinal_data(sports=[Sport.cycling], start=date(2025, 1, 1), end=date(2025, 3, 31))
 df = client.get_longitudinal_mean_max(sports=[Sport.cycling], metric="power", start=date(2025, 1, 1))
@@ -159,6 +161,55 @@ trace = client.create_trace(
     tags=["test"],
     notes="Lactate threshold test",
 )
+```
+
+## Tests
+
+Fitness assessments/evaluations with structured physiological results.
+
+```python
+# List tests (returns list[TestSummary])
+tests = client.get_tests(
+    start=date(2025, 1, 1),           # optional
+    end=date(2025, 12, 31),           # optional
+    sports=[Sport.cycling],            # optional
+    tags=["lab"],                      # optional
+    created_by="app_id",              # optional, filter by creator app
+    limit=50,                          # default 50
+)
+
+# As DataFrame (results column gets normalized into flat columns like results.vo2max)
+df = client.get_tests(as_dataframe=True)
+
+# Single test by ID (returns TestDetails with resolved traces + overlapping activities)
+test = client.get_test("test_id")
+
+# Create a test
+from sweatstack import TestResults, Marker
+test = client.create_test(
+    sport=Sport.cycling,
+    start=datetime(2025, 6, 1, 9, 0),
+    title="Lab test Q2",
+    results=TestResults(
+        first_threshold=Marker(power=200, heart_rate=140),
+        second_threshold=Marker(power=280, heart_rate=170),
+        vo2max=4500.0,
+        critical_power=260,
+    ),
+    tags=["lab"],
+)
+
+# Update a test (full replace — fields not provided are set to null)
+client.update_test(
+    test.id,
+    sport=Sport.cycling,
+    start=test.start,
+    title="Lab test Q2 (revised)",
+    results=test.results,  # must re-pass to keep existing results
+)
+
+# Delete a test
+client.delete_test("test_id")
 ```
 
 ## Profile
@@ -264,6 +315,7 @@ df = sweatstack.get_latest_activity_data()
 - **`start` is required for longitudinal endpoints.** Unlike `get_activities()` where all filters are optional.
 - **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` and `create_trace(sport=...)` take a single sport. All other methods that filter by sport use `sports=[...]` (list). The singular `sport` parameter on longitudinal methods is deprecated.
 - **DataFrames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] automatically.
-- **`as_dataframe=True`** is available on `get_activities()` and `get_traces()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
+- **`as_dataframe=True`** is available on `get_activities()`, `get_traces()`, and `get_tests()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
+- **`update_test()` is a full replace.** Omitted optional fields are set to null. Always re-pass all fields you want to keep (e.g. `results=test.results`).
 - **`summary` fields are optional.** Always null-check: `activity.summary.power.mean if activity.summary and activity.summary.power else None`.
 - **`metrics` on ActivitySummary** lists available data streams, not the data itself. Use to check availability before calling `get_activity_data()`.
