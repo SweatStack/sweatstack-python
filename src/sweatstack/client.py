@@ -29,9 +29,10 @@ from platformdirs import user_cache_dir, user_data_dir
 
 from .constants import DEFAULT_URL
 from .schemas import (
-    ActivityDetails, ActivitySummary, BackfillStatus, DailyMeasure, DailyResponse,
+    ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
+    BackfillStatus, DailyMeasure, DailyResponse,
     Marker, Metric, Scope, Sport,
-    TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
+    TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     UserInfoResponse, UserResponse, UserSummary
 )
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
@@ -2278,6 +2279,34 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             return UserResponse.model_validate(response.json())
 
+    def get_teams(self) -> list[TeamResponse]:
+        """Lists all teams the current user owns or is a member of.
+
+        Returns:
+            list[TeamResponse]: Teams with the user's role (owner or member).
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.get(url="/api/v1/teams/")
+            self._raise_for_status(response)
+            return [TeamResponse.model_validate(team) for team in response.json()]
+
+    def get_authorized_teams(self) -> list[AuthorizedTeamResponse]:
+        """Lists all teams the current user has authorized to access their data.
+
+        Returns:
+            list[AuthorizedTeamResponse]: Teams with their granted scopes.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.get(url="/api/v1/teams/authorized")
+            self._raise_for_status(response)
+            return [AuthorizedTeamResponse.model_validate(team) for team in response.json()]
+
     def get_team_users(self, team_id: str) -> list[UserSummary]:
         """Lists all users who have authorized a team to access their data.
 
@@ -2553,6 +2582,8 @@ _generate_singleton_methods(
         "get_user",
         "get_users",
         "create_user",
+        "get_teams",
+        "get_authorized_teams",
         "get_team_users",
         "get_team_user",
         "authorize_team",

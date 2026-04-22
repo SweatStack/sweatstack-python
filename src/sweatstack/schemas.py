@@ -14,9 +14,10 @@ from enum import Enum
 from typing import List, Union
 
 from .openapi_schemas import (
-    ActivityDetails, ActivitySummary, BackfillStatus, DailyMeasure, DailyResponse,
+    ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
+    BackfillStatus, DailyMeasure, DailyResponse,
     Marker, Metric, Scope, Sport,
-    TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
+    TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     UserInfoResponse, UserResponse, UserSummary
 )
 

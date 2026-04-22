@@ -286,7 +286,13 @@ user = client.get_user("abc123", search_mode="id")
 # Create a managed user (no login credentials)
 user = client.create_user(first_name="John", last_name="Doe")
 
-# Team management
+# List teams you're a member/owner of
+teams = client.get_teams()                # list[TeamResponse] with .role
+
+# List teams you've authorized to access your data
+authorized = client.get_authorized_teams()  # list[AuthorizedTeamResponse] with .scopes
+
+# Team user management
 team_users = client.get_team_users(team_id="team_abc")
 athlete = client.get_team_user(team_id="team_abc", user="john")  # by name or ID
 client.authorize_team(team_id="team_abc", scopes=[Scope.data_read])
