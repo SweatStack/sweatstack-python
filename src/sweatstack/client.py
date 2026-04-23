@@ -1759,6 +1759,72 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             return TraceDetails.model_validate(response.json())
 
+    def update_trace(
+        self,
+        trace_id: str,
+        *,
+        timestamp: datetime,
+        lactate: float | None = None,
+        rpe: int | None = None,
+        notes: str | None = None,
+        power: int | None = None,
+        speed: float | None = None,
+        heart_rate: int | None = None,
+        tags: list[str] | None = None,
+        sport: Sport | str | None = None,
+    ) -> None:
+        """Updates a trace by replacing all fields.
+
+        This is a full replace operation. Fields not provided will be set to null
+        server-side. To modify a single field, first fetch the trace with
+        ``get_traces()``, then pass all fields back.
+
+        Args:
+            trace_id: The unique identifier of the trace to update.
+            timestamp: The date and time when the trace was recorded.
+            lactate: Optional blood lactate concentration in mmol/L.
+            rpe: Optional rating of perceived exertion (typically on a scale of 1-10).
+            notes: Optional text notes associated with this trace.
+            power: Optional power measurement in watts.
+            speed: Optional speed measurement in meters per second.
+            heart_rate: Optional heart rate measurement in beats per minute.
+            tags: Optional list of tags to associate with this trace.
+            sport: Optional sport to associate with this trace.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        sport = self._enums_to_strings([sport])[0] if sport else None
+        with self._http_client() as client:
+            response = client.put(
+                url=f"/api/v1/traces/{trace_id}",
+                json={
+                    "timestamp": timestamp.isoformat(),
+                    "lactate": lactate,
+                    "rpe": rpe,
+                    "notes": notes,
+                    "power": power,
+                    "speed": speed,
+                    "heart_rate": heart_rate,
+                    "tags": tags,
+                    "sport": sport,
+                },
+            )
+            self._raise_for_status(response)
+
+    def delete_trace(self, trace_id: str) -> None:
+        """Deletes a trace.
+
+        Args:
+            trace_id: The unique identifier of the trace to delete.
+
+        Raises:
+            HTTPStatusError: If the API request fails.
+        """
+        with self._http_client() as client:
+            response = client.delete(url=f"/api/v1/traces/{trace_id}")
+            self._raise_for_status(response)
+
     # -------------------------------------------------------------------------
     # Tests
     # -------------------------------------------------------------------------

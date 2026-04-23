@@ -163,6 +163,21 @@ trace = client.create_trace(
     tags=["test"],
     notes="Lactate threshold test",
 )
+
+# Update a trace (full replace — fields not provided are set to null)
+client.update_trace(
+    trace.id,
+    timestamp=trace.timestamp,
+    lactate=2.8,               # corrected value
+    rpe=trace.rpe,             # must re-pass to keep existing values
+    heart_rate=trace.heart_rate,
+    sport=trace.sport,
+    tags=trace.tags,
+    notes=trace.notes,
+)
+
+# Delete a trace
+client.delete_trace("trace_id")
 ```
 
 ## Tests
@@ -373,6 +388,6 @@ df = sweatstack.get_latest_activity_data()
 - **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` and `create_trace(sport=...)` take a single sport. All other methods that filter by sport use `sports=[...]` (list). The singular `sport` parameter on longitudinal methods is deprecated.
 - **DataFrames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] automatically.
 - **`as_dataframe=True`** is available on `get_activities()`, `get_traces()`, `get_tests()`, and `get_dailies()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
-- **`update_test()` is a full replace.** Omitted optional fields are set to null. Always re-pass all fields you want to keep (e.g. `results=test.results`).
+- **`update_test()` and `update_trace()` are full replaces.** Omitted optional fields are set to null. Always re-pass all fields you want to keep.
 - **`summary` fields are optional.** Always null-check: `activity.summary.power.mean if activity.summary and activity.summary.power else None`.
 - **`metrics` on ActivitySummary** lists available data streams, not the data itself. Use to check availability before calling `get_activity_data()`.
