@@ -40,6 +40,7 @@ import httpx
 
 from .client import Client
 from .constants import DEFAULT_URL
+from .exceptions import SweatStackAuthError
 from .schemas import Metric, Scope, Sport
 
 
@@ -311,10 +312,13 @@ class StreamlitAuth:
             data=token_data,
             auth=auth,
         )
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            raise Exception(f"SweatStack Python login failed. Please try again.") from e
+        if not response.is_success:
+            raise SweatStackAuthError(
+                status_code=response.status_code,
+                url=str(response.request.url),
+                method=response.request.method,
+                body="SweatStack Python login failed. Please try again.",
+            )
         token_response = response.json()
 
         self._set_api_key(

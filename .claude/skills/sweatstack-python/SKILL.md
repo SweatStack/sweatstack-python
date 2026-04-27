@@ -1,7 +1,7 @@
 ---
 name: sweatstack-python
 description: >
-  Builds Python applications using the SweatStack client library (pip install sweatstack).
+  Builds Python applications using the SweatStack client library (uv add sweatstack).
   Covers authentication, activity and trace data retrieval, pandas DataFrames, Streamlit
   dashboards, FastAPI backends, user delegation, teams, and file uploads. Use when writing
   Python scripts, notebooks, Streamlit apps, or FastAPI services that access SweatStack
@@ -13,9 +13,9 @@ description: >
 
 Python client library for the SweatStack sports data platform.
 
-**Install:** `pip install sweatstack`
+**Install:** `uv add sweatstack`
 
-**Extras:** `pip install sweatstack[streamlit]` · `pip install sweatstack[fastapi]`
+**Extras:** `uv add sweatstack[streamlit]` · `uv add sweatstack[fastapi]`
 
 ## Quick Start
 

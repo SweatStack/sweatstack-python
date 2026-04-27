@@ -13,6 +13,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from ..constants import DEFAULT_URL
+from ..exceptions import SweatStackAPIError, SweatStackConnectionError
 from ..utils import decode_jwt_body
 from .config import get_config
 from .dependencies import _extract_expiry
@@ -101,18 +102,27 @@ def _fetch_delegated_token(
     if team_id is not None:
         body["team_id"] = team_id
 
-    response = httpx.post(
-        f"{DEFAULT_URL}/api/v1/oauth/delegated-token",
-        headers={"Authorization": f"Bearer {principal_tokens.access_token}"},
-        json=body,
-    )
+    try:
+        response = httpx.post(
+            f"{DEFAULT_URL}/api/v1/oauth/delegated-token",
+            headers={"Authorization": f"Bearer {principal_tokens.access_token}"},
+            json=body,
+        )
+    except httpx.HTTPError as exc:
+        raise SweatStackConnectionError(str(exc)) from exc
 
     if response.status_code == 403:
         raise HTTPException(status_code=403, detail="You don't have access to this user")
     if response.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
 
-    response.raise_for_status()
+    if not response.is_success:
+        raise SweatStackAPIError(
+            status_code=response.status_code,
+            url=str(response.request.url),
+            method=response.request.method,
+            body=response.text or None,
+        )
     tokens = response.json()
 
     return TokenSet(
@@ -213,14 +223,15 @@ def create_router() -> APIRouter:
                     "redirect_uri": config.redirect_uri,
                 },
             )
-            token_response.raise_for_status()
-            tokens = token_response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("Token exchange failed: %s - %s", e.response.status_code, e.response.text)
-            return error_redirect("token_exchange_failed")
-        except Exception as e:
+        except httpx.HTTPError as e:
             logger.error("Token exchange error: %s", e)
             return error_redirect("token_exchange_failed")
+
+        if not token_response.is_success:
+            logger.error("Token exchange failed: %s - %s", token_response.status_code, token_response.text)
+            return error_redirect("token_exchange_failed")
+
+        tokens = token_response.json()
 
         access_token = tokens.get("access_token")
         refresh_token = tokens.get("refresh_token")
@@ -299,7 +310,7 @@ def create_router() -> APIRouter:
         # Fetch delegated token for the target user
         try:
             delegated_tokens = _fetch_delegated_token(session.principal, user_id, team_id=team_id)
-        except httpx.HTTPStatusError as e:
+        except SweatStackAPIError as e:
             logger.warning("Failed to fetch delegated token for user %s: %s", user_id, e)
             raise HTTPException(status_code=403, detail="You don't have access to this user")
 

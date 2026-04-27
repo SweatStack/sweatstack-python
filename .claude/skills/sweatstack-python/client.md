@@ -381,6 +381,42 @@ sweatstack.authenticate()
 df = sweatstack.get_latest_activity_data()
 ```
 
+## Error Handling
+
+All errors raised by the library are subclasses of `SweatStackError`. Consumers never need to import `httpx`.
+
+```python
+from sweatstack import (
+    SweatStackError,            # base — catch-all
+    SweatStackConnectionError,  # DNS, timeout, connection refused
+    SweatStackTokenRefreshError,# token refresh failed (expired/missing)
+    SweatStackAPIError,         # HTTP error response (has status_code, url, method, body, request_id)
+    SweatStackAuthError,        # 401, 403
+    SweatStackNotFoundError,    # 404
+    SweatStackRateLimitError,   # 429 (has retry_after)
+    SweatStackBadRequestError,  # other 4xx
+    SweatStackServerError,      # 5xx
+)
+```
+
+Typical usage:
+
+```python
+try:
+    activity = client.get_activity("nonexistent_id")
+except SweatStackNotFoundError:
+    print("Activity doesn't exist")
+except SweatStackServerError as e:
+    print(f"Server error (transient): {e.status_code}")
+except SweatStackAPIError as e:
+    print(f"API error: {e.status_code} {e.body}")
+```
+
+Hierarchy:
+- `SweatStackConnectionError`, `SweatStackTokenRefreshError`, and `SweatStackAPIError` are all direct children of `SweatStackError`.
+- All HTTP-response errors (`SweatStackAuthError`, `SweatStackNotFoundError`, etc.) are subclasses of `SweatStackAPIError` and carry `status_code`, `url`, `method`, `request_id`, and `body` attributes.
+- `SweatStackRateLimitError` additionally has `retry_after: int | None`.
+
 ## Gotchas
 
 - **Sport enum uses underscores:** `Sport.cycling_road`, not `Sport("road")` or `Sport.cycling.road`. String values use dots: `"cycling.road"`.

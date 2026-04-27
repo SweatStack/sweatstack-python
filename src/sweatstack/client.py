@@ -28,6 +28,16 @@ import pandas as pd
 from platformdirs import user_cache_dir, user_data_dir
 
 from .constants import DEFAULT_URL
+from .exceptions import (
+    SweatStackAPIError,
+    SweatStackAuthError,
+    SweatStackBadRequestError,
+    SweatStackConnectionError,
+    SweatStackNotFoundError,
+    SweatStackRateLimitError,
+    SweatStackServerError,
+    SweatStackTokenRefreshError,
+)
 from .schemas import (
     ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
     BackfillStatus, DailyMeasure, DailyResponse,
@@ -56,16 +66,6 @@ def enable_cache(path: str | None = None) -> None:
     _cache_config = {"path": path}
 
 
-class TokenRefreshError(Exception):
-    """Raised when automatic token refresh fails.
-
-    This can happen when:
-    - The refresh token is missing
-    - The refresh token has expired
-    - The token refresh request fails
-    """
-
-    pass
 
 
 AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
@@ -340,15 +340,15 @@ class _OAuth2Mixin:
         if redirect_uri:
             token_data["redirect_uri"] = redirect_uri
 
-        response = httpx.post(
-            f"{self.url}/api/v1/oauth/token",
-            data=token_data,
-        )
-
         try:
-            self._raise_for_status(response)
-        except httpx.HTTPStatusError as e:
-            raise Exception(f"Token exchange failed: {e}") from e
+            response = httpx.post(
+                f"{self.url}/api/v1/oauth/token",
+                data=token_data,
+            )
+        except httpx.HTTPError as exc:
+            raise SweatStackConnectionError(str(exc)) from exc
+
+        self._raise_for_status(response)
 
         token_response = TokenResponse.model_validate(response.json())
 
@@ -773,7 +773,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             New access token string.
 
         Raises:
-            TokenRefreshError: If the refresh request fails.
+            SweatStackTokenRefreshError: If the refresh request fails.
         """
         with self._http_client(skip_token_check=True) as client:
             response = client.post(
@@ -789,8 +789,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
             try:
                 self._raise_for_status(response)
-            except httpx.HTTPStatusError as e:
-                raise TokenRefreshError(f"Token refresh request failed: {e}") from e
+            except SweatStackAPIError as e:
+                raise SweatStackTokenRefreshError(f"Token refresh request failed: {e}") from e
 
             return response.json()["access_token"]
 
@@ -805,16 +805,16 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             Valid access token (original if not expired, refreshed otherwise).
 
         Raises:
-            TokenRefreshError: If the token is expired and refresh fails.
+            SweatStackTokenRefreshError: If the token is expired and refresh fails.
         """
         try:
             payload = decode_jwt_body(access_token)
         except Exception as e:
-            raise TokenRefreshError(f"Invalid access token: {e}") from e
+            raise SweatStackTokenRefreshError(f"Invalid access token: {e}") from e
 
         expires_at = payload.get("exp")
         if expires_at is None:
-            raise TokenRefreshError("Access token missing 'exp' claim")
+            raise SweatStackTokenRefreshError("Access token missing 'exp' claim")
 
         is_expired = expires_at - TOKEN_EXPIRY_MARGIN_SECONDS < time.time()
         if not is_expired:
@@ -822,7 +822,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         # Token needs refresh
         if refresh_token is None:
-            raise TokenRefreshError(
+            raise SweatStackTokenRefreshError(
                 "Access token expired but no refresh token available. "
                 "Call client.authenticate(force=True) to re-authenticate."
             )
@@ -850,7 +850,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             SecretStr containing the access token, or None if not authenticated.
 
         Raises:
-            TokenRefreshError: If the token is expired and refresh fails.
+            SweatStackTokenRefreshError: If the token is expired and refresh fails.
         """
         access_token, refresh_token = self._load_token_pair()
 
@@ -934,6 +934,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         """
         Creates an httpx client with the base URL and authentication headers pre-configured.
 
+        Transport-level errors (DNS, timeouts, connection refused) are caught and
+        re-raised as SweatStackConnectionError so consumers never see raw httpx types.
+
         Args:
             skip_token_check: If True, uses the raw _api_key without triggering token expiry check.
                               This prevents recursive token refresh attempts.
@@ -951,50 +954,47 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         if token:
             headers["Authorization"] = f"Bearer {token.get_secret_value()}"
 
-        with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
-            yield client
+        try:
+            with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
+                yield client
+        except httpx.HTTPError as exc:
+            raise SweatStackConnectionError(str(exc)) from exc
+
+    def _raise_for_status(self, response: httpx.Response) -> None:
+        if response.is_success:
+            return
+
+        status = response.status_code
+        body = self._parse_error_body(response)
+        request_id = response.headers.get("x-request-id")
+        common = dict(
+            status_code=status,
+            url=str(response.request.url),
+            method=response.request.method,
+            request_id=request_id,
+            body=body,
+        )
+
+        if status in (401, 403):
+            raise SweatStackAuthError(**common)
+        if status == 404:
+            raise SweatStackNotFoundError(**common)
+        if status == 429:
+            retry_after = int(response.headers.get("retry-after", "0")) or None
+            raise SweatStackRateLimitError(retry_after=retry_after, **common)
+        if 400 <= status < 500:
+            raise SweatStackBadRequestError(**common)
+        if 500 <= status < 600:
+            raise SweatStackServerError(**common)
+        raise SweatStackAPIError(**common)
 
     @staticmethod
-    def _add_note(exception: Exception, note: str):
-        """Add a note to an exception, compatible with Python <3.11."""
-        if hasattr(exception, "add_note"):
-            exception.add_note(note)
-        else:
-            if not exception.args:
-                exception.args = (note,)
-            else:
-                exception.args = (f"{exception.args[0]}\n{note}",) + exception.args[1:]
-
-    def _print_response_and_raise(self, response: httpx.Response):
+    def _parse_error_body(response: httpx.Response) -> dict | str | None:
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exception:
-            additional_info = response.text
-            self._add_note(exception, additional_info)
-            raise exception
-
-    def _raise_for_status(self, response: httpx.Response):
-        if response.status_code == 422:
-            raise ValueError(response.json())
-        elif response.status_code == 401:
-            try:
-                import streamlit
-            except ImportError:
-                self._print_response_and_raise(response)
-            else:
-                try:
-                    response.raise_for_status()
-                except Exception as exception:
-                    if not self.streamlit_compatible:
-                        streamlit_error_message = (
-                            "\nStreamlit environment detected. Use StreamlitAuth.client instance.\n"
-                            "Docs: https://developer.sweatstack.no/learn/integrations/streamlit/"
-                        )
-                        self._add_note(exception, streamlit_error_message)
-                    raise
-
-        else:
-            self._print_response_and_raise(response)
+            return response.json()
+        except Exception:
+            text = response.text
+            return text if text else None
 
     def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
         return [value.value if isinstance(value, Enum) else value for value in values]

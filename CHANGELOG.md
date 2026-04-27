@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- Typed exception hierarchy (`sweatstack.exceptions`). All API errors now raise specific exception types: `SweatStackAuthError` (401/403), `SweatStackNotFoundError` (404), `SweatStackRateLimitError` (429), `SweatStackBadRequestError` (other 4xx), `SweatStackServerError` (5xx). Transport failures raise `SweatStackConnectionError`.
+- Structured error metadata on all API exceptions: `status_code`, `url`, `method`, `request_id`, `body`.
+
+### Changed
+- **BREAKING:** All client methods now raise `SweatStackAPIError` subclasses instead of `httpx.HTTPStatusError`. Code that catches `httpx.HTTPStatusError` must switch to catching `SweatStackAPIError` (or a specific subclass).
+- **BREAKING:** `TokenRefreshError` renamed to `SweatStackTokenRefreshError` and moved to `sweatstack.exceptions`. Import path changed from `from sweatstack import TokenRefreshError` to `from sweatstack import SweatStackTokenRefreshError`.
+- **BREAKING:** 422 responses now raise `SweatStackBadRequestError` instead of `ValueError`.
+- Transport errors (DNS, timeouts, connection refused) now raise `SweatStackConnectionError` instead of leaking raw httpx exceptions.
+
+### Removed
+- `httpx` is no longer part of the public error surface. Consumers do not need to import `httpx` to handle errors.
+
+
 ## [0.75.0] - 2026-04-23
 
 ### Added
