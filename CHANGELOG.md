@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Fixed
+- Local datetime fields (`start_local`, `end_local`, `timestamp_local`) in OpenAPI schemas corrected from `AwareDatetime` to `NaiveDatetime`.
+
+
 ## [0.76.0] - 2026-04-27
 
 ### Added

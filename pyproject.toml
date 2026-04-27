@@ -62,7 +62,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "datamodel-code-generator>=0.26.5",
+    "datamodel-code-generator[ruff]>=0.54.1",
     "myst-parser>=4.0.1",
     "sphinx>=8.2.3",
     "sphinx-markdown-builder>=0.6.8",
