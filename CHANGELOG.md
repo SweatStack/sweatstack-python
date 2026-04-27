@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.76.0] - 2026-04-27
 
 ### Added
 - Typed exception hierarchy (`sweatstack.exceptions`). All API errors now raise specific exception types: `SweatStackAuthError` (401/403), `SweatStackNotFoundError` (404), `SweatStackRateLimitError` (429), `SweatStackBadRequestError` (other 4xx), `SweatStackServerError` (5xx). Transport failures raise `SweatStackConnectionError`.
