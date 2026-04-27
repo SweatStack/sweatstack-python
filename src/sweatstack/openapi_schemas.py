@@ -1172,7 +1172,7 @@ class UserInfoResponse(BaseModel):
     given_name: str | None = Field(None, title='Given Name')
     family_name: str | None = Field(None, title='Family Name')
     email: str | None = Field(None, title='Email')
-    registered_at: AwareDatetime = Field(..., title='Registered At')
+    registered_at: AwareDatetime | NaiveDatetime = Field(..., title='Registered At')
     name: str = Field(..., title='Name')
 
 
@@ -1181,7 +1181,7 @@ class UserResponse(BaseModel):
     first_name: str | None = Field(..., title='First Name')
     last_name: str | None = Field(..., title='Last Name')
     admin: bool = Field(..., title='Admin')
-    registered_at: AwareDatetime = Field(..., title='Registered At')
+    registered_at: AwareDatetime | NaiveDatetime = Field(..., title='Registered At')
     display_name: str = Field(..., title='Display Name')
     is_managed: bool = Field(..., title='Is Managed')
 
