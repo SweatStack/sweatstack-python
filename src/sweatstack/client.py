@@ -16,9 +16,10 @@ from enum import Enum
 from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
+from inspect import getmembers, isfunction
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, Generator, get_type_hints, List, Literal
+from typing import Any, Dict, Generator, get_type_hints, Literal
 
 from pydantic import SecretStr
 from urllib.parse import parse_qs, urlparse
@@ -325,7 +326,10 @@ class _OAuth2Mixin:
             TokenResponse: The token response containing access_token, refresh_token, etc.
 
         Raises:
-            HTTPStatusError: If the token exchange fails
+            SweatStackAuthError: If the OAuth server rejects the code or
+                credentials.
+            SweatStackAPIError: If the token exchange fails for any other
+                reason.
         """
         token_data = {
             "grant_type": "authorization_code",
@@ -605,7 +609,10 @@ class _DelegationMixin:
             None
 
         Raises:
-            HTTPStatusError: If the delegation request fails.
+            SweatStackAuthError: If the principal token is unauthorized
+                to delegate to this user (or via this team).
+            SweatStackAPIError: If the delegation request fails for any
+                other reason.
         """
         self.switch_back()
 
@@ -634,7 +641,11 @@ class _DelegationMixin:
             None
 
         Raises:
-            HTTPStatusError: If the principal token request fails.
+            SweatStackAuthError: If the current token cannot resolve a
+                principal (e.g. the session is itself a delegated one
+                that has expired).
+            SweatStackAPIError: If the principal token request fails for
+                any other reason.
         """
 
         token_response = self._get_principal_token()
@@ -656,7 +667,10 @@ class _DelegationMixin:
             Client: A new client instance authenticated as the delegated user.
 
         Raises:
-            HTTPStatusError: If the delegation request fails.
+            SweatStackAuthError: If the principal token is unauthorized
+                to delegate to this user (or via this team).
+            SweatStackAPIError: If the delegation request fails for any
+                other reason.
         """
         token_response = self._get_delegated_token(user, team_id=team_id)
         return self.__class__(
@@ -676,7 +690,11 @@ class _DelegationMixin:
             Client: A new client instance authenticated as the principal user.
 
         Raises:
-            HTTPStatusError: If the principal token request fails.
+            SweatStackAuthError: If the current token cannot resolve a
+                principal (e.g. the session is itself a delegated one
+                that has expired).
+            SweatStackAPIError: If the principal token request fails for
+                any other reason.
         """
         token_response = self._get_principal_token()
         return self.__class__(
@@ -1115,7 +1133,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             the activities data, depending on the value of as_dataframe.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         activities = list(self._get_activities_generator(
             start=start,
@@ -1162,7 +1180,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Raises:
             StopIteration: If no activities match the filters.
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         return next(self._get_activities_generator(
             start=start,
@@ -1182,7 +1200,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             ActivityDetails: The activity details object containing all information about the activity.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the activity does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         with self._http_client() as client:
             response = client.get(url=f"/api/v1/activities/{activity_id}")
@@ -1210,7 +1229,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             pd.DataFrame: A pandas DataFrame containing the activity's time-series data.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the activity does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         params = {}
         if adaptive_sampling_on is not None:
@@ -1249,7 +1269,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the activity does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         metric = self._enums_to_strings([metric])[0]
         with self._http_client() as client:
@@ -1284,7 +1305,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             pd.DataFrame: A pandas DataFrame containing the AWD data.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the activity does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         params = {}
         if metric is not None:
@@ -1320,7 +1342,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             pd.DataFrame: A pandas DataFrame containing the activity data.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
         return self.get_activity_data(activity.id, adaptive_sampling_on, metrics=metrics)
@@ -1346,7 +1368,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
         return self.get_activity_mean_max(activity.id, metric, adaptive_sampling)
@@ -1380,7 +1402,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Raises:
             ValueError: If both 'sport' and 'sports' parameters are provided.
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         if sport is not None and sports is not None:
             raise ValueError("Cannot specify both 'sport' and 'sports'.")
@@ -1451,7 +1473,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Raises:
             ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         if sport is not None and sports is not None:
             raise ValueError("Cannot specify both 'sport' and 'sports'.")
@@ -1537,7 +1559,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Raises:
             ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         if sport is not None and sports is not None:
             raise ValueError("Cannot specify both 'sport' and 'sports'.")
@@ -1682,7 +1704,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             the traces data, depending on the value of as_dataframe.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         traces = list(self._get_traces_generator(
             start=start,
@@ -1837,7 +1859,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             trace_id: The unique identifier of the trace to delete.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the trace does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         with self._http_client() as client:
             response = client.delete(url=f"/api/v1/traces/{trace_id}")
@@ -1924,7 +1947,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             the tests data, depending on the value of as_dataframe.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         tests = list(self._get_tests_generator(
             start=start,
@@ -1977,7 +2000,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             TestDetails: The test details including resolved traces and overlapping activities.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the test does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         resolution = self._enums_to_strings([trace_resolution])[0]
         params = {} if resolution == TraceResolution.auto.value else {"traces": resolution}
@@ -2010,7 +2034,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             TestSummary: The created test.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         sport = self._enums_to_strings([sport])[0]
         with self._http_client() as client:
@@ -2055,7 +2079,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             tags: Optional list of tags to associate with this test.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the test does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         sport = self._enums_to_strings([sport])[0]
         with self._http_client() as client:
@@ -2079,7 +2104,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             test_id: The unique identifier of the test to delete.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the test does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         with self._http_client() as client:
             response = client.delete(url=f"/api/v1/tests/{test_id}")
@@ -2175,7 +2201,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             date: The date of the entry to delete.
 
         Raises:
-            HTTPStatusError: 404 if entry does not exist.
+            SweatStackNotFoundError: If no entry exists for that
+                measure/date pair.
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         measure_str = measure.value if isinstance(measure, Enum) else measure
         with self._http_client() as client:
@@ -2209,7 +2238,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
 
         Raises:
-            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackBadRequestError: If the metadata exceeds the size
+                limit (413).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._set_app_metadata(f"/api/v1/activities/{activity_id}/app-metadata", data)
 
@@ -2220,7 +2254,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             activity_id: The activity to remove metadata from.
 
         Raises:
-            HTTPStatusError: 403 if not using an app token.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._delete_app_metadata(f"/api/v1/activities/{activity_id}/app-metadata")
 
@@ -2234,7 +2271,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
 
         Raises:
-            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackBadRequestError: If the metadata exceeds the size
+                limit (413).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._set_app_metadata(f"/api/v1/traces/{trace_id}/app-metadata", data)
 
@@ -2245,7 +2287,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             trace_id: The trace to remove metadata from.
 
         Raises:
-            HTTPStatusError: 403 if not using an app token.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._delete_app_metadata(f"/api/v1/traces/{trace_id}/app-metadata")
 
@@ -2259,7 +2304,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
 
         Raises:
-            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackBadRequestError: If the metadata exceeds the size
+                limit (413).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._set_app_metadata(f"/api/v1/tests/{test_id}/app-metadata", data)
 
@@ -2270,7 +2320,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             test_id: The test to remove metadata from.
 
         Raises:
-            HTTPStatusError: 403 if not using an app token.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._delete_app_metadata(f"/api/v1/tests/{test_id}/app-metadata")
 
@@ -2283,7 +2336,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             data: Arbitrary JSON-serializable dict (max 4KB, max nesting depth 32).
 
         Raises:
-            HTTPStatusError: 403 if not using an app token, 413 if over size limit.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackBadRequestError: If the metadata exceeds the size
+                limit (413).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._set_app_metadata("/api/v1/profile/app-metadata", data)
 
@@ -2291,7 +2349,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         """Deletes app metadata from the authenticated user (requires app token).
 
         Raises:
-            HTTPStatusError: 403 if not using an app token.
+            SweatStackAuthError: If the request is not authenticated with
+                an app token (403).
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         self._delete_app_metadata("/api/v1/profile/app-metadata")
 
@@ -2308,7 +2369,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             list[Sport]: A list of Sport objects representing the available sports.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         with self._http_client() as client:
             response = client.get(
@@ -2328,7 +2389,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             list[str]: A list of tag strings.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         with self._http_client() as client:
             response = client.get(
@@ -2349,7 +2410,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             list[UserSummary]: A list of UserSummary objects containing basic user information.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         client = self.principal_client()
         with client._http_client() as client:
@@ -2373,7 +2434,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             UserResponse: The created user.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         with self._http_client() as client:
             response = client.post(
@@ -2390,7 +2451,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             list[TeamResponse]: Teams with the user's role (owner or member).
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         with self._http_client() as client:
             response = client.get(url="/api/v1/teams/")
@@ -2404,7 +2465,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             list[AuthorizedTeamResponse]: Teams with their granted scopes.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         with self._http_client() as client:
             response = client.get(url="/api/v1/teams/authorized")
@@ -2423,7 +2484,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             list[UserSummary]: Users who have authorized the team, with their granted scopes.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If the team does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         with self._http_client() as client:
             response = client.get(
@@ -2451,7 +2513,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Raises:
             ValueError: If no match or multiple matches found.
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         users = self.get_team_users(team_id)
         return self._find_user(user, users, search_mode)
@@ -2469,7 +2531,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             dict: Confirmation with team_id, user_id, and granted scopes.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         if scopes is None:
             scopes = [Scope.data_read]
@@ -2502,7 +2564,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             dict: Confirmation message.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
             FileNotFoundError: If a file does not exist.
         """
         if isinstance(files, (str, Path)):
@@ -2544,7 +2606,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 including profile data, permissions, and authentication details.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         with self._http_client() as client:
             response = client.get(
@@ -2564,7 +2626,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Raises:
             ValueError: If no authentication token is available.
-            HTTPStatusError: If the API request fails or user is not found.
+            SweatStackNotFoundError: If the user does not exist.
+            SweatStackAPIError: If the API request fails for any other
+                reason.
         """
         if not self.api_key:
             raise ValueError("Not authenticated. Please call authenticate() or login() first.")
@@ -2602,7 +2666,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             BackfillStatus: A BackfillStatus object for each received message.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
         """
         while True:
             try:
@@ -2633,7 +2697,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             BackfillStatus: A BackfillStatus object containing the current backfill status.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackAPIError: If the API request fails.
             ValueError: If no status message is received.
         """
         for status in self.watch_backfill_status(auto_reconnect=False):
@@ -2644,14 +2708,19 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 _default_client = Client()
 
 
-def _generate_singleton_methods(method_names: List[str]) -> None:
-    """
-    Automatically generates singleton methods for the Client class.
-    
-    Args:
-        method_names: List of method names to expose in the singleton interface
-    """
+def _generate_singleton_methods() -> list[str]:
+    """Expose every public method on Client as a module-level function.
 
+    Discovery is automatic: each method on ``Client`` (including those
+    inherited from mixins) whose name does not start with an underscore
+    becomes a module-level function bound to ``_default_client``. This
+    means ``sweatstack.get_activities(...)`` always reaches the same
+    surface as ``Client().get_activities(...)``, with no hand-maintained
+    list to drift.
+
+    Returns:
+        The sorted list of generated function names. Fed into ``__all__``.
+    """
     def create_singleton_method(method_name: str):
         bound_method = getattr(_default_client, method_name)
 
@@ -2661,88 +2730,48 @@ def _generate_singleton_methods(method_names: List[str]) -> None:
 
         class_method = getattr(Client, method_name)
         singleton_method.__annotations__ = get_type_hints(class_method)
-
         return singleton_method
-    
-    for method_name in method_names:
-        if not hasattr(Client, method_name):
-            raise ValueError(f"Method '{method_name}' not found in class {Client.__name__}")
-            
-        class_method = getattr(Client, method_name)
-        
-        if not callable(class_method):
-            continue
-            
-        globals()[method_name] = create_singleton_method(method_name)
+
+    names = sorted(
+        name for name, obj in getmembers(Client)
+        if not name.startswith("_") and isfunction(obj)
+    )
+    for name in names:
+        globals()[name] = create_singleton_method(name)
+    return names
 
 
-_generate_singleton_methods(
-    [
-        "authenticate",
-        "get_authorization_url",
-        "exchange_code_for_token",
-        "generate_pkce_params",
+_SINGLETON_METHODS = _generate_singleton_methods()
 
-        "get_user",
-        "get_users",
-        "create_user",
-        "get_teams",
-        "get_authorized_teams",
-        "get_team_users",
-        "get_team_user",
-        "authorize_team",
-        "get_userinfo",
-        "whoami",
 
-        "upload",
-
-        "get_backfill_status",
-        "watch_backfill_status",
-
-        "get_activities",
-
-        "get_activity",
-        "get_activity_data",
-        "get_activity_mean_max",
-        "get_activity_awd",
-
-        "get_latest_activity",
-        "get_latest_activity_data",
-        "get_latest_activity_mean_max",
-
-        "get_longitudinal_data",
-        "get_longitudinal_mean_max",
-        "get_longitudinal_awd",
-
-        "get_traces",
-        "create_trace",
-
-        "get_tests",
-        "get_test",
-        "create_test",
-        "update_test",
-        "delete_test",
-
-        "get_dailies",
-        "set_daily",
-        "delete_daily",
-
-        "set_activity_app_metadata",
-        "delete_activity_app_metadata",
-        "set_trace_app_metadata",
-        "delete_trace_app_metadata",
-        "set_test_app_metadata",
-        "delete_test_app_metadata",
-        "set_user_app_metadata",
-        "delete_user_app_metadata",
-
-        "get_sports",
-        "get_tags",
-        "clear_cache",
-
-        "switch_user",
-        "switch_back",
-        "delegated_client",
-        "principal_client",
-    ]
-)
+# Public surface. Wildcard imports from this module are well-defined.
+# Schemas are re-exported here (instead of from .schemas directly) so that
+# `from sweatstack import TraceDetails` works alongside the singletons.
+__all__ = sorted([
+    "Client",
+    "enable_cache",
+    # Schemas / enums re-exported from .schemas — keep in sync with the
+    # `from .schemas import (...)` block at the top of this file.
+    "ActivityDetails",
+    "ActivitySummary",
+    "ApplicationMemberRole",
+    "AuthorizedTeamResponse",
+    "BackfillStatus",
+    "DailyMeasure",
+    "DailyResponse",
+    "Marker",
+    "Metric",
+    "Scope",
+    "Sport",
+    "TeamResponse",
+    "TestDetails",
+    "TestResults",
+    "TestSummary",
+    "TokenResponse",
+    "TraceDetails",
+    "TraceResolution",
+    "UserInfoResponse",
+    "UserResponse",
+    "UserSummary",
+    *_SINGLETON_METHODS,
+])

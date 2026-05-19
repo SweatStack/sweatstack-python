@@ -2571,7 +2571,7 @@ wheels = [
 
 [[package]]
 name = "sweatstack"
-version = "0.77.1"
+version = "0.78.0"
 source = { editable = "." }
 dependencies = [
     { name = "email-validator" },

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.78.0] - 2026-05-19
+
+### Added
+- `update_trace()` and `delete_trace()` are now exposed as module-level functions (e.g. `sweatstack.update_trace(...)`), matching the rest of the CRUD surface. They were previously only reachable via a `Client` instance.
+- The package now declares an `__all__`, so `from sweatstack import *` and tooling that inspects the public surface (Sphinx, IDEs, type-checkers) see a well-defined list.
+
+### Changed
+- Minimum Python version is now declared as `>=3.10` (the code already required 3.10+ syntax; the previous `>=3.9` declaration was incorrect).
+- Exception types in docstrings now reference the typed hierarchy introduced in 0.76.0 (`SweatStackAPIError`, `SweatStackNotFoundError`, `SweatStackAuthError`, `SweatStackBadRequestError`) instead of the now-incorrect `HTTPStatusError`.
+
+
 ## [0.77.1] - 2026-05-19
 
 ### Fixed
