@@ -32,7 +32,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://sweatstack.no"
-Documentation = "https://developer.sweatstack.no/getting-started/"
+Documentation = "https://docs.sweatstack.no/getting-started/"
 Repository = "https://github.com/SweatStack/sweatstack-python"
 Issues = "https://github.com/SweatStack/sweatstack-python/issues"
 Changelog = "https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md"
