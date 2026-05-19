@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Fixed
+- Reverted unrelated OpenAPI schema drift that shipped accidentally in 0.77.0. `start_local`, `end_local`, and `timestamp_local` are once again `NaiveDatetime` (matching 0.76.1/0.76.2 behaviour), and `registered_at` on `UserInfoResponse` / `UserResponse` again accepts both aware and naive datetimes. The trace-to-test linking surface from 0.77.0 is unchanged.
+
+
 ## [0.77.0] - 2026-05-19
 
 ### Added
