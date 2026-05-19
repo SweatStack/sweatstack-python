@@ -43,7 +43,7 @@ from .schemas import (
     BackfillStatus, DailyMeasure, DailyResponse,
     Marker, Metric, Scope, Sport,
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
-    UserInfoResponse, UserResponse, UserSummary
+    TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -1717,6 +1717,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         heart_rate: int | None = None,
         tags: list[str] | None = None,
         sport: Sport | str | None = None,
+        test_id: str | None = None,
     ) -> TraceDetails:
         """Creates a new trace with the specified parameters.
 
@@ -1733,12 +1734,18 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             heart_rate: Optional heart rate measurement in beats per minute.
             tags: Optional list of tags to associate with this trace.
             sport: Optional sport to associate with this trace.
+            test_id: Optional ID of a test to explicitly link this trace to.
+                The link is independent of timestamp — a linked trace appears
+                in the test's traces list regardless of whether its timestamp
+                falls inside the test window.
 
         Returns:
             TraceDetails: The created trace object with all details.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If ``test_id`` references a test that
+                does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         sport = self._enums_to_strings([sport])[0] if sport else None
         with self._http_client() as client:
@@ -1754,6 +1761,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                     "heart_rate": heart_rate,
                     "tags": tags,
                     "sport": sport,
+                    "test_id": test_id,
                 },
             )
             self._raise_for_status(response)
@@ -1772,12 +1780,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         heart_rate: int | None = None,
         tags: list[str] | None = None,
         sport: Sport | str | None = None,
+        test_id: str | None = None,
     ) -> None:
         """Updates a trace by replacing all fields.
 
         This is a full replace operation. Fields not provided will be set to null
         server-side. To modify a single field, first fetch the trace with
         ``get_traces()``, then pass all fields back.
+
+        In particular: if the trace was previously linked to a test via
+        ``test_id`` and you do not pass ``test_id`` here, the link is cleared.
+        Pass the existing ``test_id`` back in to preserve it.
 
         Args:
             trace_id: The unique identifier of the trace to update.
@@ -1790,9 +1803,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             heart_rate: Optional heart rate measurement in beats per minute.
             tags: Optional list of tags to associate with this trace.
             sport: Optional sport to associate with this trace.
+            test_id: Optional ID of a test to explicitly link this trace to.
+                Pass ``None`` (or omit) to leave the trace unlinked.
 
         Raises:
-            HTTPStatusError: If the API request fails.
+            SweatStackNotFoundError: If ``trace_id`` does not exist, or if
+                ``test_id`` references a test that does not exist.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         sport = self._enums_to_strings([sport])[0] if sport else None
         with self._http_client() as client:
@@ -1808,6 +1825,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                     "heart_rate": heart_rate,
                     "tags": tags,
                     "sport": sport,
+                    "test_id": test_id,
                 },
             )
             self._raise_for_status(response)
@@ -1931,11 +1949,29 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         else:
             return tests
 
-    def get_test(self, test_id: str) -> TestDetails:
+    def get_test(
+        self,
+        test_id: str,
+        *,
+        trace_resolution: TraceResolution | str = TraceResolution.auto,
+    ) -> TestDetails:
         """Gets details for a specific test by ID.
 
         Args:
             test_id: The unique identifier of the test to retrieve.
+            trace_resolution: How traces are matched to this test. Affects only
+                the ``traces`` list on the response; ``activities`` is always
+                time-overlap matched. Accepts a ``TraceResolution`` enum or
+                its string value (``"auto"`` or ``"linked"``).
+
+                - ``"auto"`` (default): traces whose timestamp falls in the
+                  test's time range, plus any traces explicitly linked to
+                  this test, minus any traces explicitly linked to a
+                  different test.
+                - ``"linked"``: only traces explicitly linked to this test
+                  via ``test_id``, regardless of timestamp.
+
+                Maps to the ``traces`` query parameter on the wire.
 
         Returns:
             TestDetails: The test details including resolved traces and overlapping activities.
@@ -1943,8 +1979,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Raises:
             HTTPStatusError: If the API request fails.
         """
+        resolution = self._enums_to_strings([trace_resolution])[0]
+        params = {} if resolution == TraceResolution.auto.value else {"traces": resolution}
         with self._http_client() as client:
-            response = client.get(url=f"/api/v1/tests/{test_id}")
+            response = client.get(url=f"/api/v1/tests/{test_id}", params=params)
             self._raise_for_status(response)
             return TestDetails.model_validate(response.json())
 

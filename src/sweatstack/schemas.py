@@ -18,7 +18,7 @@ from .openapi_schemas import (
     BackfillStatus, DailyMeasure, DailyResponse,
     Marker, Metric, Scope, Sport,
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
-    UserInfoResponse, UserResponse, UserSummary
+    TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
 
 

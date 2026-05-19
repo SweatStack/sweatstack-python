@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- Link a trace to a test via the new `test_id` argument on `create_trace()` and `update_trace()`. A linked trace appears in the test's traces regardless of its timestamp.
+- `get_test()` accepts `trace_resolution=TraceResolution.linked` to return only traces explicitly linked to the test. Defaults to `TraceResolution.auto` (unchanged behaviour).
+
+### Changed
+- `update_trace()` replaces all fields, including `test_id`. Callers that omit `test_id` will clear any existing link — pass it back in to keep the trace linked.
+
+
 ## [0.76.2] - 2026-04-27
 
 ### Fixed
