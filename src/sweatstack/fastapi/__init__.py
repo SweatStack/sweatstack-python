@@ -57,11 +57,17 @@ except ImportError:
         "Install it with: pip install 'sweatstack[fastapi]'"
     )
 
+from .access_token_cache import (
+    AccessTokenCache,
+    CachedAccessToken,
+    InMemoryAccessTokenCache,
+)
 from .config import configure, urls
 from .dependencies import (
     AuthenticatedUser,
     OptionalSelectedUser,
     OptionalUser,
+    RefreshLockTimeout,
     SelectedUser,
     SweatStackUser,
 )
@@ -99,6 +105,11 @@ __all__ = [
     "StoredTokens",
     "SQLiteTokenStore",
     "EncryptedSQLiteTokenStore",
+    # Refresh de-duplication
+    "AccessTokenCache",
+    "CachedAccessToken",
+    "InMemoryAccessTokenCache",
+    "RefreshLockTimeout",
     # Webhook utilities
     "verify_signature",
     # Exceptions

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
+
+from .access_token_cache import AccessTokenCache, InMemoryAccessTokenCache
 
 if TYPE_CHECKING:
     from .models import TokenStore
@@ -41,6 +43,7 @@ class FastAPIConfig:
     cookie_max_age: int
     auth_route_prefix: str
     redirect_unauthenticated: bool
+    access_token_cache: AccessTokenCache
     webhook_secret: SecretStr | None = None
     token_store: TokenStore | None = None
 
@@ -73,6 +76,7 @@ def configure(
     redirect_unauthenticated: bool = True,
     webhook_secret: str | SecretStr | None = None,
     token_store: TokenStore | None = None,
+    access_token_cache: AccessTokenCache | None = None,
 ) -> None:
     """Configure the FastAPI plugin.
 
@@ -96,6 +100,12 @@ def configure(
             SWEATSTACK_WEBHOOK_SECRET env var. Required if using WebhookPayload dependency.
         token_store: TokenStore implementation for persisting tokens. Required if using
             AuthenticatedUser in webhook handlers.
+        access_token_cache: De-duplicates concurrent ``/oauth/token`` refreshes for
+            the same session. Defaults to an in-process implementation that is
+            correct for single-worker deployments. Multi-worker deployments that
+            want cross-worker de-duplication can supply a shared-state
+            implementation (e.g. Redis-backed). See
+            :class:`AccessTokenCache <sweatstack.fastapi.AccessTokenCache>`.
     """
     global _config
 
@@ -157,6 +167,7 @@ def configure(
         cookie_max_age=cookie_max_age,
         auth_route_prefix=auth_route_prefix,
         redirect_unauthenticated=redirect_unauthenticated,
+        access_token_cache=access_token_cache or InMemoryAccessTokenCache(),
         webhook_secret=webhook_secret_obj,
         token_store=token_store,
     )

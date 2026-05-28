@@ -11,6 +11,7 @@ Requires: `pip install sweatstack[fastapi]`
 - [User Delegation](#user-delegation)
 - [Webhooks](#webhooks)
 - [Token Stores](#token-stores)
+- [Access Token Cache](#access-token-cache)
 
 ---
 
@@ -55,6 +56,7 @@ configure(
     redirect_unauthenticated: bool = True,    # True = redirect to login, False = return 401
     webhook_secret: str = None,               # SWEATSTACK_WEBHOOK_SECRET
     token_store: TokenStore = None,           # for webhook user token persistence
+    access_token_cache: AccessTokenCache = None,  # default: in-process LRU. See "Access Token Cache"
 )
 ```
 
@@ -207,3 +209,79 @@ class RedisTokenStore(TokenStore):
 ```
 
 `StoredTokens` fields: `user_id`, `access_token`, `refresh_token`, `expires_at: datetime`.
+
+## Access Token Cache
+
+When a single page-load fans out into many concurrent requests, the cookie's access token may be on the edge of expiry for several of them at once. Without coordination, each request independently calls `/oauth/token` with the same refresh token, producing a burst of duplicate refreshes. The access-token cache collapses this to a single call: peers serialise on a per-session lock and share the result.
+
+The default `InMemoryAccessTokenCache` is correct for single-worker FastAPI deployments. It is **LRU-bounded** (10k entries) so memory is capped regardless of session churn, and uses **striped locking** (64 stripes) so eviction never coordinates with in-flight refreshes.
+
+### Tuning
+
+```python
+from sweatstack.fastapi import configure, InMemoryAccessTokenCache
+
+configure(
+    ...,
+    access_token_cache=InMemoryAccessTokenCache(
+        max_entries=50_000,   # high session-churn deployments
+        lock_stripes=128,     # very high concurrent refresh counts
+    ),
+)
+```
+
+### Multi-worker deployments
+
+For multiple FastAPI workers (uvicorn `--workers > 1`, Gunicorn, etc.) the in-memory cache de-duplicates **within** each worker, not across them. Cross-worker de-duplication requires a shared-state implementation. Implement the `AccessTokenCache` Protocol — `get`, `set`, `invalidate`, `migrate`, `lock` — and pass it to `configure()`.
+
+```python
+from sweatstack.fastapi import AccessTokenCache, CachedAccessToken
+# Sketch: Redis-backed implementation (hash the key, never store the raw refresh token).
+```
+
+The Protocol surface is documented in detail in `sweatstack/fastapi/access_token_cache.py`. The call pattern (`check → lock → recheck → refresh → set/migrate`) is in the `AccessTokenCache` docstring.
+
+### Timeouts and the `RefreshLockTimeout` exception
+
+The refresh path has two bounds, both intended as defence-in-depth rather than knobs users normally tune:
+
+| Constant | Default | What it bounds |
+|---|---|---|
+| `REFRESH_HTTP_TIMEOUT` | 10s read, 5s connect | The `/oauth/token` HTTP call |
+| `REFRESH_LOCK_TIMEOUT` | 15s | Waiting for a peer's refresh to finish |
+
+A waiter that cannot acquire the per-session lock within 15s raises `RefreshLockTimeout` rather than pinning a threadpool worker. In the cookie-based dependency path it surfaces as a 401; in the webhook path it is wrapped as `WebhookTokenRefreshError`. You don't normally catch it; if you want to wire it to metrics:
+
+```python
+from sweatstack.fastapi import RefreshLockTimeout
+
+@app.exception_handler(RefreshLockTimeout)
+async def on_refresh_timeout(request, exc):
+    metrics.increment("oauth.refresh.lock_timeout")
+    raise  # let the normal 401 / WebhookTokenRefreshError path run
+```
+
+### Refresh-token rotation
+
+The current SweatStack `/oauth/token` endpoint does not rotate refresh tokens, but the cache is rotation-aware: if the server ever starts returning a new refresh token, it is captured, the cookie / token store is rewritten with it, and the cache installs the result under both the old and new keys (so in-flight peers still arriving with the old refresh token continue to hit).
+
+### Debugging
+
+Enable debug logs to see every cache decision keyed by a short SHA-256 fingerprint of the refresh token (never the raw secret):
+
+```python
+import logging
+logging.getLogger("sweatstack.fastapi.dependencies").setLevel(logging.DEBUG)
+```
+
+Typical output for a 5-way concurrent fan-out on an expiring session:
+
+```
+DEBUG access-token refresh completed (session=4f2a91c0)
+DEBUG access-token cache hit after lock (peer refreshed; session=4f2a91c0)
+DEBUG access-token cache hit after lock (peer refreshed; session=4f2a91c0)
+DEBUG access-token cache hit (session=4f2a91c0)
+DEBUG access-token cache hit (session=4f2a91c0)
+```
+
+One refresh, four cache hits.

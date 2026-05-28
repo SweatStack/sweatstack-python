@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Fixed
+- `sweatstack.fastapi`: a single page load that fans out into many concurrent requests no longer produces a burst of duplicate `/oauth/token` refreshes when the session's access token is on the edge of expiring. Concurrent requests for the same session now serialise on a per-session lock and share the resulting refresh, so an N-way race collapses to a single token endpoint call.
+
+### Added
+- `sweatstack.fastapi.AccessTokenCache` (Protocol) and `InMemoryAccessTokenCache` (default), exposed via `configure(access_token_cache=...)`. The default is correct for single-worker deployments. Multi-worker deployments that want cross-worker de-duplication can plug in a shared-state implementation (e.g. Redis-backed). The default implementation is bounded by an LRU cap (10k entries) and uses striped locking, so memory growth is bounded regardless of session churn.
+- `sweatstack.fastapi`: refresh-token rotation is now handled transparently. If a future `/oauth/token` response returns a new refresh token, the cache installs the result under both the old and new keys (so in-flight peers still hit), and the cookie / token store is rewritten with the new value. Current SweatStack servers do not rotate, so this is a forward-compatibility measure.
+- `sweatstack.fastapi.RefreshLockTimeout`: a waiter that cannot acquire the per-session refresh lock within 15 seconds now raises this rather than blocking a FastAPI threadpool worker indefinitely. The `/oauth/token` call itself also has an explicit 10-second timeout.
+- `sweatstack.fastapi`: debug logs (`sweatstack.fastapi.dependencies` logger) on every cache hit / seed / refresh / failure, keyed by a short SHA-256 fingerprint of the refresh token. Enable with `logging.getLogger("sweatstack.fastapi.dependencies").setLevel(logging.DEBUG)`.
+
+
 ## [0.78.0] - 2026-05-19
 
 ### Added
