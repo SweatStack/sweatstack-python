@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.79.0] - 2026-05-28
 
 ### Fixed
 - `sweatstack.fastapi`: a single page load that fans out into many concurrent requests no longer produces a burst of duplicate `/oauth/token` refreshes when the session's access token is on the edge of expiring. Concurrent requests for the same session now serialise on a per-session lock and share the resulting refresh, so an N-way race collapses to a single token endpoint call.
