@@ -42,11 +42,10 @@ from .exceptions import (
 from .schemas import (
     ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
     BackfillStatus, DailyMeasure, DailyResponse,
-    Marker, Metric, Modifier, Scope, Sport,
+    Marker, Metric, Scope, Sport,
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
-from ._sport_bridge import encode_sport, normalize_sport_column, to_ost_sport
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
@@ -1016,17 +1015,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             return text if text else None
 
     def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
-        out = []
-        for value in values:
-            if isinstance(value, Sport):
-                # OST Sport isn't an Enum; encode it to the legacy wire value a pre-migration
-                # server accepts (the temporary legacy translation -- see plans/005).
-                out.append(encode_sport(value))
-            elif isinstance(value, Enum):
-                out.append(value.value)
-            else:
-                out.append(value)
-        return out
+        return [value.value if isinstance(value, Enum) else value for value in values]
 
     def _get_activities_generator(
         self,
@@ -1081,9 +1070,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         for Streamlit compatibility.
         """
         df = convert_to_standard_dtypes(df)
-        # Parquet DataFrames bypass the pydantic models, so translate legacy sport values to OST
-        # here (the only DataFrame with a sport column is longitudinal data -- see plans/005).
-        df = normalize_sport_column(df)
         if self.streamlit_compatible:
             df = make_dataframe_streamlit_compatible(df)
         return df
@@ -2391,8 +2377,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params={"only_root": only_root},
             )
             self._raise_for_status(response)
-            # to_ost_sport, not strict Sport(...): tolerates legacy and unknown-future values.
-            return [to_ost_sport(sport) for sport in response.json()]
+            return [Sport(sport) for sport in response.json()]
 
     def get_tags(self) -> list[str]:
         """Gets a list of all tags used by the user.
@@ -2596,9 +2581,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
             data = {}
             if sport is not None:
-                # Route through the single encode seam so an OST Sport is translated to the legacy
-                # wire value the (pre-migration) server expects (see _enums_to_strings / plans/005).
-                data["sport"] = self._enums_to_strings([sport])[0]
+                data["sport"] = sport.value if isinstance(sport, Enum) else sport
 
             with self._http_client() as client:
                 response = client.post(
@@ -2778,7 +2761,6 @@ __all__ = sorted([
     "DailyResponse",
     "Marker",
     "Metric",
-    "Modifier",
     "Scope",
     "Sport",
     "TeamResponse",
