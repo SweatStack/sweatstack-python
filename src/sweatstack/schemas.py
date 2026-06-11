@@ -125,14 +125,63 @@ Sport.is_sub_sport_of.__doc__ = _is_sub_sport_of.__doc__
 Sport.is_root_sport = _is_root_sport
 Sport.is_root_sport.__doc__ = _is_root_sport.__doc__
 
+# --- OpenSportTaxonomy (OST) compatibility -----------------------------------------------------------
+# The SweatStack API is migrating its sport vocabulary to OpenSportTaxonomy. A handful of sport codes are
+# renamed and three become OST "+stationary" modifiers; the table below is the entire delta (every other
+# value is byte-identical in both vocabularies). Mapping OST values back to the legacy ``Sport`` members
+# here lets the client keep its existing public ``Sport`` enum while transparently accepting OST values
+# from the API, so e.g. ``activity.sport == Sport.cycling_trainer`` keeps working across the migration.
+# Remove this shim when the SDK adopts OST natively.
+_OST_TO_LEGACY_SPORT = {
+    "cycling+stationary": "cycling.trainer",
+    "running+stationary": "running.treadmill",
+    "rowing+stationary": "rowing.ergometer",
+    "cycling.time_trial": "cycling.tt",
+    "cycling.mountain": "cycling.mountainbike",
+    "xc_skiing": "cross_country_skiing",
+    "xc_skiing.classic": "cross_country_skiing.classic",
+    "xc_skiing.skate": "cross_country_skiing.skate",
+}
+
+# All declared (legacy) Sport values, captured once so resolution only ever maps to a real member and
+# never to a previously-cached dynamic pseudo-member.
+_LEGACY_SPORT_VALUES = frozenset(member.value for member in Sport)
+
+
+def _ost_to_legacy_sport(value: str) -> "str | None":
+    """Translate an OST sport wire value to its legacy ``Sport`` value, or ``None`` if there is none.
+
+    Resolution order -- the rename table must win over modifier-stripping, so ``cycling+stationary``
+    resolves to the ``cycling.trainer`` leaf rather than the bare ``cycling`` base:
+
+    1. Exact match in the rename table.
+    2. Strip OST ``+modifier`` suffixes and retry, so a modified-but-otherwise-known sport such as
+       ``cycling.road+virtual`` resolves to its base ``cycling.road`` (the modifier, which the legacy
+       enum cannot express, is dropped).
+    """
+    if value in _OST_TO_LEGACY_SPORT:
+        return _OST_TO_LEGACY_SPORT[value]
+    base = value.split("+", 1)[0]
+    if base != value:
+        return _OST_TO_LEGACY_SPORT.get(base, base)
+    return None
+
+
 @classmethod
 def _sport_missing(cls, value: str):
-    """Handle unknown sport values from newer API versions.
+    """Resolve a sport value that is not a declared member.
 
-    This allows the client to gracefully handle new sports added to the API
-    without requiring a client library update. Unknown values become dynamic
-    enum members that behave like regular Sport values.
+    First tries to map an OpenSportTaxonomy value back to its legacy ``Sport`` member (see
+    :func:`_ost_to_legacy_sport`) so equality and the helper methods keep working across the API's OST
+    migration. Otherwise -- a genuinely new sport with no legacy equivalent -- it falls back to a
+    dynamic pseudo-member, so newer API versions never crash an older client.
     """
+    legacy = _ost_to_legacy_sport(value)
+    if legacy is not None and legacy in _LEGACY_SPORT_VALUES:
+        member = cls._value2member_map_[legacy]
+        cls._value2member_map_[value] = member  # cache OST spelling -> real legacy member
+        return member
+
     pseudo_member = object.__new__(cls)
     pseudo_member._name_ = value
     pseudo_member._value_ = value
