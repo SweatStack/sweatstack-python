@@ -151,8 +151,12 @@ sweatstack.schemas
 Sport
 ~~~~~
 
-.. autoclass:: sweatstack.schemas.Sport
-    :members: root_sport, parent_sport, is_sub_sport_of, is_root_sport, display_name
+``sweatstack.Sport`` is the `OpenSportTaxonomy <https://github.com/SweatStack/open-sport-taxonomy>`_
+``Sport`` type. See its documentation for the full API (``parse``, ``resolve``, ``code``, ``label``,
+``modifiers``, ``parent``, ``is_subsport_of``, ``all``, and the ``Sport.CYCLING_ROAD``-style constants).
+
+.. autoclass:: sweatstack.Sport
+    :members: parse, resolve, is_subsport_of, all
     :undoc-members:
 
 Metric

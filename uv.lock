@@ -1541,6 +1541,20 @@ wheels = [
 ]
 
 [[package]]
+name = "open-sport-taxonomy"
+version = "0.8.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/a3/4c77e76aa89db72b5e0af4d6a7f5e5f727ef0988b706e5d6cc20370767ed/open_sport_taxonomy-0.8.5.tar.gz", hash = "sha256:76e7a52e67b813bfc32694804fcae54e6b154567a9876ccf5e9dc80eccf17dc4", size = 21692, upload-time = "2026-06-10T10:15:01.993Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/91/72a6061534a418cadfb985643817652b5593ad6c2094f80a509d7297ccd0/open_sport_taxonomy-0.8.5-py3-none-any.whl", hash = "sha256:bef0143a14e945b3eb39308872682710f7b284ad71e4a3a0abd9d071667ab2cc", size = 24350, upload-time = "2026-06-10T10:15:00.966Z" },
+]
+
+[package.optional-dependencies]
+pydantic = [
+    { name = "pydantic" },
+]
+
+[[package]]
 name = "overrides"
 version = "7.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2571,11 +2585,12 @@ wheels = [
 
 [[package]]
 name = "sweatstack"
-version = "0.78.0"
+version = "0.80.0"
 source = { editable = "." }
 dependencies = [
     { name = "email-validator" },
     { name = "httpx" },
+    { name = "open-sport-taxonomy", extra = ["pydantic"] },
     { name = "pandas" },
     { name = "platformdirs" },
     { name = "pyarrow" },
@@ -2615,6 +2630,7 @@ requires-dist = [
     { name = "ipython", marker = "extra == 'jupyter'", specifier = ">=8.31.0" },
     { name = "jupyterlab", marker = "extra == 'jupyter'", specifier = ">=4.3.4" },
     { name = "matplotlib", marker = "extra == 'jupyter'", specifier = ">=3.10.0" },
+    { name = "open-sport-taxonomy", extras = ["pydantic"], specifier = ">=0.8.5" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "pyarrow", specifier = ">=18.0.0" },
