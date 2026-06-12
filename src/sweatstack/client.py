@@ -46,6 +46,7 @@ from .schemas import (
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
+from .schemas import _sport_to_wire
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
@@ -1015,7 +1016,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             return text if text else None
 
     def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
-        return [value.value if isinstance(value, Enum) else value for value in values]
+        # Sport filters get a lossy forward-compat fallback (_sport_to_wire); it is a no-op for every
+        # other enum/string value.
+        return [_sport_to_wire(value.value if isinstance(value, Enum) else value) for value in values]
 
     def _get_activities_generator(
         self,

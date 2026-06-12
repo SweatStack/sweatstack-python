@@ -167,6 +167,30 @@ def _ost_to_legacy_sport(value: str) -> "str | None":
     return None
 
 
+# Lossy forward-compatibility for *encoding* sport filters. A request that filters on one of the changed
+# sports is sent as the nearest code identical in BOTH vocabularies -- its root -- so the filter is
+# accepted by a pre- *or* post-migration server (e.g. ``cycling.trainer`` -> ``cycling``). This
+# deliberately broadens the filter to the root, which is acceptable because no app filters on these
+# sub-sports. The ``cross_country_skiing.*`` family has no common root (its root was renamed to
+# ``xc_skiing``) and is intentionally left untouched. Remove with the rest of the OST shim.
+_LOSSY_SPORT_FALLBACK = {
+    "cycling.trainer": "cycling",
+    "cycling.tt": "cycling",
+    "cycling.mountainbike": "cycling",
+    "running.treadmill": "running",
+    "rowing.ergometer": "rowing",
+}
+
+
+def _sport_to_wire(value: str) -> str:
+    """Translate a sport wire value to a form a pre- or post-migration server both accept (lossy).
+
+    Used only when encoding sport *filters*; a no-op for every non-sport value. Not used when writing a
+    real sport (e.g. activity upload), which must keep its exact value.
+    """
+    return _LOSSY_SPORT_FALLBACK.get(value, value)
+
+
 @classmethod
 def _sport_missing(cls, value: str):
     """Resolve a sport value that is not a declared member.
