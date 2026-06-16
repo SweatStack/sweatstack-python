@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Trace responses now include `test` and `test_match` (server-side test matching).
+
 ### Fixed
 - Fixes Dailies response schema.
 

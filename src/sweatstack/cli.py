@@ -1,4 +1,5 @@
 import ast
+import re
 from pathlib import Path
 
 import httpx
@@ -8,24 +9,85 @@ from datamodel_code_generator import DataModelType
 
 
 def _bind_sport_to_ost(path: Path) -> None:
-    """Replace the codegen'd ``Sport`` enum with OpenSportTaxonomy's pydantic field.
+    """Type every ``sport`` / ``sports`` model field as OpenSportTaxonomy's permissive ``SportField``.
 
-    The API speaks OpenSportTaxonomy, so ``sport`` fields are consumed via OST's permissive
-    ``SportField``: it validates inbound values to an ``open_sport_taxonomy.Sport`` and serialises
-    back to the canonical wire string, tolerating sports newer than the bundled taxonomy. Anchored on
-    the AST (not a text match) so it survives regeneration; the import is injected where the class was,
-    safely past the module's ``from __future__`` header.
+    The API exposes ``sport`` as a free-form OpenSportTaxonomy string, so datamodel-codegen types these
+    fields as plain ``str``. We retype them to ``SportField``, which validates an inbound string to an
+    ``open_sport_taxonomy.Sport`` and serialises back to the canonical wire string, tolerating sports
+    newer than the bundled taxonomy. Any leftover generated ``Sport`` schema is dropped. Anchored on the
+    AST (not a text match) and idempotent, so it survives regeneration.
     """
     src = path.read_text()
-    cls = next(
-        node for node in ast.parse(src).body
-        if isinstance(node, ast.ClassDef) and node.name == "Sport"  # the enum carries no decorators
-    )
+    tree = ast.parse(src)
     lines = src.splitlines(keepends=True)
-    lines[cls.lineno - 1:cls.end_lineno] = [
-        "from open_sport_taxonomy.pydantic import SportField as Sport  # OST sport type (see schemas.py)\n",
-    ]
-    path.write_text("".join(lines))
+
+    drop: set[int] = set()        # 0-indexed lines to remove
+    replace: dict[int, str] = {}  # 0-indexed line -> new text
+
+    # Drop a leftover generated `Sport` schema (the server may still emit an unused one) ...
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Sport":
+            drop.update(range(node.lineno - 1, node.end_lineno))
+    # ... and any SportField import from a previous run (re-injected cleanly below).
+    for i, line in enumerate(lines):
+        if line.startswith("from open_sport_taxonomy.pydantic import SportField"):
+            drop.add(i)
+
+    # Retype every `sport` / `sports` field annotation: str -> SportField (str | None, list[str], ...).
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+                and node.target.id in ("sport", "sports")):
+            annotation = ast.get_source_segment(src, node.annotation)
+            retyped = re.sub(r"\bstr\b", "SportField", annotation)
+            if retyped != annotation:
+                i = node.lineno - 1
+                replace[i] = lines[i].replace(annotation, retyped, 1)
+
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        if i in drop:
+            continue
+        out.append(replace.get(i, line))
+        if line.startswith("from __future__ import annotations"):
+            out.append("from open_sport_taxonomy.pydantic import SportField  # OST sport type (see schemas.py)\n")
+    path.write_text("".join(out))
+
+
+def _restore_naive_local_datetimes(path: Path) -> None:
+    """Type local timestamps as ``NaiveDatetime`` rather than ``AwareDatetime``.
+
+    The API returns *local* timestamps without a timezone, but datamodel-codegen types every
+    ``date-time`` field as ``AwareDatetime`` -- which rejects a naive value. Retype the local fields
+    (those whose name ends in ``_local``) back to ``NaiveDatetime``, and keep ``registered_at``
+    accepting either. AST-anchored and idempotent, so it survives regeneration (and replaces the
+    manual fixups this file has needed in the past).
+    """
+    src = path.read_text()
+    tree = ast.parse(src)
+    lines = src.splitlines(keepends=True)
+    replace: dict[int, str] = {}
+
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)):
+            continue
+        name = node.target.id
+        annotation = ast.get_source_segment(src, node.annotation)
+        if name.endswith("_local") and "AwareDatetime" in annotation:
+            retyped = annotation.replace("AwareDatetime", "NaiveDatetime")
+        elif name == "registered_at" and annotation == "AwareDatetime":
+            retyped = "AwareDatetime | NaiveDatetime"
+        else:
+            continue
+        i = node.lineno - 1
+        replace[i] = lines[i].replace(annotation, retyped, 1)
+
+    if not replace:
+        return  # already naive (idempotent re-run)
+
+    src = "".join(replace.get(i, line) for i, line in enumerate(lines))
+    if "    NaiveDatetime,\n" not in src:  # ensure the import exists
+        src = src.replace("    AwareDatetime,\n", "    AwareDatetime,\n    NaiveDatetime,\n", 1)
+    path.write_text(src)
 
 
 def generate_response_models():
@@ -43,6 +105,7 @@ def generate_response_models():
         output_model_type=DataModelType.PydanticV2BaseModel,
     )
     _bind_sport_to_ost(output)
+    _restore_naive_local_datetimes(output)
 
     model = output.read_text()
     print(model)
