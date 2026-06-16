@@ -16,7 +16,7 @@ you add or change a surface, the default is to mirror the server:
 | `POST /api/v1/traces/`                  | `client.create_trace(...)`              |
 | `PUT /api/v1/traces/{id}` (full-replace)| `client.update_trace(trace_id, ...)`    |
 | `DELETE /api/v1/dailies/{id}`           | `client.delete_daily(daily_id)`         |
-| query param `?sport=cycling&sport=running` | `sports=[Sport.cycling, Sport.running]` |
+| query param `?sport=cycling&sport=running` | `sports=[Sport("cycling"), Sport("running")]` |
 | JSON body field `test_id`               | kwarg `test_id`                         |
 | OpenAPI enum value `"auto"`             | `TraceResolution.auto`                  |
 
@@ -44,7 +44,7 @@ and pagination shape. Don't redesign the API in Python.
 ```
 src/sweatstack/
 ├── openapi_schemas.py   # AUTO-GENERATED. Never hand-edit.
-├── schemas.py           # Re-exports + Enum._missing_ / display_name helpers.
+├── schemas.py           # Re-exports (incl. OST Sport/Modifier) + Metric/Scope/DailyMeasure helpers.
 ├── exceptions.py        # Public error contract. No httpx types leak.
 ├── client.py            # Single Client class + module-level singletons.
 ├── utils.py             # Dataframe / JWT helpers.
@@ -72,6 +72,10 @@ Skipping step 3 silently breaks the public surface. Same for new enums.
   bottom of `client.py`. Forgetting is silent.
 - **Enum-typed params accept `Enum | str`** and route through
   `_enums_to_strings`. Don't introduce strict-enum-only parameters.
+- **`Sport` is the OpenSportTaxonomy type** (`open_sport_taxonomy.Sport`), not a generated enum.
+  Construct with `Sport("cycling.road")` or `Sport.parse(value)`; serialise with `str(sport)`. Codegen
+  binds the `sport` field to OST's permissive `SportField` (cli.py `_bind_sport_to_ost`), so regen is
+  safe and `sport`-typed fields keep decoding to `Sport`.
 - **Tests are offline.** No network calls. Use `Client.__new__(Client)` to
   bypass init when you need an instance for a helper method.
 - **`update_*` methods are full-replace.** Document the silent-clear

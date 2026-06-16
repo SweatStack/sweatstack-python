@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The SweatStack API has fully adopted [OpenSportTaxonomy](https://github.com/SweatStack/open-sport-taxonomy)
+(OST), and so has this client. `sweatstack.Sport` is now the OST `Sport` type instead of a bespoke enum.
+This is a **breaking change** for code that uses `Sport`.
+
+### Changed (breaking)
+- `sweatstack.Sport` is now `open_sport_taxonomy.Sport` — a rich type (`.code`, `.label`, `.modifiers`,
+  `.parent`, `.is_subsport_of()`, `.resolve()`, `Sport.parse()`, `Sport.all()`) rather than a string
+  enum. There are no `Sport.cycling_road`-style members; construct a known sport with
+  `Sport("cycling.road")` or parse external input with `Sport.parse(value)`. The bespoke helpers
+  (`root_sport()`, `parent_sport()`, `is_sub_sport_of()`, `is_root_sport()`, `display_name()`) are
+  removed in favour of OST's native API.
+- Sport values are now OST values, e.g. `cycling.trainer` → `cycling+stationary`, `cycling.tt` →
+  `cycling.time_trial`, `cross_country_skiing` → `xc_skiing`, `unknown` → `generic`. Response data,
+  longitudinal DataFrames and `get_sports()` all return OST values; requests send OST values.
+
+### Added
+- `sweatstack.Modifier` (re-exported from OpenSportTaxonomy) for inspecting sport modifiers. (For typed
+  sport annotations, `StandardSport` is available from `open_sport_taxonomy` directly.)
+- `open-sport-taxonomy[pydantic]` is now a runtime dependency. Response models consume `sport` via OST's
+  permissive `SportField`, so sports newer than the bundled taxonomy are preserved rather than rejected.
+
+### Migration
+Hand the following prompt to a coding agent, or apply it by hand:
+
+```text
+Migrate this codebase to sweatstack 0.81.0, which replaces its custom `Sport` enum with the
+OpenSportTaxonomy type (`open_sport_taxonomy.Sport`). `from sweatstack import Sport` is now that type.
+
+1. Construction (there are no enum members like `Sport.cycling_road`):
+   - Known sport in app code -> `Sport("cycling.road")` (raises on an unknown code/modifier).
+   - From an API/string value -> `Sport.parse(value)` (permissive; never raises; preserves unknown).
+   - For typed annotations/autocomplete of the standard catalogue ->
+     `from open_sport_taxonomy import StandardSport` (a Literal).
+
+2. These sport VALUES changed; update hardcoded strings or members:
+   cycling.trainer->cycling+stationary, running.treadmill->running+stationary,
+   rowing.ergometer->rowing+stationary, cycling.tt->cycling.time_trial,
+   cycling.mountainbike->cycling.mountain, cross_country_skiing[.classic|.skate]->xc_skiing[...],
+   unknown->generic. ("stationary" etc. are now modifiers, appended with `+`; see sport.modifiers.)
+
+3. Methods / attributes:
+   Sport.cycling_road          -> Sport("cycling.road")
+   sport.value                 -> str(sport)  (canonical, incl. modifiers) or sport.code
+   sport.display_name()        -> sport.label
+   sport.parent_sport()        -> sport.parent
+   sport.is_sub_sport_of(x)    -> sport.is_subsport_of(x)   (x is a single Sport; for a list use
+                                  any(sport.is_subsport_of(s) for s in xs))
+   sport.root_sport()          -> Sport(sport.code.split(".")[0])
+   sport.is_root_sport()       -> ("." not in sport.code and not sport.modifiers)
+   for s in Sport: ...         -> for s in Sport.all(): ...
+
+4. Equality works: `activity.sport == Sport("cycling+stationary")`. Compare against the NEW value.
+
+After editing, run the test suite and fix any remaining references. Do not add a compatibility shim;
+migrate call sites to the OST API directly.
+```
+
+
 ## [0.80.0] - 2026-06-12
 
 ### Changed

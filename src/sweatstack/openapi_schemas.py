@@ -985,54 +985,7 @@ class SpeedSummary(BaseModel):
     max: float | None = Field(None, title='Max')
 
 
-class Sport(Enum):
-    cycling = 'cycling'
-    cycling_road = 'cycling.road'
-    cycling_tt = 'cycling.tt'
-    cycling_cyclocross = 'cycling.cyclocross'
-    cycling_gravel = 'cycling.gravel'
-    cycling_mountainbike = 'cycling.mountainbike'
-    cycling_track = 'cycling.track'
-    cycling_track_250m = 'cycling.track.250m'
-    cycling_track_333m = 'cycling.track.333m'
-    cycling_trainer = 'cycling.trainer'
-    running = 'running'
-    running_road = 'running.road'
-    running_track = 'running.track'
-    running_track_200m = 'running.track.200m'
-    running_track_400m = 'running.track.400m'
-    running_trail = 'running.trail'
-    running_treadmill = 'running.treadmill'
-    walking = 'walking'
-    walking_hiking = 'walking.hiking'
-    cross_country_skiing = 'cross_country_skiing'
-    cross_country_skiing_classic = 'cross_country_skiing.classic'
-    cross_country_skiing_skate = 'cross_country_skiing.skate'
-    cross_country_skiing_backcountry = 'cross_country_skiing.backcountry'
-    cross_country_skiing_ergometer = 'cross_country_skiing.ergometer'
-    cross_country_skiing_roller_skiing = 'cross_country_skiing.roller_skiing'
-    cross_country_skiing_roller_skiing_classic = (
-        'cross_country_skiing.roller_skiing.classic'
-    )
-    cross_country_skiing_roller_skiing_skate = (
-        'cross_country_skiing.roller_skiing.skate'
-    )
-    rowing = 'rowing'
-    rowing_ergometer = 'rowing.ergometer'
-    rowing_indoor = 'rowing.indoor'
-    rowing_regatta = 'rowing.regatta'
-    rowing_fixed_seat = 'rowing.fixed-seat'
-    rowing_coastal = 'rowing.coastal'
-    swimming = 'swimming'
-    swimming_pool = 'swimming.pool'
-    swimming_pool_50m = 'swimming.pool.50m'
-    swimming_pool_25m = 'swimming.pool.25m'
-    swimming_pool_25y = 'swimming.pool.25y'
-    swimming_pool_33m = 'swimming.pool.33m'
-    swimming_open_water = 'swimming.open_water'
-    swimming_flume = 'swimming.flume'
-    generic = 'generic'
-    unknown = 'unknown'
+from open_sport_taxonomy.pydantic import SportField as Sport  # OST sport type (see schemas.py)
 
 
 class SubscriptionPlan(Enum):

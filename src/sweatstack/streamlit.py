@@ -466,7 +466,7 @@ class StreamlitAuth:
         selected_activity = st.selectbox(
             "Select an activity",
             activities,
-            format_func=lambda activity: f"{activity.start.date().isoformat()} {activity.sport.display_name()}",
+            format_func=lambda activity: f"{activity.start.date().isoformat()} {activity.sport.label}",
         )
         return selected_activity
 
@@ -479,33 +479,33 @@ class StreamlitAuth:
             only_root: If True, only returns root sports without parents. Defaults to False.
             allow_multiple: If True, allows selecting multiple sports. Defaults to False.
             only_available: If True, only shows sports available to the user. If False, shows all
-                sports defined in the Sport enum. Defaults to True.
+                standard OpenSportTaxonomy sports. Defaults to True.
 
         Returns:
             Sport or list[Sport]: The selected sport or list of sports, depending on allow_multiple.
 
         Note:
-            Sports are displayed in a human-readable format using the display_name function.
+            Sports are displayed in a human-readable format using each sport's ``label``.
         """
         if only_available:
             sports = self.client.get_sports(only_root)
         else:
             if only_root:
-                sports = [sport for sport in Sport if "." not in sport.value]
+                sports = [s for s in Sport.all() if "." not in s.code and not s.modifiers]
             else:
-                sports = Sport
+                sports = Sport.all()
 
         if allow_multiple:
             selected_sport = st.multiselect(
                 "Select sports",
                 sports,
-                format_func=lambda sport: sport.display_name(),
+                format_func=lambda sport: sport.label,
             )
         else:
             selected_sport = st.selectbox(
                 "Select a sport",
                 sports,
-                format_func=lambda sport: sport.display_name(),
+                format_func=lambda sport: sport.label,
             )
         return selected_sport
 

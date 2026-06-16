@@ -42,11 +42,10 @@ from .exceptions import (
 from .schemas import (
     ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
     BackfillStatus, DailyMeasure, DailyResponse,
-    Marker, Metric, Scope, Sport,
+    Marker, Metric, Modifier, Scope, Sport,
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
-from .schemas import _sport_to_wire
 from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
@@ -1016,9 +1015,15 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             return text if text else None
 
     def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
-        # Sport filters get a lossy forward-compat fallback (_sport_to_wire); it is a no-op for every
-        # other enum/string value.
-        return [_sport_to_wire(value.value if isinstance(value, Enum) else value) for value in values]
+        out = []
+        for value in values:
+            if isinstance(value, Sport):
+                out.append(str(value))           # OST Sport -> canonical wire string
+            elif isinstance(value, Enum):
+                out.append(value.value)
+            else:
+                out.append(value)
+        return out
 
     def _get_activities_generator(
         self,
@@ -2380,7 +2385,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params={"only_root": only_root},
             )
             self._raise_for_status(response)
-            return [Sport(sport) for sport in response.json()]
+            # Sport.parse: the recommended OST way to ingest external input (tolerates sports newer
+            # than the bundled taxonomy).
+            return [Sport.parse(sport) for sport in response.json()]
 
     def get_tags(self) -> list[str]:
         """Gets a list of all tags used by the user.
@@ -2584,7 +2591,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
             data = {}
             if sport is not None:
-                data["sport"] = sport.value if isinstance(sport, Enum) else sport
+                data["sport"] = self._enums_to_strings([sport])[0]
 
             with self._http_client() as client:
                 response = client.post(
@@ -2764,6 +2771,7 @@ __all__ = sorted([
     "DailyResponse",
     "Marker",
     "Metric",
+    "Modifier",
     "Scope",
     "Sport",
     "TeamResponse",

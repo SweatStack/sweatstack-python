@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "email-validator>=2.2.0",
     "httpx>=0.28.1",
+    "open-sport-taxonomy[pydantic]>=0.10.0",
     "pandas>=2.2.3",
     "platformdirs>=4.0.0",
     "pyarrow>=18.0.0",
