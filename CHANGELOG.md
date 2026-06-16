@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `get_longitudinal_mean_max(after=...)`: fatigue-state mean-max. Pass one or more thresholds (kJ of work for `power`; metres of distance for `speed`, experimental) to get, per state, the mean-max over the portion of each ride after that threshold. The returned DataFrame stays metric-indexed with an added `after` column. Max 5 states; the date range is capped at 1 year when `after` is used.
+
 ## [0.81.0] - 2026-06-16
 
 The SweatStack API has fully adopted [OpenSportTaxonomy](https://github.com/SweatStack/open-sport-taxonomy)
