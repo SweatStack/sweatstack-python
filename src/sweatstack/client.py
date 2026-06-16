@@ -2181,7 +2181,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             dailies = [DailyResponse.model_validate(item) for item in response.json()]
         if as_dataframe:
             if not dailies:
-                df = pd.DataFrame(columns=["date", "value", "source"])
+                df = pd.DataFrame(columns=["date", "value", "status", "source"])
                 df = df.set_index("date")
             else:
                 df = pd.DataFrame([d.model_dump() for d in dailies])

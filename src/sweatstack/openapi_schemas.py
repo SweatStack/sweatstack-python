@@ -803,7 +803,20 @@ class DailyMeasure(Enum):
 class DailyResponse(BaseModel):
     date: date_aliased = Field(..., title='Date')
     value: float | None = Field(..., title='Value')
-    source: str = Field(..., title='Source')
+    status: DailyStatus
+    source: DailySource | None = None
+
+
+class DailySource(Enum):
+    manual = 'manual'
+    garmin_connect = 'garmin_connect'
+    intervals_icu = 'intervals_icu'
+
+
+class DailyStatus(Enum):
+    stored = 'stored'
+    estimated = 'estimated'
+    missing = 'missing'
 
 
 class DistanceSummary(BaseModel):
