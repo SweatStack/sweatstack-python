@@ -1465,6 +1465,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
+        by: Literal["intensity", "duration"] = "intensity",
     ) -> pd.DataFrame:
         """Gets the mean-max curve for one or more sports and a metric.
 
@@ -1482,11 +1483,14 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 enveloped across rides. The returned DataFrame then has an ``after``
                 column (one curve per value). Max 5 values; the date range is capped at
                 1 year when ``after`` is used.
+            by: Axis to index the curve on. ``"intensity"`` (default) indexes by the metric
+                value (unchanged). ``"duration"`` indexes by duration via the fast segment
+                kernel; currently requires ``after`` and ``metric="power"``.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the mean-max curve data, indexed
-                by the metric value. With ``after``, an ``after`` column distinguishes
-                the fatigue states.
+            pd.DataFrame: A pandas DataFrame containing the mean-max curve data, indexed by
+                the metric value (``by="intensity"``) or by duration (``by="duration"``).
+                With ``after``, an ``after`` column distinguishes the fatigue states.
 
         Raises:
             ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
@@ -1508,6 +1512,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         params = {
             "sport": self._enums_to_strings(sports),
             "metric": metric,
+            "by": by,
         }
         if start is not None:
             params["start"] = start
@@ -1531,7 +1536,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             cache_key = self._generate_cache_key("mean_max", **params)
             cached = self._read_cache("mean_max", cache_key)
             if cached is not None:
-                return self._shape_mean_max(pd.read_parquet(BytesIO(cached)), metric, after)
+                return self._shape_mean_max(pd.read_parquet(BytesIO(cached)), metric, after, by)
 
         with self._http_client() as client:
             response = client.get(
@@ -1543,15 +1548,16 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if self._cache_enabled():
                 self._write_cache("mean_max", cache_key, response.content)
 
-            return self._shape_mean_max(pd.read_parquet(BytesIO(response.content)), metric, after)
+            return self._shape_mean_max(pd.read_parquet(BytesIO(response.content)), metric, after, by)
 
-    def _shape_mean_max(self, df: pd.DataFrame, metric: str, after) -> pd.DataFrame:
+    def _shape_mean_max(self, df: pd.DataFrame, metric: str, after, by: str = "intensity") -> pd.DataFrame:
         """Standard post-processing for mean-max responses. The ``after`` response is
-        index-free on the wire; restore the metric-value index so its shape matches the
-        no-``after`` curve (with an extra ``after`` column)."""
+        index-free on the wire; restore the natural index so its shape matches the
+        no-``after`` curve (with an extra ``after`` column): the metric value for
+        ``by="intensity"``, or ``duration`` for ``by="duration"``."""
         df = self._postprocess_dataframe(df)
         if after is not None:
-            df = df.set_index(metric)
+            df = df.set_index("duration" if by == "duration" else metric)
         return df
 
     def get_longitudinal_awd(
