@@ -1465,7 +1465,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] = "intensity",
+        by: Literal["intensity", "duration"] | None = None,
     ) -> pd.DataFrame:
         """Gets the mean-max curve for one or more sports and a metric.
 
@@ -1483,9 +1483,14 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 enveloped across rides. The returned DataFrame then has an ``after``
                 column (one curve per value). Max 5 values; the date range is capped at
                 1 year when ``after`` is used.
-            by: Axis to index the curve on. ``"intensity"`` (default) indexes by the metric
-                value (unchanged). ``"duration"`` indexes by duration via the fast segment
-                kernel; currently requires ``after`` and ``metric="power"``.
+            by: Axis to index the curve on, only meaningful with ``after``. ``"duration"``
+                indexes by duration via the fast segment kernel (requires ``metric="power"``);
+                ``"intensity"`` indexes by the metric value and is **deprecated**. For the
+                ``after`` case ``"duration"`` will become the only supported orientation, and
+                more generally ``"duration"`` is set to become the default and only option, so
+                we recommend passing ``by="duration"`` explicitly. When left as ``None``
+                (default), the server picks: ``after`` with ``metric="power"`` resolves to
+                ``"duration"``, every other case to ``"intensity"``.
 
         Returns:
             pd.DataFrame: A pandas DataFrame containing the mean-max curve data, indexed by
@@ -1509,11 +1514,31 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             raise ValueError("'sports' is required.")
         metric = self._enums_to_strings([metric])[0]
 
+        # For the fatigue ('after') case, by='duration' is the default and the only
+        # orientation going forward; by='intensity' is deprecated there. (For metric='speed'
+        # it is still the only option, so no warning.)
+        if by == "intensity" and after is not None and metric == "power":
+            warnings.warn(
+                "by='intensity' is deprecated for 'after' (fatigue) mean-max; by='duration' "
+                "is the default and only supported orientation going forward. Pass "
+                "by='duration' or leave 'by' unset.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        # Mirror the server's default resolution so the returned frame is indexed on the
+        # orientation the server actually used. ``by=None`` omits the param (the server
+        # decides and the deprecated value-indexed path is not forced).
+        effective_by = by if by is not None else (
+            "duration" if (after is not None and metric == "power") else "intensity"
+        )
+
         params = {
             "sport": self._enums_to_strings(sports),
             "metric": metric,
-            "by": by,
         }
+        if by is not None:
+            params["by"] = by
         if start is not None:
             params["start"] = start
             if end is not None:
@@ -1536,7 +1561,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             cache_key = self._generate_cache_key("mean_max", **params)
             cached = self._read_cache("mean_max", cache_key)
             if cached is not None:
-                return self._shape_mean_max(pd.read_parquet(BytesIO(cached)), metric, after, by)
+                return self._shape_mean_max(pd.read_parquet(BytesIO(cached)), metric, after, effective_by)
 
         with self._http_client() as client:
             response = client.get(
@@ -1548,7 +1573,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if self._cache_enabled():
                 self._write_cache("mean_max", cache_key, response.content)
 
-            return self._shape_mean_max(pd.read_parquet(BytesIO(response.content)), metric, after, by)
+            return self._shape_mean_max(pd.read_parquet(BytesIO(response.content)), metric, after, effective_by)
 
     def _shape_mean_max(self, df: pd.DataFrame, metric: str, after, by: str = "intensity") -> pd.DataFrame:
         """Standard post-processing for mean-max responses. The ``after`` response is

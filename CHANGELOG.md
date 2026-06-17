@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed
+
+- `get_longitudinal_mean_max(by=...)` now defaults to `None`: the `by` parameter is omitted from the request so the server picks the orientation. For `after` (fatigue) with `metric="power"` the server now defaults to `by="duration"`; every other case stays `by="intensity"`. The returned frame is indexed on whichever orientation the server used. Passing `by` explicitly still works.
+
+### Deprecated
+
+- `by="intensity"` for the `after` (fatigue) case is deprecated and now raises a `DeprecationWarning`; `by="duration"` is the default and only supported orientation going forward. Pass `by="duration"` or leave `by` unset. (`by="intensity"` remains the only orientation for `metric="speed"`.)
+
+
 ## [0.84.0] - 2026-06-17
 
 ### Added
