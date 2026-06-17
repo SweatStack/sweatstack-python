@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+
+- `get_longitudinal_mean_max(by=...)`: pass `by="duration"` (with `after`, for `power`) to get the fatigue curve indexed by duration instead of by intensity. Default `by="intensity"` is unchanged.
+
+### Changed
+
+- Require `pyarrow>=20`: pyarrow 18/19 fail to read the server's parquet ("Repetition level histogram size mismatch") for longitudinal and adaptive-sampling responses; pyarrow 20+ reads them correctly.
+
+
 ## [0.83.0] - 2026-06-16
 
 ### Added
