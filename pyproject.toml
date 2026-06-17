@@ -26,7 +26,9 @@ dependencies = [
     "open-sport-taxonomy[pydantic]>=0.10.0",
     "pandas>=2.2.3",
     "platformdirs>=4.0.0",
-    "pyarrow>=18.0.0",
+    # >=20: 18/19 raise "Repetition level histogram size mismatch" reading the server's
+    # polars-written parquet (size-statistics histograms); fixed in pyarrow 20.
+    "pyarrow>=20.0.0",
     "pydantic>=2.10.5",
 ]
 
