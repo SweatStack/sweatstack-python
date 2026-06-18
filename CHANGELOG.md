@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** renamed the adaptive-sampling parameters to NLEC (near-lossless effort codec). `adaptive_sampling_on` is now `nlec_on` (on `get_activity_data`, `get_latest_activity_data`, `get_longitudinal_data`) and `adaptive_sampling` is now `nlec` (on `get_activity_mean_max`, `get_latest_activity_mean_max`). No backwards-compatible aliases; requires the SweatStack server 0.107.0 or later.
+
+
 ## [0.85.0] - 2026-06-17
 
 ### Changed
