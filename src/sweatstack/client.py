@@ -1219,18 +1219,18 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def get_activity_data(
         self,
         activity_id: str,
-        nlec_on: Literal["power", "speed"] | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
         metrics: list[Metric | str] | None = None,
     ) -> pd.DataFrame:
         """Gets the raw data for a specific activity.
 
-        This method retrieves the time-series data for a given activity, with optional NLEC
-        (near-lossless effort codec) downsampling to reduce data points for visualization.
+        This method retrieves the time-series data for a given activity, with optional AISC
+        (Adaptive Intensity Segmentation Codec) downsampling to reduce data points for visualization.
 
         Args:
             activity_id: The unique identifier of the activity.
-            nlec_on: Downsample with NLEC (near-lossless effort codec), keyed on 
-                either "power" or "speed" data. If None, no NLEC is applied.
+            segmentation_on: Downsample with AISC (Adaptive Intensity Segmentation Codec), keyed on
+                either "power" or "speed" data. If None, no AISC is applied.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
 
         Returns:
@@ -1241,8 +1241,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             SweatStackAPIError: If the API request fails for any other reason.
         """
         params = {}
-        if nlec_on is not None:
-            params["nlec_on"] = nlec_on
+        if segmentation_on is not None:
+            params["segmentation_on"] = segmentation_on
         if metrics is not None:
             params["metrics"] = self._enums_to_strings(metrics)
 
@@ -1260,7 +1260,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        nlec: bool = False,
+        segmentation: bool = False,
     ) -> pd.DataFrame:
         """Gets the mean-max data for a specific activity.
 
@@ -1270,7 +1270,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Args:
             activity_id: The unique identifier of the activity.
             metric: The metric to calculate mean-max values for, either "power" or "speed".
-            nlec: Downsample with NLEC (near-lossless effort codec) to reduce data points
+            segmentation: Downsample with AISC (Adaptive Intensity Segmentation Codec) to reduce data points
                 for visualization. Defaults to False.
 
         Returns:
@@ -1286,7 +1286,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 url=f"/api/v1/activities/{activity_id}/mean-max",
                 params={
                     "metric": metric,
-                    "nlec": nlec,
+                    "segmentation": segmentation,
                 },
             )
             self._raise_for_status(response)
@@ -1332,7 +1332,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def get_latest_activity_data(
         self,
         sport: Sport | str | None = None,
-        nlec_on: Literal["power", "speed"] | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
         metrics: list[Metric | str] | None = None,
     ) -> pd.DataFrame:
         """Gets the data for the latest activity of a specific sport.
@@ -1342,7 +1342,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Args:
             sport: Optional sport to filter by. Can be a Sport enum or string.
-            nlec_on: Metric to downsample on with NLEC (near-lossless effort codec); omit to disable.
+            segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
                 Can be either "power" or "speed". Defaults to None.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
 
@@ -1353,13 +1353,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_data(activity.id, nlec_on, metrics=metrics)
+        return self.get_activity_data(activity.id, segmentation_on, metrics=metrics)
 
     def get_latest_activity_mean_max(
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        nlec: bool = False,
+        segmentation: bool = False,
     ) -> pd.DataFrame:
         """Gets the mean-max curve for the latest activity of a specific sport.
 
@@ -1369,7 +1369,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Args:
             metric: The metric to calculate the mean-max curve for. Can be either "power" or "speed".
             sport: Optional sport to filter by. Can be a Sport enum or string.
-            nlec: Downsample the mean-max curve with NLEC (near-lossless effort codec).
+            segmentation: Downsample the mean-max curve with AISC (Adaptive Intensity Segmentation Codec).
                 Defaults to False.
 
         Returns:
@@ -1379,7 +1379,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_mean_max(activity.id, metric, nlec)
+        return self.get_activity_mean_max(activity.id, metric, segmentation)
 
     def get_longitudinal_data(
         self,
@@ -1389,7 +1389,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        nlec_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
     ) -> pd.DataFrame:
         """Gets longitudinal data for activities within a specified date range.
 
@@ -1402,7 +1402,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             start: The start date for the data range. Can be a date object or string in ISO format.
             end: Optional end date for the data range. Can be a date object or string in ISO format.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
-            nlec_on: Metric to downsample on with NLEC (near-lossless effort codec); omit to disable.
+            segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
                 Can be either "power" or "speed". Defaults to None.
 
         Returns:
@@ -1431,8 +1431,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             params["end"] = end
         if metrics is not None:
             params["metrics"] = self._enums_to_strings(metrics)
-        if nlec_on is not None:
-            params["nlec_on"] = self._enums_to_strings([nlec_on])[0]
+        if segmentation_on is not None:
+            params["segmentation_on"] = self._enums_to_strings([segmentation_on])[0]
 
         if self._cache_enabled():
             cache_key = self._generate_cache_key("longitudinal_data", **params)

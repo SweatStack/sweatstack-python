@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** the codec previously named NLEC is now AISC (Adaptive Intensity Segmentation Codec), and its parameters are renamed: `nlec_on` is now `segmentation_on` (on `get_activity_data`, `get_latest_activity_data`, `get_longitudinal_data`) and `nlec` is now `segmentation` (on `get_activity_mean_max`, `get_latest_activity_mean_max`). No backwards-compatible aliases.
+
+
 ## [0.86.0] - 2026-06-18
 
 ### Changed
