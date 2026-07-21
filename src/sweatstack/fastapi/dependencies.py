@@ -102,17 +102,10 @@ def _extract_expiry(access_token: str) -> datetime:
     return datetime.fromtimestamp(body["exp"], tz=timezone.utc)
 
 
-def _extract_timezone(access_token: str) -> str:
-    """Extract timezone from JWT access token."""
-    body = decode_jwt_body(access_token)
-    return body.get("tz", "UTC")
-
-
 def _refresh_access_token(
     refresh_token: str,
     client_id: str,
     client_secret: str,
-    tz: str,
 ) -> tuple[str, str | None]:
     """Exchange a refresh token for a new access token.
 
@@ -133,7 +126,6 @@ def _refresh_access_token(
             "refresh_token": refresh_token,
             "client_id": client_id,
             "client_secret": client_secret,
-            "tz": tz,
         },
         timeout=REFRESH_HTTP_TIMEOUT,
     )
@@ -217,7 +209,6 @@ def _resolve_access_token(
                 refresh_token=refresh_token,
                 client_id=config.client_id,
                 client_secret=config.client_secret.get_secret_value(),
-                tz=_extract_timezone(access_token),
             )
         except Exception:
             # Don't let a failed refresh strand a stale token in the cache.

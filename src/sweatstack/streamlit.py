@@ -74,7 +74,7 @@ class StreamlitAuth:
         # Use the authenticated client
         st.write("Welcome to SweatStack")
         latest_activity = auth.client.get_latest_activity()
-        st.write(f"Latest activity: {latest_activity.sport} on {latest_activity.start}")
+        st.write(f"Latest activity: {latest_activity.sport} on {latest_activity.start_local}")
 
         # Switch between accessible users (admin feature)
         with st.sidebar:
@@ -466,7 +466,7 @@ class StreamlitAuth:
         selected_activity = st.selectbox(
             "Select an activity",
             activities,
-            format_func=lambda activity: f"{activity.start.date().isoformat()} {activity.sport.label}",
+            format_func=lambda activity: f"{activity.start_local.date().isoformat()} {activity.sport.label}",
         )
         return selected_activity
 

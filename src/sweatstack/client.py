@@ -780,11 +780,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         return access_token, refresh_token
 
-    def _do_token_refresh(self, tz: str, refresh_token: str) -> str:
+    def _do_token_refresh(self, refresh_token: str) -> str:
         """Exchange refresh token for a new access token.
 
         Args:
-            tz: Timezone from the expired token's JWT claims.
             refresh_token: The refresh token to use.
 
         Returns:
@@ -799,7 +798,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 data={
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
-                    "tz": tz,
                     "client_id": self.client_id,
                     "client_secret": self._client_secret.get_secret_value() if self._client_secret else None,
                 },
@@ -845,8 +843,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 "Call client.authenticate(force=True) to re-authenticate."
             )
 
-        tz = payload.get("tz", "UTC")
-        new_access_token = self._do_token_refresh(tz, refresh_token)
+        new_access_token = self._do_token_refresh(refresh_token)
 
         # Update instance state
         self._api_key = SecretStr(new_access_token)
@@ -1024,6 +1021,26 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             else:
                 out.append(value)
         return out
+
+    @staticmethod
+    def _require_aware(value: datetime, param: str) -> datetime:
+        """Guard a write timestamp: it must carry an explicit UTC offset.
+
+        The API stores each timestamp as an absolute instant paired with its
+        local offset, so it rejects naive datetimes with HTTP 422. Failing fast
+        here names the offending argument and shows how to fix it, which the raw
+        server error does not.
+
+        Raises:
+            ValueError: If ``value`` is timezone-naive.
+        """
+        if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+            raise ValueError(
+                f"{param} must be timezone-aware; got naive {value!r}. "
+                f"Attach a zone, e.g. datetime(..., tzinfo=ZoneInfo('Europe/Amsterdam')) "
+                f"or datetime.now(timezone.utc)."
+            )
+        return value
 
     def _get_activities_generator(
         self,
@@ -1805,7 +1822,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         measurement values.
 
         Args:
-            timestamp: The date and time when the trace was recorded.
+            timestamp: The date and time when the trace was recorded. Must be
+                timezone-aware; the offset is stored alongside the instant.
             lactate: Optional blood lactate concentration in mmol/L.
             rpe: Optional rating of perceived exertion (typically on a scale of 1-10).
             notes: Optional text notes associated with this trace.
@@ -1815,7 +1833,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             tags: Optional list of tags to associate with this trace.
             sport: Optional sport to associate with this trace.
             test_id: Optional ID of a test to explicitly link this trace to.
-                The link is independent of timestamp — a linked trace appears
+                The link is independent of timestamp: a linked trace appears
                 in the test's traces list regardless of whether its timestamp
                 falls inside the test window.
 
@@ -1823,10 +1841,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             TraceDetails: The created trace object with all details.
 
         Raises:
+            ValueError: If ``timestamp`` is timezone-naive.
             SweatStackNotFoundError: If ``test_id`` references a test that
                 does not exist.
             SweatStackAPIError: If the API request fails for any other reason.
         """
+        self._require_aware(timestamp, "timestamp")
         sport = self._enums_to_strings([sport])[0] if sport else None
         with self._http_client() as client:
             response = client.post(
@@ -1874,7 +1894,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Args:
             trace_id: The unique identifier of the trace to update.
-            timestamp: The date and time when the trace was recorded.
+            timestamp: The date and time when the trace was recorded. Must be
+                timezone-aware; the offset is stored alongside the instant.
             lactate: Optional blood lactate concentration in mmol/L.
             rpe: Optional rating of perceived exertion (typically on a scale of 1-10).
             notes: Optional text notes associated with this trace.
@@ -1887,10 +1908,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 Pass ``None`` (or omit) to leave the trace unlinked.
 
         Raises:
+            ValueError: If ``timestamp`` is timezone-naive.
             SweatStackNotFoundError: If ``trace_id`` does not exist, or if
                 ``test_id`` references a test that does not exist.
             SweatStackAPIError: If the API request fails for any other reason.
         """
+        self._require_aware(timestamp, "timestamp")
         sport = self._enums_to_strings([sport])[0] if sport else None
         with self._http_client() as client:
             response = client.put(
@@ -2082,9 +2105,11 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
         Args:
             sport: The sport for this test. Can be a Sport enum or string ID.
-            start: The start time of the test.
+            start: The start time of the test. Must be timezone-aware; the
+                offset is stored alongside the instant.
             title: Optional title for the test.
-            end: Optional end time. Defaults to start + 3 hours server-side.
+            end: Optional end time. Must be timezone-aware when given. Defaults
+                to start + 3 hours server-side.
             results: Optional structured test results (thresholds, capacities, etc.).
             tags: Optional list of tags to associate with this test.
 
@@ -2092,8 +2117,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             TestSummary: The created test.
 
         Raises:
+            ValueError: If ``start`` or ``end`` is timezone-naive.
             SweatStackAPIError: If the API request fails.
         """
+        self._require_aware(start, "start")
+        if end is not None:
+            self._require_aware(end, "end")
         sport = self._enums_to_strings([sport])[0]
         with self._http_client() as client:
             response = client.post(
@@ -2130,16 +2159,22 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Args:
             test_id: The unique identifier of the test to update.
             sport: The sport for this test. Can be a Sport enum or string ID.
-            start: The start time of the test.
+            start: The start time of the test. Must be timezone-aware; the
+                offset is stored alongside the instant.
             title: Optional title for the test.
-            end: Optional end time. Defaults to start + 3 hours server-side.
+            end: Optional end time. Must be timezone-aware when given. Defaults
+                to start + 3 hours server-side.
             results: Optional structured test results (thresholds, capacities, etc.).
             tags: Optional list of tags to associate with this test.
 
         Raises:
+            ValueError: If ``start`` or ``end`` is timezone-naive.
             SweatStackNotFoundError: If the test does not exist.
             SweatStackAPIError: If the API request fails for any other reason.
         """
+        self._require_aware(start, "start")
+        if end is not None:
+            self._require_aware(end, "end")
         sport = self._enums_to_strings([sport])[0]
         with self._http_client() as client:
             response = client.put(
