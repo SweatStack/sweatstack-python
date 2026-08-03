@@ -2648,8 +2648,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         """Uploads activity files (CSV or FIT).
 
         CSV files require the ``sport`` parameter and must contain a ``timestamp``
-        column with ISO 8601 datetimes.  FIT files include sport metadata so
-        ``sport`` is optional for them.
+        column with **offset-aware** ISO 8601 datetimes (e.g. ``...+02:00`` or
+        ``...Z``); naive timestamps are rejected during processing. FIT files
+        include sport metadata so ``sport`` is optional for them.
 
         Args:
             files: A file path, or a list of file paths, to upload.
