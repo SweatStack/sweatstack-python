@@ -32,9 +32,8 @@ def _params_sent(client, call):
 
     with patch.object(client, "_http_client", return_value=http), \
          patch.object(client, "_raise_for_status"), \
-         patch.object(client, "_postprocess_dataframe", side_effect=lambda df: df), \
          patch.object(client, "_cache_enabled", return_value=False), \
-         patch("sweatstack.client.pd.read_parquet", return_value=pd.DataFrame()):
+         patch.object(client, "_read_frame", return_value=pd.DataFrame()):
         call()
     return http.get.call_args.kwargs["params"]
 

@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from sweatstack import Marker, Sport, TestResults, TestSummary
+from sweatstack import _frames
 from sweatstack.client import Client
 
 
@@ -106,12 +107,7 @@ class TestSchemaRoundTrip:
 class TestDataFrameConversion:
     def test_results_normalization(self, sample_test_summary: TestSummary):
         """Results column should be normalized into flat columns."""
-        client = Client.__new__(Client)
-        client.streamlit_compatible = False
-
-        tests = [sample_test_summary]
-        df = pd.DataFrame([test.model_dump() for test in tests])
-        df = client._normalize_dataframe_column(df, "results")
+        df = _frames.models_to_pandas([sample_test_summary], TestSummary, flatten=("results",))
 
         # Nested marker fields should be flattened
         assert "results.first_threshold.power" in df.columns
@@ -128,22 +124,14 @@ class TestDataFrameConversion:
 
     def test_empty_dataframe(self):
         """Empty test list should produce valid empty DataFrame."""
-        client = Client.__new__(Client)
-        client.streamlit_compatible = False
-
-        df = client._create_empty_dataframe_from_model(
-            TestSummary,
-            normalize_columns=["results"]
-        )
+        df = _frames.models_to_pandas([], TestSummary, flatten=("results",))
 
         assert len(df) == 0
         assert isinstance(df, pd.DataFrame)
+        assert "id" in df.columns and "results" not in df.columns
 
     def test_multiple_tests_dataframe(self, sample_results: TestResults):
         """Multiple tests should produce correct DataFrame."""
-        client = Client.__new__(Client)
-        client.streamlit_compatible = False
-
         tests = [
             TestSummary(
                 id=f"test_{i}",
@@ -158,8 +146,7 @@ class TestDataFrameConversion:
             for i in range(3)
         ]
 
-        df = pd.DataFrame([test.model_dump() for test in tests])
-        df = client._normalize_dataframe_column(df, "results")
+        df = _frames.models_to_pandas(tests, TestSummary, flatten=("results",))
 
         assert len(df) == 3
         assert df["results.vo2max"].iloc[0] == 4500.0

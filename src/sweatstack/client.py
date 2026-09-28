@@ -17,7 +17,6 @@ from functools import wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from inspect import getmembers, isfunction
-from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Generator, get_type_hints, Literal
 
@@ -46,7 +45,8 @@ from .schemas import (
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
-from .utils import convert_to_standard_dtypes, decode_jwt_body, make_dataframe_streamlit_compatible
+from . import _frames
+from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
 
@@ -1087,48 +1087,18 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
-    def _postprocess_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Post-process DataFrame returned from API.
-
-        Converts optimized dtypes (Int16, float16, etc.) to standard dtypes
-        (float64) for ease of use, and optionally converts enums to strings
-        for Streamlit compatibility.
-        """
-        df = convert_to_standard_dtypes(df)
+    def _read_frame(self, content: bytes) -> pd.DataFrame:
+        """Every parquet response becomes a frame through here."""
+        df = _frames.parquet_to_pandas(content)
         if self.streamlit_compatible:
             df = make_dataframe_streamlit_compatible(df)
         return df
 
-    def _create_empty_dataframe_from_model(self, model_class, normalize_columns: list[str] | None = None) -> pd.DataFrame:
-        """Create an empty DataFrame with proper schema from a Pydantic model.
-
-        Args:
-            model_class: The Pydantic model class to extract schema from
-            normalize_columns: Optional list of columns to normalize (expand nested fields)
-
-        Returns:
-            pd.DataFrame: Empty DataFrame with columns matching the model schema
-        """
-        # Create a dummy instance with all None values to get the structure
-        fields = model_class.model_fields
-        dummy_data = {}
-        for field_name, field_info in fields.items():
-            dummy_data[field_name] = None
-
-        # Create a single-row DataFrame then drop the row to preserve schema
-        df = pd.DataFrame([dummy_data])
-
-        # Normalize specified columns if requested
-        if normalize_columns:
-            for column in normalize_columns:
-                if column in df.columns:
-                    # Create empty normalized columns
-                    normalized = pd.DataFrame()
-                    df = pd.concat([df.drop(column, axis=1), normalized], axis=1)
-
-        # Drop the dummy row to create empty DataFrame
-        df = df.iloc[0:0]
-
+    def _frame_from_models(self, models: list, model: type, *, flatten: tuple[str, ...] = ()) -> pd.DataFrame:
+        """Every list-of-models response becomes a frame through here."""
+        df = _frames.models_to_pandas(models, model, flatten=flatten)
+        if self.streamlit_compatible:
+            df = make_dataframe_streamlit_compatible(df)
         return df
 
     def get_activities(
@@ -1169,20 +1139,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             offset=offset,
         ))
         if as_dataframe:
-            if not activities:
-                # Return empty DataFrame with proper schema
-                df = self._create_empty_dataframe_from_model(
-                    ActivitySummary,
-                    normalize_columns=["summary", "laps", "traces"]
-                )
-            else:
-                df = pd.DataFrame([activity.model_dump() for activity in activities])
-                df = self._normalize_dataframe_column(df, "summary")
-                df = self._normalize_dataframe_column(df, "laps")
-                df = self._normalize_dataframe_column(df, "traces")
-            return self._postprocess_dataframe(df)
-        else:
-            return activities
+            return self._frame_from_models(activities, ActivitySummary, flatten=("summary", "laps", "traces"))
+        return activities
 
     def get_latest_activity(
         self,
@@ -1270,8 +1228,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             )
             self._raise_for_status(response)
 
-        df = pd.read_parquet(BytesIO(response.content))
-        return self._postprocess_dataframe(df)
+        return self._read_frame(response.content)
 
     def get_activity_mean_max(
         self,
@@ -1307,8 +1264,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 },
             )
             self._raise_for_status(response)
-            df = pd.read_parquet(BytesIO(response.content))
-            return self._postprocess_dataframe(df)
+            return self._read_frame(response.content)
 
     def get_activity_awd(
         self,
@@ -1343,8 +1299,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params=params,
             )
             self._raise_for_status(response)
-            df = pd.read_parquet(BytesIO(response.content))
-            return self._postprocess_dataframe(df)
+            return self._read_frame(response.content)
 
     def get_latest_activity_data(
         self,
@@ -1455,7 +1410,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             cache_key = self._generate_cache_key("longitudinal_data", **params)
             cached = self._read_cache("longitudinal_data", cache_key)
             if cached is not None:
-                return self._postprocess_dataframe(pd.read_parquet(BytesIO(cached)))
+                return self._read_frame(cached)
 
         with self._http_client() as client:
             response = client.get(
@@ -1467,9 +1422,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if self._cache_enabled():
                 self._write_cache("longitudinal_data", cache_key, response.content)
 
-            df = pd.read_parquet(BytesIO(response.content))
-
-        return self._postprocess_dataframe(df)
+        return self._read_frame(response.content)
 
     def get_longitudinal_mean_max(
         self,
@@ -1578,7 +1531,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             cache_key = self._generate_cache_key("mean_max", **params)
             cached = self._read_cache("mean_max", cache_key)
             if cached is not None:
-                return self._shape_mean_max(pd.read_parquet(BytesIO(cached)), metric, after, effective_by)
+                return self._shape_mean_max(self._read_frame(cached), metric, after, effective_by)
 
         with self._http_client() as client:
             response = client.get(
@@ -1590,14 +1543,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if self._cache_enabled():
                 self._write_cache("mean_max", cache_key, response.content)
 
-            return self._shape_mean_max(pd.read_parquet(BytesIO(response.content)), metric, after, effective_by)
+            return self._shape_mean_max(self._read_frame(response.content), metric, after, effective_by)
 
     def _shape_mean_max(self, df: pd.DataFrame, metric: str, after, by: str = "intensity") -> pd.DataFrame:
         """Standard post-processing for mean-max responses. The ``after`` response is
         index-free on the wire; restore the natural index so its shape matches the
         no-``after`` curve (with an extra ``after`` column): the metric value for
         ``by="intensity"``, or ``duration`` for ``by="duration"``."""
-        df = self._postprocess_dataframe(df)
         if after is not None:
             df = df.set_index("duration" if by == "duration" else metric)
         return df
@@ -1675,8 +1627,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params=params,
             )
             self._raise_for_status(response)
-            df = pd.read_parquet(BytesIO(response.content))
-            return self._postprocess_dataframe(df)
+            return self._read_frame(response.content)
 
     def _get_traces_generator(
         self,
@@ -1723,35 +1674,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
-    def _prepare_unserialized_data(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
-        """
-        pd.json_normalize() only likes to play with lists of records (dicts?), not lists of lists.
-        So that's what we're feeding it.
-        """
-        unserialized_data = df[column].tolist()
-        if column in ["laps", "traces"]:
-            result = []
-            for sublist in unserialized_data:
-                if sublist:
-                    dict_from_sublist = {i: value for i, value in enumerate(sublist) if sublist}
-                else:
-                    dict_from_sublist = {}
-                result.append(dict_from_sublist)
-
-            unserialized_data = result
-
-        return unserialized_data
-
-    def _normalize_dataframe_column(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
-        normalized = pd.json_normalize(
-            self._prepare_unserialized_data(df, column),
-        )
-        normalized = normalized.add_prefix(f"{column}.")
-        normalized.index = df.index
-        if column == "activity":
-            normalized = normalized.drop(["activity.traces", "activity.laps"], axis=1, errors="ignore")
-        return pd.concat([df.drop(column, axis=1), normalized], axis=1)
-
     def get_traces(
         self,
         *,
@@ -1789,18 +1711,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             limit=limit,
             offset=offset,
         ))
-        if not as_dataframe:
-            return traces
-
-        data = pd.DataFrame([trace.model_dump() for trace in traces])
-
-        if "activity" in data.columns:
-            data = self._normalize_dataframe_column(data, "activity")
-
-        if "lap" in data.columns:
-            data = self._normalize_dataframe_column(data, "lap")
-
-        return self._postprocess_dataframe(data)
+        if as_dataframe:
+            return self._frame_from_models(traces, TraceDetails, flatten=("activity", "lap"))
+        return traces
 
     def create_trace(
         self,
@@ -2040,18 +1953,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             offset=offset,
         ))
         if as_dataframe:
-            if not tests:
-                df = self._create_empty_dataframe_from_model(
-                    TestSummary,
-                    normalize_columns=["results"]
-                )
-            else:
-                df = pd.DataFrame([test.model_dump() for test in tests])
-                if "results" in df.columns:
-                    df = self._normalize_dataframe_column(df, "results")
-            return self._postprocess_dataframe(df)
-        else:
-            return tests
+            return self._frame_from_models(tests, TestSummary, flatten=("results",))
+        return tests
 
     def get_test(
         self,
@@ -2246,13 +2149,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             dailies = [DailyResponse.model_validate(item) for item in response.json()]
         if as_dataframe:
-            if not dailies:
-                df = pd.DataFrame(columns=["date", "value", "status", "source"])
-                df = df.set_index("date")
-            else:
-                df = pd.DataFrame([d.model_dump() for d in dailies])
-                df = df.set_index("date")
-            return self._postprocess_dataframe(df)
+            return self._frame_from_models(dailies, DailyResponse).set_index("date")
         return dailies
 
     def set_daily(
