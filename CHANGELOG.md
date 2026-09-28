@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.89.0] - 2026-09-28
 
 Frames on your terms. Every method that returns a collection takes `output=`:
 `"pandas"`, `"polars"`, `"arrow"` or `"bytes"` for time-series endpoints, and `"models"`
