@@ -42,6 +42,15 @@ Available data stream names: `duration`, `power`, `speed`, `heart_rate`, `cadenc
 | `Scope.openid` | `openid` |
 | `Scope.admin` | `admin` |
 
+## Account Status Models
+
+- `StatusIssueResponse`: `code` (`StatusIssueCode`, open set), `status` (`CapabilityStatus`, closed:
+  `ready`, `syncing`, `action_required`, `unavailable`), `message` (display only), `action_url` (`str | None`).
+- `AccountStatusResponse`: `issue: StatusIssueResponse | None`, `capabilities: dict[Capability, CapabilityStatus]`
+  (`Capability` is an open set: `activities`, `activity_history`, `dailies`, `workouts`, ...).
+- `UserInfoResponse.issue: StatusIssueResponse | None`.
+- `PortalDestination` (`manage-integrations`, `manage-teams`) and `PortalSessionResponse` (`url`).
+
 ## Response Models
 
 **ActivitySummary** — returned by `get_activities()`:

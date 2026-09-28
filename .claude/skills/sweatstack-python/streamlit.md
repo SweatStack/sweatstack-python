@@ -114,3 +114,16 @@ activities = auth.client.get_activities()
 - **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`. Don't overwrite these.
 - **`select_user()` switches the client.** After calling it, `auth.client` operates as the selected user. Call `auth.switch_to_principal_user()` to revert.
 - **Scopes default to `data:read,profile`** in Streamlit — not the broader set used by `Client.authenticate()`. Add `offline_access` if you need refresh tokens in direct OAuth mode.
+
+## Account Status and the Portal
+
+```python
+user = auth.client.get_userinfo()
+if user.issue:
+    st.warning(user.issue.message)
+    if user.issue.action_url:
+        st.link_button("Fix it", user.issue.action_url)
+```
+
+`auth.client` carries the app credentials, so `auth.client.create_portal_session("manage-integrations",
+return_url=...)` works too. See [client.md](client.md#account-status-and-the-portal).

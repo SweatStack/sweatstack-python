@@ -285,3 +285,15 @@ DEBUG access-token cache hit (session=4f2a91c0)
 ```
 
 One refresh, four cache hits.
+
+## Portal Sessions
+
+`user.client` carries the app's `client_id` / `client_secret` from `configure()`, so it can mint a Portal link
+without further setup. See [client.md](client.md#account-status-and-the-portal).
+
+```python
+@app.get("/fix-my-data")
+def fix_my_data(user: AuthenticatedUser):
+    session = user.client.create_portal_session("manage-integrations", return_url="https://example.com/app/")
+    return RedirectResponse(session.url)
+```

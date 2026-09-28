@@ -13,6 +13,7 @@
 - [Dailies](#dailies-daily-health-metrics)
 - [App Metadata](#app-metadata)
 - [Profile](#profile)
+- [Account status and the Portal](#account-status-and-the-portal)
 - [Users and Teams](#users-and-teams)
 - [User Delegation](#user-delegation)
 - [File Uploads](#file-uploads)
@@ -315,9 +316,47 @@ Metadata appears as `app_metadata` on entity responses when accessed via app tok
 sports = client.get_sports()              # list[Sport] — sports with data
 root_sports = client.get_sports(only_root=True)  # top-level only
 tags = client.get_tags()                  # list[str]
-user = client.get_userinfo()              # UserInfoResponse (sub, name, email)
-who = client.whoami()                     # UserSummary (from JWT, no API call)
+user = client.get_userinfo()              # UserInfoResponse (sub, name, email, issue); needs `profile` scope
+who = client.whoami()                     # UserSummary for the token's user; two API calls, no `profile` scope needed
 ```
+
+## Account status and the Portal
+
+Beta on the server side. `issue` is `None` or the one thing to tell the user; show `message`, and a button to
+`action_url` only when it is present (it is `None` on delegated tokens and on issues nobody can act on).
+Branch on `status`, never parse `message`, never branch on `code`.
+
+```python
+user = client.get_userinfo()                      # needs `profile`
+if user.issue:
+    banner(user.issue.message, user.issue.action_url)
+
+status = client.get_profile_status()              # `data:read` or `profile`; AccountStatusResponse
+status.issue                                      # same object as above
+status.capabilities[Capability.activity_history]  # CapabilityStatus: ready | syncing | action_required | unavailable
+```
+
+| `status` | Show |
+|---|---|
+| `syncing` | a waiting state; resolves within 24 h |
+| `action_required` | a button to `action_url` when present |
+| `unavailable` | explain once, do not poll |
+| `issue is None` | nothing |
+
+Codes and capability keys are open sets (unknown ones parse as pseudo-members; ignore them). These methods
+return models and ignore `output=`.
+
+**Portal sessions** are for apps that want to choose the destination or the return link; otherwise
+`action_url` already is a Portal link. Server-to-server: uses the client's `client_id` and (if registered)
+`client_secret`, never a user token. `user.client` in FastAPI and `auth.client` in Streamlit already carry them.
+
+```python
+app = Client(client_id="01JMYRA...", client_secret="...")      # secret only if the app has one
+session = app.create_portal_session("manage-integrations", return_url="https://example.com/app/")
+redirect(session.url)                                           # opaque URL; never build one by hand
+```
+
+Omit `return_url` on purpose for native apps and installed PWAs: the Portal then tells the user to close the page.
 
 ## Users and Teams
 

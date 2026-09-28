@@ -75,6 +75,13 @@ Skipping step 3 silently breaks the public surface. Same for new enums.
   bottom of `client.py`. Forgetting is silent.
 - **Enum-typed params accept `Enum | str`** and route through
   `_enums_to_strings`. Don't introduce strict-enum-only parameters.
+- **Open enums stay open.** When the server documents an enum as an open
+  set (metrics, scopes, daily measures, status codes, capabilities),
+  register it with `_open_enum(...)` in `schemas.py` so unknown values
+  parse as pseudo-members. Leave closed sets strict.
+- **Server-to-server calls use `_http_client(auth=False)`.** Endpoints
+  that authenticate with the app's own credentials in the body (Portal
+  sessions) must never receive a user's bearer.
 - **`Sport` is the OpenSportTaxonomy type** (`open_sport_taxonomy.Sport`), not a generated enum.
   Construct with `Sport("cycling.road")` or `Sport.parse(value)`; serialise with `str(sport)`. Codegen
   binds the `sport` field to OST's permissive `SportField` (cli.py `_bind_sport_to_ost`), so regen is
@@ -186,6 +193,16 @@ for parquet the installed frame library (`_frames.installed_frame_output`:
 Polars, then pandas, then Arrow; `ImportError` naming the extras if none).
 A configured default a method cannot produce is skipped, a per-call one
 is a `ValueError`. Never hard-code a frame library as a default.
+
+**Where `output` belongs.** On the *data* endpoints only: activities,
+traces, tests, dailies and the time series, the things a user groups,
+filters and plots. Everything about the account, the app, teams, status
+and the Portal (`get_userinfo`, `get_profile_status`,
+`create_portal_session`, `whoami`, `get_users`, `get_teams`, `get_sports`,
+`get_tags`, ...) takes no `output` and always returns models; those
+methods never call `_read_frame` or `_frame_from_models`, so a configured
+output cannot reach them. A new data endpoint gets `output`; a new
+control-plane endpoint does not.
 
 Dtype policy: pandas gets `convert_to_standard_dtypes` (float64, ns);
 Polars keeps wire dtypes except Float16 -> Float32; Arrow is the wire

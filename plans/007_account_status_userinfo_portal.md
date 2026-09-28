@@ -10,7 +10,7 @@ Mirror three server surfaces that the SDK does not expose yet:
 
 Plus one bug found on the way: `whoami()` calls a helper that does not exist.
 
-Proposed 2026-09-28. Not started. Sources: server `app/routers/api.py`,
+Proposed 2026-09-28. **Implemented 2026-09-28** on branch `output-backends` (regen chore, feature, docs), suite green. Sources: server `app/routers/api.py`,
 `app/schemas.py`, `app/constants.py`, `app/logic/__init__.py`
 (`create_portal_session`, `get_account_status_response`); server plans 016,
 021, 045, 052; docs `learn/data/no-data.md`, `learn/portal/index.md`,

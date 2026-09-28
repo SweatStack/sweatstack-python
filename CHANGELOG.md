@@ -18,6 +18,21 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 
 ### Added
 
+- `get_profile_status()` (beta): why this user has little or no data, and what the
+  account can supply. Returns `issue` (`None`, or one `{code, status, message, action_url}`)
+  and `capabilities` (`activities`, `activity_history`, `dailies`, `workouts`, each `ready`,
+  `syncing`, `action_required` or `unavailable`). Accepts `data:read` or `profile`.
+- `get_userinfo()` now carries the same `issue` (beta). The whole integration is
+  `if user.issue: banner(user.issue.message, user.issue.action_url)`; `action_url` is `None` on
+  delegated tokens and on issues the user cannot act on.
+- `create_portal_session(destination, return_url=None)` (beta): mints a SweatStack Portal link
+  branded for the client's app, using the app's own `client_id` / `client_secret` from the
+  constructor and no user token. Works from `sweatstack.fastapi` dependencies and
+  `StreamlitAuth` as is.
+- New models and enums: `AccountStatusResponse`, `StatusIssueResponse`, `Capability`,
+  `CapabilityStatus`, `StatusIssueCode`, `PortalDestination`, `PortalSessionResponse`.
+  `StatusIssueCode` and `Capability` are open sets: values a newer server adds parse as
+  pseudo-members instead of failing validation.
 - `output=` on `get_activity_data`, `get_activity_mean_max`, `get_activity_awd`,
   `get_latest_activity_data`, `get_latest_activity_mean_max`, `get_longitudinal_data`,
   `get_longitudinal_mean_max`, `get_longitudinal_awd`, `get_activities`, `get_traces`,
@@ -30,6 +45,12 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 - `sweatstack[polars]` and `sweatstack[arrow]` extras. `[arrow]` is pyarrow alone: what
   `output="arrow"` needs, and what DuckDB needs to query any in-memory frame. See the
   README's "Using DuckDB" for the three routes.
+
+### Fixed
+
+- `whoami()` raised `AttributeError` on every call since the helper it relied on was removed.
+  It resolves the token's user through `get_user()` again, for principal and delegated clients
+  alike, and still needs no `profile` scope.
 
 ### Changed
 
