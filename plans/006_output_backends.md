@@ -106,10 +106,9 @@ it; they are listed here so the reasoning is in one place.
 2. **Values are container types:** `"models"`, `"pandas"`, `"polars"`,
    `"arrow"`, `"bytes"`.
    - Parquet endpoints: `pandas | polars | arrow | bytes`.
-   - List endpoints: `models | pandas | polars`. No `arrow` on list
-     endpoints in 1.0 (it would need both polars and pyarrow, or a second
-     schema mapper; DuckDB queries a polars frame directly anyway). No
-     `bytes` (paginated JSON assembled client-side).
+   - List endpoints: `models | pandas | polars | arrow`. No `bytes`:
+     these responses are paginated JSON assembled client-side, so there
+     is no single body to hand back.
    - Wrong combination raises `ValueError` naming the valid choices for
      that method.
 3. **Per-method defaults:** parquet endpoints `"pandas"`, list endpoints
@@ -150,7 +149,7 @@ it; they are listed here so the reasoning is in one place.
     from it. Cache key does not include `output`.
 
 
-## Pydantic models -> Polars (verified design)
+## Pydantic models -> Polars / Arrow (verified design)
 
 The one genuinely new component. Naive approaches fail: feeding
 `model_dump()` to Polars raises on nested enum/object types, and
@@ -158,12 +157,13 @@ The one genuinely new component. Naive approaches fail: feeding
 all-null column a `Null` dtype, so the schema would depend on the data.
 
 **Principle: the schema comes from JSON Schema, the values from the
-model instance.** JSON Schema is a closed grammar, it is what
+model instance, and one type tree serves both Polars and Arrow.** JSON Schema is a closed grammar, it is what
 `openapi_schemas.py` is generated *from*, and regen cannot introduce a
 Python type the mapper has not seen without it also appearing in JSON
 Schema. Two small functions, both in a new `src/sweatstack/_frames.py`:
 
-**`_polars_schema(Model) -> dict[str, pl.DataType]`.** Walk
+**`field_types(Model)`** builds a small backend-neutral type tree;
+`polars_schema()` and `arrow_schema()` render it. Walk
 `Model.model_json_schema(schema_generator=_Gen)`, resolving `$ref`s.
 Mapping, exhaustive:
 
@@ -216,7 +216,8 @@ all-null structs all correct. Prototype: scratchpad
 **Regen robustness, made mechanical.** `tests/test_frames_schema.py`
 does three things on every model re-exported from `schemas.py`:
 
-1. `_polars_schema(Model)` under `warnings.simplefilter("error")`: any
+1. `polars_schema(Model)` and `arrow_schema(Model)` under
+   `warnings.simplefilter("error")`: any
    new JSON Schema construct the mapper does not know fails the suite at
    regen time, not in a user's notebook.
 2. Round trip: build a fully populated instance from the model's JSON
@@ -224,7 +225,7 @@ does three things on every model re-exported from `schemas.py`:
    assert every leaf value survives and every dtype matches the table
    above.
 3. Cross-check with the pandas path: the set of top-level column names
-   from `_polars_schema` equals the set of top-level keys the pandas
+   from `field_types` equals the set of top-level keys the pandas
    `json_normalize` path starts from (before flattening).
 
 Rule for future changes (goes in AGENTS.md): **never add a per-model
@@ -322,7 +323,6 @@ harmless and protects against older servers.
 ### Later, data-driven
 
 - Flip default `output` to `"polars"` (2.0). One line plus docs.
-- `arrow` on list endpoints, if anyone asks. Additive.
 
 
 ## Tests (offline)

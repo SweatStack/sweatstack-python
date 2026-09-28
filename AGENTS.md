@@ -34,7 +34,7 @@ and pagination shape. Don't redesign the API in Python.
   mapping in the docstring.
 - `output=` is a client-side choice of container over every collection
   endpoint: `"pandas" | "polars" | "arrow" | "bytes"` for parquet endpoints,
-  `"models" | "pandas" | "polars"` for list endpoints. See "Output backends".
+  `"models" | "pandas" | "polars" | "arrow"` for list endpoints. See "Output backends".
 - Convenience composites that wrap multiple calls
   (`get_latest_activity_data`, `get_longitudinal_*`) live alongside the
   literal mirrors. Add new ones sparingly; only when a real workflow is
@@ -189,10 +189,11 @@ Dtype policy: pandas gets `convert_to_standard_dtypes` (float64, ns);
 Polars keeps wire dtypes except Float16 -> Float32; Arrow is the wire
 table minus pandas index metadata; bytes is the body.
 
-The Polars path for lists derives its schema from each model's **JSON
-Schema** (`_frames.polars_schema`) and its values from the instance.
+The Polars and Arrow paths for lists derive one type tree from each
+model's **JSON Schema** (`_frames.field_types`) and render it per library;
+values come from the instance.
 **Never add a per-model special case there.** If a model needs one, the
-JSON Schema grammar table in `_polars_dtype` is missing a row: add the
+JSON Schema grammar table in `_field_type` is missing a row: add the
 row and its test. `tests/test_frames.py` turns `FrameSchemaWarning` into
 a failure for every public model, so a regen that introduces an unknown
 construct fails the suite, not a user's notebook.

@@ -53,7 +53,7 @@ Every method that returns a collection takes `output=`:
 | Endpoints | Values | Default |
 |---|---|---|
 | Time series, mean-max, AWD, longitudinal | `"pandas"`, `"polars"`, `"arrow"`, `"bytes"` | `"pandas"` |
-| `get_activities`, `get_traces`, `get_tests`, `get_dailies` | `"models"`, `"pandas"`, `"polars"` | `"models"` |
+| `get_activities`, `get_traces`, `get_tests`, `get_dailies` | `"models"`, `"pandas"`, `"polars"`, `"arrow"` | `"models"` |
 
 ```python
 df = client.get_activity_data("activity_id")                    # pandas.DataFrame
@@ -68,7 +68,7 @@ client.get_activities()                # now a polars frame; output="models" per
 Resolution: per-call > `Client(output=)` > `set_output()` > method default. Requires `sweatstack[pandas]` or
 `sweatstack[polars]`; a missing library raises `ImportError` naming the extra. No frame has an index on any
 backend: `timestamp`, the mean-max metric value and `date` are ordinary first columns (`df.set_index("timestamp")`
-if you need one). Polars list frames give nested fields as structs (`df.unnest("summary")`); pandas flattens them
+if you need one). Polars and Arrow list frames give nested fields as structs (`df.unnest("summary")`); pandas flattens them
 to dotted columns (`summary.power.mean`).
 
 ## Activities

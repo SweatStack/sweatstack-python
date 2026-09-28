@@ -22,7 +22,7 @@ uv add sweatstack               # models only: FastAPI services, webhook consume
 
 Every method that returns a collection takes `output=`. Time-series endpoints return
 `"pandas"` (default), `"polars"`, `"arrow"` or `"bytes"`; list endpoints return `"models"`
-(default), `"pandas"` or `"polars"`.
+(default), `"pandas"`, `"polars"` or `"arrow"`.
 
 ```python
 from datetime import date

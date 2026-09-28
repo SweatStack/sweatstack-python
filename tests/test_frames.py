@@ -16,7 +16,11 @@ from pydantic import BaseModel
 
 import sweatstack.schemas as schemas
 from sweatstack import _frames
-from sweatstack._frames import FrameSchemaWarning, models_to_pandas, models_to_polars, polars_schema
+import pyarrow as pa
+
+from sweatstack._frames import (
+    FrameSchemaWarning, arrow_schema, field_types, models_to_arrow, models_to_pandas, models_to_polars, polars_schema,
+)
 from sweatstack.openapi_schemas import ActivitySummary, DailyResponse, TraceDetails
 
 
@@ -59,11 +63,12 @@ LAP = {
 class TestRegenGuard:
     @pytest.mark.parametrize("model", PUBLIC_MODELS, ids=lambda m: m.__name__)
     def test_every_public_model_maps_without_fallback(self, model):
-        polars_schema.cache_clear()
+        field_types.cache_clear()
         with warnings.catch_warnings():
             warnings.simplefilter("error", FrameSchemaWarning)
             schema = polars_schema(model)
-        assert set(schema) == set(model.model_fields), "Polars columns must be the model's fields"
+            assert arrow_schema(model).names == list(schema)
+        assert set(schema) == set(model.model_fields), "frame columns must be the model's fields"
 
     @pytest.mark.parametrize("model", PUBLIC_MODELS, ids=lambda m: m.__name__)
     def test_pandas_and_polars_start_from_the_same_columns(self, model):
@@ -73,7 +78,7 @@ class TestRegenGuard:
         class Odd(BaseModel):
             mixed: int | str
 
-        polars_schema.cache_clear()
+        field_types.cache_clear()
         with pytest.warns(FrameSchemaWarning, match="Odd.mixed"):
             schema = polars_schema(Odd)
         assert schema["mixed"] == pl.String
@@ -182,6 +187,26 @@ class TestModelsToPolars:
         assert df["date"].to_list() == [date(2026, 4, 1), date(2026, 4, 3)]
         assert df["value"].to_list() == [75.2, None]
         assert df["status"].to_list() == ["stored", "missing"]
+
+
+class TestModelsToArrow:
+    def test_arrow_and_polars_agree(self):
+        a1 = _activity()
+        a2 = _activity(id="a2", summary=None, metrics=["speed"], laps=[LAP], tags=None, app_metadata=None)
+        table = models_to_arrow([a1, a2], ActivitySummary)
+        assert isinstance(table, pa.Table)
+        assert table.schema.field("start").type == pa.timestamp("us", tz="UTC")
+        assert table.schema.field("start_local").type == pa.timestamp("us")
+        assert table.schema.field("duration").type == pa.duration("us")
+        assert pa.types.is_struct(table.schema.field("summary").type)
+        # one type tree, two renderings: the Arrow table round-trips into the Polars frame exactly
+        assert pl.from_arrow(table).equals(models_to_polars([a1, a2], ActivitySummary))
+
+    def test_empty_and_to_pandas(self):
+        table = models_to_arrow([], ActivitySummary)
+        assert table.num_rows == 0 and table.schema == arrow_schema(ActivitySummary)
+        df = models_to_arrow([_activity()], ActivitySummary).to_pandas()
+        assert df["sport"][0] == "cycling.road" and df["summary"][0]["power"]["mean"] == 210.0
 
 
 class TestRequire:

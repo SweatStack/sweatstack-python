@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Frames on your terms. Every method that returns a collection takes `output=`:
 `"pandas"` (default), `"polars"`, `"arrow"` or `"bytes"` for time-series endpoints, and
-`"models"` (default), `"pandas"` or `"polars"` for list endpoints. Set it per call, per
+`"models"` (default), `"pandas"`, `"polars"` or `"arrow"` for list endpoints. Set it per call, per
 client (`Client(output="polars")`) or once for everything (`sweatstack.set_output("polars")`).
 Three breaking changes come with it; the upgrade is mechanical, see **Upgrading** below.
 
@@ -23,8 +23,8 @@ Three breaking changes come with it; the upgrade is mechanical, see **Upgrading*
 - `Client(output=...)` and `sweatstack.set_output(...)` to choose once. A per-call value
   always wins. Delegated clients inherit the setting.
 - Polars frames keep the compact wire dtypes (Int16, Float32, Categorical, Duration) and
-  give nested fields as typed structs (`df.unnest("summary")`). Arrow tables are the
-  response as-is. `"bytes"` is the raw parquet, ready for `duckdb.sql("... from 'file.parquet'")`.
+  give nested fields as typed structs (`df.unnest("summary")`), as do Arrow tables. On
+  time-series endpoints Arrow tables are the response as-is. `"bytes"` is the raw parquet, ready for `duckdb.sql("... from 'file.parquet'")`.
 - `sweatstack[polars]` extra.
 
 ### Changed

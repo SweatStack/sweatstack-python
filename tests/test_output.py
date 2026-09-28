@@ -127,8 +127,8 @@ class TestResolution:
         sweatstack.set_output("polars")  # client 'bytes' does not apply, module 'polars' does
         assert isinstance(_get_activities(client, [_activity(1)]), pl.DataFrame)
 
-    def test_per_call_output_a_method_cannot_produce_is_an_error(self, client):
-        with pytest.raises(ValueError, match="'models', 'pandas', 'polars'"):
+    def test_per_call_output_a_method_cannot_produce_is_an_error(self, client):  # bytes on lists, models on parquet
+        with pytest.raises(ValueError, match="'arrow', 'models', 'pandas', 'polars'"):
             _get_activities(client, [_activity(1)], output="bytes")
         with pytest.raises(ValueError, match="'arrow', 'bytes', 'pandas', 'polars'"):
             _get_activity_mean_max(client, _mean_max_with_index(), output="models")
@@ -232,10 +232,16 @@ class TestListBackends:
         assert df.unnest("summary").unnest("power")["mean"].to_list() == [201.0, 202.0]
         assert df.schema["start"] == pl.Datetime("us", "UTC")
 
+    def test_arrow_nests_typed_structs(self, client):
+        table = _get_activities(client, [_activity(1), _activity(2)], output="arrow")
+        assert isinstance(table, pa.Table)
+        assert table.column("summary").to_pylist()[0]["power"]["mean"] == 201.0
+
     def test_empty_lists_give_typed_empty_frames(self, client):
         assert _get_activities(client, [], output="models") == []
         assert "id" in _get_activities(client, [], output="pandas").columns
         assert _get_activities(client, [], output="polars").schema["id"] == pl.String
+        assert _get_activities(client, [], output="arrow").schema.field("id").type == pa.string()
 
     def test_dailies_date_is_a_column(self, client):
         dailies = [DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual")]

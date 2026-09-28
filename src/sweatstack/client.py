@@ -1130,6 +1130,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         output = _frames.resolve_output(output, self.output, allowed=_frames.LIST_OUTPUTS, default="models")
         if output == "models":
             return models
+        if output == "arrow":
+            return _frames.models_to_arrow(models, model)
         if output == "polars":
             return _frames.models_to_polars(models, model)
         df = _frames.models_to_pandas(models, model, flatten=flatten)
@@ -1176,6 +1178,19 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
+    @overload
+    def get_activities(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
     def get_activities(
         self,
         *,
@@ -1186,7 +1201,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         limit: int = 100,
         offset: int = 0,
         output: ListOutput | None = None,
-    ) -> list[ActivitySummary] | pd.DataFrame | pl.DataFrame:
+    ) -> list[ActivitySummary] | pd.DataFrame | pl.DataFrame | pa.Table:
         """Gets a list of activities based on specified filters.
 
         Args:
@@ -1196,13 +1211,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             tags: Optional list of tags to filter activities by.
             limit: Maximum number of activities to return. Defaults to 100.
             offset: Number of activities to skip. Defaults to 0.
-            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
                 client-level default for this call.
 
         Returns:
             A list of ActivitySummary objects, or a frame with one row per record.
             Nested fields are flattened to dotted columns in pandas and typed
-            structs in Polars.
+            structs in Polars and Arrow.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -2170,6 +2185,19 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
+    @overload
+    def get_traces(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
     def get_traces(
         self,
         *,
@@ -2180,7 +2208,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         limit: int = 100,
         offset: int = 0,
         output: ListOutput | None = None,
-    ) -> list[TraceDetails] | pd.DataFrame | pl.DataFrame:
+    ) -> list[TraceDetails] | pd.DataFrame | pl.DataFrame | pa.Table:
         """Gets a list of traces based on specified filters.
 
         Args:
@@ -2190,13 +2218,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             tags: Optional list of tags to filter traces by.
             limit: Maximum number of traces to return. Defaults to 100.
             offset: Number of traces to skip. Defaults to 0.
-            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
                 client-level default for this call.
 
         Returns:
             A list of TraceDetails objects, or a frame with one row per record.
             Nested fields are flattened to dotted columns in pandas and typed
-            structs in Polars.
+            structs in Polars and Arrow.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -2450,6 +2478,20 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
+    @overload
+    def get_tests(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        created_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
     def get_tests(
         self,
         *,
@@ -2461,7 +2503,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         limit: int = 50,
         offset: int = 0,
         output: ListOutput | None = None,
-    ) -> list[TestSummary] | pd.DataFrame | pl.DataFrame:
+    ) -> list[TestSummary] | pd.DataFrame | pl.DataFrame | pa.Table:
         """Gets a list of tests based on specified filters.
 
         Args:
@@ -2472,13 +2514,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             created_by: Optional app ID to filter tests by creator.
             limit: Maximum number of tests to return. Defaults to 50.
             offset: Number of tests to skip. Defaults to 0.
-            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
                 client-level default for this call.
 
         Returns:
             A list of TestSummary objects, or a frame with one row per record.
             Nested fields are flattened to dotted columns in pandas and typed
-            structs in Polars.
+            structs in Polars and Arrow.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -2682,6 +2724,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
+    @overload
+    def get_dailies(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        start: date,
+        end: date,
+        interpolate: bool = True,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
     def get_dailies(
         self,
         measure: DailyMeasure | str,
@@ -2690,7 +2743,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         end: date,
         interpolate: bool = True,
         output: ListOutput | None = None,
-    ) -> list[DailyResponse] | pd.DataFrame | pl.DataFrame:
+    ) -> list[DailyResponse] | pd.DataFrame | pl.DataFrame | pa.Table:
         """Gets daily values for a measure over a date range.
 
         Args:
@@ -2700,7 +2753,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             interpolate: Whether to apply server-side estimation/interpolation.
                 Defaults to True. When False, missing dates return value=None
                 with source="missing".
-            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
                 client-level default for this call.
 
         Returns:

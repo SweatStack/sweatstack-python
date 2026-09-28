@@ -54,13 +54,13 @@ FrameOutput = Literal["pandas", "polars", "arrow", "bytes"]
 :func:`set_output`). ``"models"`` is never a default worth configuring: it is
 already the default for list endpoints and impossible for parquet endpoints."""
 
-ListOutput = Literal["models", "pandas", "polars"]
+ListOutput = Literal["models", "pandas", "polars", "arrow"]
 """The containers a list endpoint can return."""
 
 PARQUET_OUTPUTS: frozenset[str] = frozenset({"pandas", "polars", "arrow", "bytes"})
 """Valid ``output`` values for endpoints that return parquet."""
 
-LIST_OUTPUTS: frozenset[str] = frozenset({"models", "pandas", "polars"})
+LIST_OUTPUTS: frozenset[str] = frozenset({"models", "pandas", "polars", "arrow"})
 """Valid ``output`` values for endpoints that return a list of records."""
 
 # Which install extra provides the library behind each backend.
@@ -259,17 +259,26 @@ def _records_for_normalize(df: pd.DataFrame, column: str) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Lists of models -> Polars
+# Lists of models -> Polars / Arrow
 #
-# The schema comes from the model's JSON Schema, the values from the model
-# instance. JSON Schema is a closed grammar and it is what openapi_schemas.py is
+# One schema, two renderings. `field_types()` derives a small type tree from
+# the model's JSON Schema; `polars_schema()` and `arrow_schema()` render it.
+# JSON Schema is a closed grammar and it is what openapi_schemas.py is
 # generated from, so a regeneration cannot introduce a Python type this mapper
-# has never seen without it also appearing below. Anything unmapped becomes
-# JSON text with a FrameSchemaWarning.
+# has never seen without it also appearing in `_field_type`. Anything unmapped
+# becomes JSON text with a FrameSchemaWarning. Values come from the model
+# instance via `_plain_value`, which walks the same tree.
 #
 # Never add a per-model special case here. If a model seems to need one, the
-# grammar table in _polars_dtype is missing a row; add the row and its test.
+# grammar table in _field_type is missing a row; add the row and its test.
 # ---------------------------------------------------------------------------
+
+# The type tree. Leaves are tags; containers are tuples.
+#   "string" | "int" | "float" | "bool" | "date" | "datetime" (UTC) |
+#   "naive_datetime" | "duration" | "json" (free-form, recursive or unmapped)
+#   ("list", node) | ("struct", {name: node})
+FieldType = Any
+
 
 def models_to_polars(models: Sequence[BaseModel], model: type[BaseModel]) -> pl.DataFrame:
     """A list of models to a Polars DataFrame with typed nested structs."""
@@ -278,11 +287,31 @@ def models_to_polars(models: Sequence[BaseModel], model: type[BaseModel]) -> pl.
     schema = polars_schema(model)
     if not models:
         return pl.DataFrame(schema=schema)
-    rows = [
-        {name: _plain_value(getattr(m, name), dtype) for name, dtype in schema.items()}
-        for m in models
-    ]
-    return pl.from_dicts(rows, schema=schema)
+    return pl.from_dicts(_rows(models, model), schema=schema)
+
+
+def models_to_arrow(models: Sequence[BaseModel], model: type[BaseModel]) -> Any:
+    """A list of models to a ``pyarrow.Table`` with typed nested structs."""
+    pa = require("pyarrow")
+
+    return pa.Table.from_pylist(_rows(models, model), schema=arrow_schema(model))
+
+
+def _rows(models: Sequence[BaseModel], model: type[BaseModel]) -> list[dict[str, Any]]:
+    types = field_types(model)
+    return [{name: _plain_value(getattr(m, name), node) for name, node in types.items()} for m in models]
+
+
+def polars_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """Polars dtype per top-level field of ``model``."""
+    return {name: _to_polars(node) for name, node in field_types(model).items()}
+
+
+def arrow_schema(model: type[BaseModel]) -> Any:
+    """``pyarrow.Schema`` for ``model``."""
+    pa = require("pyarrow")
+
+    return pa.schema([pa.field(name, _to_arrow(node)) for name, node in field_types(model).items()])
 
 
 class _JsonSchemaGenerator(GenerateJsonSchema):
@@ -297,8 +326,8 @@ class _JsonSchemaGenerator(GenerateJsonSchema):
 
 
 @lru_cache(maxsize=None)
-def polars_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Polars dtype per top-level field of ``model``, derived from its JSON Schema."""
+def field_types(model: type[BaseModel]) -> dict[str, FieldType]:
+    """Type tree per top-level field of ``model``, derived from its JSON Schema."""
     json_schema = model.model_json_schema(schema_generator=_JsonSchemaGenerator)
     definitions = json_schema.get("$defs", {})
     if "properties" in json_schema:
@@ -307,104 +336,121 @@ def polars_schema(model: type[BaseModel]) -> dict[str, Any]:
         root_name = _definition_name(json_schema["$ref"])
         root = definitions[root_name]
     return {
-        name: _polars_dtype(node, definitions, f"{root_name}.{name}", (root_name,))
+        name: _field_type(node, definitions, f"{root_name}.{name}", (root_name,))
         for name, node in root["properties"].items()
     }
 
 
 _DATETIME_FORMATS = frozenset({"date-time", "naive-date-time"})
+_STRING_FORMATS = {"date-time": "datetime", "naive-date-time": "naive_datetime", "date": "date", "duration": "duration"}
 
 
 def _definition_name(ref: str) -> str:
     return ref.rsplit("/", 1)[1]
 
 
-def _polars_dtype(node: dict, definitions: dict, path: str, stack: tuple[str, ...]) -> Any:
-    """Map one JSON Schema node to a Polars dtype. ``stack`` holds the model
+def _field_type(node: dict, definitions: dict, path: str, stack: tuple[str, ...]) -> FieldType:
+    """Map one JSON Schema node to a type-tree node. ``stack`` holds the model
     definitions currently being expanded, to cut recursive models short."""
-    pl = require("polars")
-
     while "$ref" in node:
         name = _definition_name(node["$ref"])
         if name in stack:
-            return pl.String  # recursive model: JSON text, Polars has no recursive dtype
+            return "json"  # recursive model: no frame library has a recursive dtype
         stack = (*stack, name)
         node = definitions[name]
 
     if "anyOf" in node:
         options = [option for option in node["anyOf"] if option.get("type") != "null"]
         if len(options) == 1:
-            return _polars_dtype(options[0], definitions, path, stack)
+            return _field_type(options[0], definitions, path, stack)
         if options and all(option.get("type") in ("integer", "number") for option in options):
-            return pl.Float64
+            return "float"
         if options and all(option.get("format") in _DATETIME_FORMATS for option in options):
-            return pl.Datetime("us", "UTC")  # aware | naive: naive values are taken as UTC
+            return "datetime"  # aware | naive: naive values are taken as UTC
         return _fallback(path, node)
 
     if "enum" in node or "const" in node:
-        return pl.String
+        return "string"
 
     kind = node.get("type")
     if kind == "string":
-        return {
-            "date-time": pl.Datetime("us", "UTC"),
-            "naive-date-time": pl.Datetime("us", None),
-            "date": pl.Date,
-            "duration": pl.Duration("us"),
-        }.get(node.get("format", ""), pl.String)
+        return _STRING_FORMATS.get(node.get("format", ""), "string")
     if kind == "integer":
-        return pl.Int64
+        return "int"
     if kind == "number":
-        return pl.Float64
+        return "float"
     if kind == "boolean":
-        return pl.Boolean
+        return "bool"
     if kind == "array":
-        return pl.List(_polars_dtype(node.get("items", {}), definitions, f"{path}[]", stack))
+        return ("list", _field_type(node.get("items", {}), definitions, f"{path}[]", stack))
     if kind == "object" and "properties" in node:
-        return pl.Struct({
-            name: _polars_dtype(child, definitions, f"{path}.{name}", stack)
+        return ("struct", {
+            name: _field_type(child, definitions, f"{path}.{name}", stack)
             for name, child in node["properties"].items()
         })
     if kind == "object":
-        return pl.String  # free-form mapping (e.g. app_metadata): JSON text
+        return "json"  # free-form mapping (e.g. app_metadata)
     return _fallback(path, node)
 
 
-def _fallback(path: str, node: dict) -> Any:
-    pl = require("polars")
+def _fallback(path: str, node: dict) -> FieldType:
     warnings.warn(
-        f"{path}: no Polars dtype for JSON Schema node {node!r}; stored as JSON text",
+        f"{path}: no frame dtype for JSON Schema node {node!r}; stored as JSON text",
         FrameSchemaWarning,
         stacklevel=2,
     )
-    return pl.String
+    return "json"
 
 
-def _plain_value(value: Any, dtype: Any) -> Any:
-    """Turn a model attribute into what Polars accepts for ``dtype``."""
+def _to_polars(node: FieldType) -> Any:
     pl = require("polars")
 
+    if isinstance(node, tuple):
+        kind, inner = node
+        if kind == "list":
+            return pl.List(_to_polars(inner))
+        return pl.Struct({name: _to_polars(child) for name, child in inner.items()})
+    return {
+        "string": pl.String, "json": pl.String, "int": pl.Int64, "float": pl.Float64, "bool": pl.Boolean,
+        "date": pl.Date, "datetime": pl.Datetime("us", "UTC"), "naive_datetime": pl.Datetime("us", None),
+        "duration": pl.Duration("us"),
+    }[node]
+
+
+def _to_arrow(node: FieldType) -> Any:
+    pa = require("pyarrow")
+
+    if isinstance(node, tuple):
+        kind, inner = node
+        if kind == "list":
+            return pa.list_(_to_arrow(inner))
+        return pa.struct([pa.field(name, _to_arrow(child)) for name, child in inner.items()])
+    return {
+        "string": pa.string(), "json": pa.string(), "int": pa.int64(), "float": pa.float64(), "bool": pa.bool_(),
+        "date": pa.date32(), "datetime": pa.timestamp("us", tz="UTC"), "naive_datetime": pa.timestamp("us"),
+        "duration": pa.duration("us"),
+    }[node]
+
+
+def _plain_value(value: Any, node: FieldType) -> Any:
+    """Turn a model attribute into what Polars and Arrow accept for ``node``."""
     if value is None:
         return None
     if isinstance(value, Enum):
         return value.value
-    if dtype == pl.String:
+    if isinstance(node, tuple):
+        kind, inner = node
+        if kind == "list":
+            return [_plain_value(item, inner) for item in value]
+        return {name: _plain_value(getattr(value, name), child) for name, child in inner.items()}
+    if node == "json":
         if isinstance(value, str):
             return value
-        if isinstance(value, (BaseModel, dict, list, tuple)):
-            return json.dumps(to_jsonable_python(value, fallback=str))
-        return str(value)  # Sport and other value objects
-    if isinstance(dtype, pl.Struct):
-        return {
-            field.name: _plain_value(getattr(value, field.name), field.dtype)
-            for field in dtype.fields
-        }
-    if isinstance(dtype, pl.List):
-        return [_plain_value(item, dtype.inner) for item in value]
-    if isinstance(dtype, pl.Datetime) and isinstance(value, datetime):
-        # Match the column's zone: a naive value in a UTC column is taken as UTC,
-        # an aware value in a naive column is expressed as UTC wall-clock.
-        if dtype.time_zone is None:
-            return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return value  # date, timedelta, bool, int, float
+        return json.dumps(to_jsonable_python(value, fallback=str))
+    if node == "string":
+        return value if isinstance(value, str) else str(value)  # Sport and other value objects
+    if node == "datetime" and isinstance(value, datetime) and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)  # naive value in a UTC column
+    if node == "naive_datetime" and isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value  # date, timedelta, bool, int, float, datetime already matching
