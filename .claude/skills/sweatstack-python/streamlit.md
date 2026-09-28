@@ -33,7 +33,7 @@ if not auth.is_authenticated():
 
 # Use auth.client for all API calls
 activities = auth.client.get_activities(limit=10)
-st.dataframe(auth.client.get_activities(as_dataframe=True))
+st.dataframe(auth.client.get_activities(output="pandas"))  # st.dataframe also accepts output="polars"
 ```
 
 **`authenticate(login_label=None, show_logout=True)`** — renders login button if unauthenticated, logout button if authenticated. Handles OAuth callback automatically via `st.query_params`.

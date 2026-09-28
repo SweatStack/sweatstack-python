@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+Frames on your terms. Every method that returns a collection takes `output=`:
+`"pandas"` (default), `"polars"`, `"arrow"` or `"bytes"` for time-series endpoints, and
+`"models"` (default), `"pandas"` or `"polars"` for list endpoints. Set it per call, per
+client (`Client(output="polars")`) or once for everything (`sweatstack.set_output("polars")`).
+Three breaking changes come with it; the upgrade is mechanical, see **Upgrading** below.
+
+### Added
+
+- `output=` on `get_activity_data`, `get_activity_mean_max`, `get_activity_awd`,
+  `get_latest_activity_data`, `get_latest_activity_mean_max`, `get_longitudinal_data`,
+  `get_longitudinal_mean_max`, `get_longitudinal_awd`, `get_activities`, `get_traces`,
+  `get_tests` and `get_dailies`.
+- `Client(output=...)` and `sweatstack.set_output(...)` to choose once. A per-call value
+  always wins. Delegated clients inherit the setting.
+- Polars frames keep the compact wire dtypes (Int16, Float32, Categorical, Duration) and
+  give nested fields as typed structs (`df.unnest("summary")`). Arrow tables are the
+  response as-is. `"bytes"` is the raw parquet, ready for `duckdb.sql("... from 'file.parquet'")`.
+- `sweatstack[polars]` extra.
+
+### Changed
+
+- **Breaking:** pandas is no longer installed by default. Install `sweatstack[pandas]`
+  (pandas + pyarrow) or `sweatstack[polars]`. The `streamlit` and `jupyter` extras include
+  pandas. FastAPI services and webhook consumers can stay on the base package. Asking for an
+  output whose library is missing raises an `ImportError` naming the extra to install.
+- **Breaking:** `as_dataframe=True` is removed. Use `output="pandas"`.
+- **Breaking:** no frame carries an index any more, on any backend. `timestamp` (time
+  series), the metric value (mean-max and AWD curves) and `date` (dailies) are now regular
+  columns, in first position. The set of columns is unchanged. Code that relied on the
+  index needs `.set_index("timestamp")` (or `"power"`, `"date"`, ...) once, or should use
+  the column directly. This also applies to the fatigue mean-max (`after=`) frame, which was
+  previously re-indexed by the client.
+- pandas frames keep the float64 / nanosecond dtype policy. Polars and Arrow do not upcast.
+
+### Upgrading
+
+1. Change the install line: `uv add "sweatstack[pandas]"` (or `[polars]`). Streamlit and
+   Jupyter users: `sweatstack[streamlit]` / `sweatstack[jupyter]` already include pandas.
+2. Replace `as_dataframe=True` with `output="pandas"`.
+3. Search for `.index`, `.loc[<timestamp>]`, `.resample(`, `.plot()` on frames from the
+   time-series, mean-max, AWD and dailies methods. Where the index mattered, add
+   `.set_index("timestamp")` (or the metric name, or `"date"`) right after the call.
+
 ## [0.88.0] - 2026-08-06
 
 ### Changed

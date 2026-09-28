@@ -32,7 +32,9 @@ and pagination shape. Don't redesign the API in Python.
 - A `traces=` query parameter renames to `trace_resolution=` on the Python
   side when the wire name would be ambiguous as a kwarg. Document the
   mapping in the docstring.
-- `as_dataframe=True` is a client-side convenience over list endpoints.
+- `output=` is a client-side choice of container over every collection
+  endpoint: `"pandas" | "polars" | "arrow" | "bytes"` for parquet endpoints,
+  `"models" | "pandas" | "polars"` for list endpoints. See "Output backends".
 - Convenience composites that wrap multiple calls
   (`get_latest_activity_data`, `get_longitudinal_*`) live alongside the
   literal mirrors. Add new ones sparingly; only when a real workflow is
@@ -45,6 +47,7 @@ and pagination shape. Don't redesign the API in Python.
 src/sweatstack/
 ├── openapi_schemas.py   # AUTO-GENERATED. Never hand-edit.
 ├── schemas.py           # Re-exports (incl. OST Sport/Modifier) + Metric/Scope/DailyMeasure helpers.
+├── _frames.py           # output= backends: parquet/models -> pandas/polars/arrow/bytes.
 ├── exceptions.py        # Public error contract. No httpx types leak.
 ├── client.py            # Single Client class + module-level singletons.
 ├── utils.py             # Dataframe / JWT helpers.
@@ -78,6 +81,12 @@ Skipping step 3 silently breaks the public surface. Same for new enums.
   safe and `sport`-typed fields keep decoding to `Sport`.
 - **Tests are offline.** No network calls. Use `Client.__new__(Client)` to
   bypass init when you need an instance for a helper method.
+- **Frame libraries are optional extras.** Never import pandas, numpy,
+  pyarrow or polars at module top level; import inside the function, via
+  `_frames.require(...)` where an `ImportError` should name the extra.
+  CI's bare-install job fails otherwise.
+- **No frame carries an index**, on any backend. Don't `set_index` in a
+  method; the caller does that.
 - **`update_*` methods are full-replace.** Document the silent-clear
   footgun in the docstring (see below).
 - **CHANGELOG entries are user-facing**, not dev-facing.
@@ -134,10 +143,16 @@ Invariants baked into the template:
 
 **List endpoints** add a `_get_<resource>_generator()` that yields
 validated objects with internal pagination, plus a `get_<resource>s(...,
-as_dataframe=False)` wrapper. Empty-list DataFrames go through
-`_create_empty_dataframe_from_model(Model, normalize_columns=[...])` so
-column names stay stable. See `get_activities` and `get_tests` for
-exemplars.
+output=None)` wrapper that returns
+`self._frame_from_models(models, Model, output, flatten=(...))`. Empty
+lists yield typed empty frames automatically. See `get_activities` and
+`get_tests` for exemplars.
+
+**Parquet endpoints** return `self._read_frame(response.content, output)`.
+Never call `pd.read_parquet` in a method.
+
+Both kinds take `output` as a keyword-only parameter and carry
+`@overload` stubs keyed on the `Literal` values (clone the neighbours).
 
 **Query parameters** are only sent when the caller supplied a non-default
 value. For enum-typed query params with an explicit default, compare
@@ -160,6 +175,27 @@ to `null`. Two rules:
 
 Don't try to soften the contract with "preserve if omitted" sentinels;
 that diverges from how every other field behaves on these methods.
+
+
+## Output backends
+
+`_frames.py` turns parquet bytes and lists of models into the container
+the caller asked for. Resolution: per-call `output` > `Client(output=)` >
+`sweatstack.set_output()` > the method's default (pandas for parquet,
+models for lists). A configured default a method cannot produce is
+skipped, a per-call one is a `ValueError`.
+
+Dtype policy: pandas gets `convert_to_standard_dtypes` (float64, ns);
+Polars keeps wire dtypes except Float16 -> Float32; Arrow is the wire
+table minus pandas index metadata; bytes is the body.
+
+The Polars path for lists derives its schema from each model's **JSON
+Schema** (`_frames.polars_schema`) and its values from the instance.
+**Never add a per-model special case there.** If a model needs one, the
+JSON Schema grammar table in `_polars_dtype` is missing a row: add the
+row and its test. `tests/test_frames.py` turns `FrameSchemaWarning` into
+a failure for every public model, so a regen that introduces an unknown
+construct fails the suite, not a user's notebook.
 
 
 ## Exceptions
@@ -223,7 +259,7 @@ Bad (belongs in the commit message, not the changelog):
 - Match the nearest existing method in `client.py`. Consistency with the
   surroundings beats local cleverness.
 - Reuse the helpers: `_enums_to_strings`, `_get_*_generator`,
-  `_normalize_dataframe_column`, `_create_empty_dataframe_from_model`,
-  `_set_app_metadata`. Don't reinvent them.
+  `_read_frame`, `_frame_from_models`, `_set_app_metadata`. Don't
+  reinvent them.
 - Don't add abstractions for hypothetical future flexibility. Three
   similar blocks is the pattern, not a smell.

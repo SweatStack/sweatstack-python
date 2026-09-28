@@ -109,7 +109,8 @@ def check_frame_output(output: str | None) -> str | None:
     """Validate a configurable default; returns it unchanged."""
     if output is not None and output not in PARQUET_OUTPUTS:
         raise ValueError(
-            f"output={output!r} cannot be a default; choose one of {_choices(PARQUET_OUTPUTS)}"
+            f"output={output!r} cannot be a default; choose one of {_choices(PARQUET_OUTPUTS)}, "
+            "or None to reset (list endpoints then return models, parquet endpoints pandas)"
         )
     return output
 

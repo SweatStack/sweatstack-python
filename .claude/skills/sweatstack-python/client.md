@@ -3,6 +3,7 @@
 ## Contents
 
 - [Authentication](#authentication)
+- [Output: pandas, Polars, Arrow, bytes](#output-pandas-polars-arrow-bytes)
 - [Activities](#activities)
 - [Time-Series Data](#time-series-data)
 - [Mean-Max and AWD](#mean-max-and-awd)
@@ -45,6 +46,31 @@ client = Client(api_key="...", refresh_token="...")
 
 Token refresh is automatic in all modes. The library handles expiry checks and refreshes transparently.
 
+## Output: pandas, Polars, Arrow, bytes
+
+Every method that returns a collection takes `output=`:
+
+| Endpoints | Values | Default |
+|---|---|---|
+| Time series, mean-max, AWD, longitudinal | `"pandas"`, `"polars"`, `"arrow"`, `"bytes"` | `"pandas"` |
+| `get_activities`, `get_traces`, `get_tests`, `get_dailies` | `"models"`, `"pandas"`, `"polars"` | `"models"` |
+
+```python
+df = client.get_activity_data("activity_id")                    # pandas.DataFrame
+pf = client.get_activity_data("activity_id", output="polars")   # polars.DataFrame, wire dtypes
+tb = client.get_activity_data("activity_id", output="arrow")    # pyarrow.Table
+raw = client.get_activity_data("activity_id", output="bytes")   # parquet bytes: write to disk, query with DuckDB
+
+sweatstack.set_output("polars")        # module-wide default, or Client(output="polars")
+client.get_activities()                # now a polars frame; output="models" per call to get the list back
+```
+
+Resolution: per-call > `Client(output=)` > `set_output()` > method default. Requires `sweatstack[pandas]` or
+`sweatstack[polars]`; a missing library raises `ImportError` naming the extra. No frame has an index on any
+backend: `timestamp`, the mean-max metric value and `date` are ordinary first columns (`df.set_index("timestamp")`
+if you need one). Polars list frames give nested fields as structs (`df.unnest("summary")`); pandas flattens them
+to dotted columns (`summary.power.mean`).
+
 ## Activities
 
 ```python
@@ -58,8 +84,9 @@ activities = client.get_activities(
     offset=0,                     # for pagination
 )
 
-# As DataFrame instead
-df = client.get_activities(as_dataframe=True)
+# As a frame instead (nested summary/laps/traces flattened in pandas, structs in Polars)
+df = client.get_activities(output="pandas")
+pf = client.get_activities(output="polars")
 
 # Single activity by ID (returns ActivityDetails)
 activity = client.get_activity("activity_id")
@@ -71,7 +98,7 @@ latest = client.get_latest_activity(sport=Sport.running)
 
 ## Time-Series Data
 
-Returns pandas DataFrame with 1-second sampled data.
+Returns a frame with 1-second sampled data (pandas by default; `output="polars"`, `"arrow"` or `"bytes"`). `timestamp` is a column, not an index.
 
 ```python
 # All available metrics
@@ -132,7 +159,7 @@ df = client.get_longitudinal_awd(
 )
 ```
 
-The DataFrame has a timezone-aware datetime index and includes an `activity_id` column — group by it for per-activity aggregation.
+The frame has a timezone-aware `timestamp` column (UTC), a naive `timestamp_local` column, and `activity_id` / `sport` columns — group by `activity_id` for per-activity aggregation. Mean-max and AWD frames have the metric value and `duration` as columns.
 
 **Local caching** for reproducible analysis (avoids re-fetching on reruns). Caches `get_longitudinal_data()` and `get_longitudinal_mean_max()`:
 ```python
@@ -151,7 +178,7 @@ Custom data points with measurements (e.g., lactate tests, RPE entries).
 
 ```python
 # List traces
-traces = client.get_traces(start=date(2025, 1, 1), as_dataframe=True)
+traces = client.get_traces(start=date(2025, 1, 1), output="pandas")
 
 # Create a trace
 trace = client.create_trace(
@@ -195,8 +222,8 @@ tests = client.get_tests(
     limit=50,                          # default 50
 )
 
-# As DataFrame (results column gets normalized into flat columns like results.vo2max)
-df = client.get_tests(as_dataframe=True)
+# As a frame (pandas flattens results into columns like results.vo2max; Polars keeps a results struct)
+df = client.get_tests(output="pandas")
 
 # Single test by ID (returns TestDetails with resolved traces + overlapping activities)
 test = client.get_test("test_id")
@@ -242,8 +269,8 @@ dailies = client.get_dailies(
     interpolate=True,            # default; server fills gaps
 )
 
-# As DataFrame (date as index)
-df = client.get_dailies(DailyMeasure.body_mass, start=date(2026, 1, 1), end=date(2026, 3, 31), as_dataframe=True)
+# As a frame (date is a column)
+df = client.get_dailies(DailyMeasure.body_mass, start=date(2026, 1, 1), end=date(2026, 3, 31), output="pandas")
 
 # Set a daily value (upsert — creates or updates)
 daily = client.set_daily(DailyMeasure.body_mass, date=date(2026, 4, 1), value=75.2)
@@ -422,8 +449,9 @@ Hierarchy:
 - **Sport enum uses underscores:** `Sport.cycling_road`, not `Sport("road")` or `Sport.cycling.road`. String values use dots: `"cycling.road"`.
 - **`start` is required for longitudinal endpoints.** Unlike `get_activities()` where all filters are optional.
 - **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` and `create_trace(sport=...)` take a single sport. All other methods that filter by sport use `sports=[...]` (list). The singular `sport` parameter on longitudinal methods is deprecated.
-- **DataFrames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] automatically.
-- **`as_dataframe=True`** is available on `get_activities()`, `get_traces()`, `get_tests()`, and `get_dailies()`. Time-series methods (`get_activity_data`, `get_longitudinal_data`, etc.) always return DataFrames.
+- **pandas frames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] for pandas. Polars and Arrow keep the compact wire dtypes.
+- **No frame has an index.** `timestamp`, the mean-max metric value and `date` are columns. `df.set_index("timestamp")` if you need one.
+- **`output=`** is on every collection method; `as_dataframe` no longer exists. Time-series methods always return a frame (pandas by default), list methods return models by default.
 - **`update_test()` and `update_trace()` are full replaces.** Omitted optional fields are set to null. Always re-pass all fields you want to keep.
 - **`summary` fields are optional.** Always null-check: `activity.summary.power.mean if activity.summary and activity.summary.power else None`.
 - **`metrics` on ActivitySummary** lists available data streams, not the data itself. Use to check availability before calling `get_activity_data()`.

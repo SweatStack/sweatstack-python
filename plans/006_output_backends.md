@@ -7,7 +7,13 @@ Frame libraries become optional extras.
 
 Decided in conversation on 2026-09-25. Supersedes the "local dataset /
 sync client" idea, which was evaluated and rejected (see Out of scope).
-Readiness-reviewed the same day; see "Readiness: do these first".
+Readiness-reviewed the same day.
+
+**Status (2026-09-28):** Track A steps 1–7 implemented on branch
+`output-backends` as one commit per step, suite green, bare-install check
+verified locally. Open: step 8 (release candidate against the Streamlit
+apps and two sibling repos), the sibling repos' copies of the skill
+reference, and Track B on the server.
 
 
 ## Summary
@@ -20,9 +26,8 @@ Readiness-reviewed the same day; see "Readiness: do these first".
 | pandas frames carry an index (timestamp, metric value, date) | Columns everywhere, on every backend |
 | pandas + pyarrow are hard dependencies | Base = httpx + pydantic + OST. `[pandas]`, `[polars]` extras |
 
-Breaking. Ships as **1.0.0**: this release defines the data contract that
-later backends build on, which is what a 1.0 should mean. Independent of
-any server release (see Phasing).
+Breaking. Ships as the next release (version to be decided; explicitly
+**not** 1.0.0). Independent of any server release (see Phasing).
 
 
 ## Why (evidence)
@@ -50,7 +55,7 @@ any server release (see Phasing).
 
 Six findings. **R1 is the only prerequisite**: it is repository hygiene
 that must exist before the first refactor commit. R2–R6 are requirements
-on the 1.0 work itself, each folded into the Track A step named next to
+on the release work itself, each folded into the Track A step named next to
 it; they are listed here so the reasoning is in one place.
 
 - **R1. Commit the safety net (prerequisite, before Track A step 1).** 15 of 16 test files, `plans/` and
@@ -58,7 +63,7 @@ it; they are listed here so the reasoning is in one place.
   `uv sync --all-extras`, `uv run pytest` on 3.10–3.13. Add a second job
   that installs the **base package only** and runs
   `python -c "import sweatstack, sweatstack.fastapi"`; this is the only
-  thing that keeps pandas optional after 1.0 (someone will add a
+  thing that keeps pandas optional afterwards (someone will add a
   top-level `import pandas` by habit).
 - **R2. Internal callers must ask for models explicitly (Track A step 3).** `streamlit.py`
   (activity selectors, 2 sites), `fastapi/__init__.py` and
@@ -138,7 +143,7 @@ it; they are listed here so the reasoning is in one place.
    `sweatstack[pandas]`. `[fastapi]` stays frame-free. Calling a frame
    output without its library raises `ImportError` with the exact
    `uv add "sweatstack[...]"` line.
-9. **Default stays pandas**, also after 1.0. Streamlit apps, matplotlib
+9. **Default stays pandas**, also after this release. Streamlit apps, matplotlib
    notebooks and the skill files Claude writes code from are pandas today.
    Flipping is a one-line decision to take later with adoption data.
 10. **Cache unchanged.** It stores response bytes; every backend reads
@@ -254,7 +259,7 @@ sweatstack.get_activities(output="models") # per-call override
 # columns everywhere
 mm = client.get_longitudinal_mean_max(sports=["cycling"], metric="power")
 mm.columns   # ['power', 'duration', 'start', 'activity_id', 'sport'] on every backend
-mm.set_index("power")  # only if you want the pre-1.0 pandas shape
+mm.set_index("power")  # only if you want the old pandas shape
 ```
 
 
@@ -265,7 +270,7 @@ depend on the server; the server work does not depend on the SDK once
 the SDK is index-agnostic. So there are two independent tracks, not
 three sequential phases.
 
-### Track A: SDK 1.0.0 (this repo)
+### Track A: SDK release (this repo)
 
 Prerequisite: R1 only. Then one release, built as ordered commits so
 each step is green on its own; R2–R6 land inside the steps that cite them:
@@ -296,8 +301,8 @@ each step is green on its own; R2–R6 land inside the steps that cite them:
    reference (install lines, `output=`, no-index shapes, DuckDB example),
    CHANGELOG `### Changed` with the three migrations spelled out:
    `as_dataframe` -> `output`, index -> column, install extra.
-8. **Release candidate.** Tag `1.0.0rc1`, run the two Streamlit apps and
-   two of the sibling analysis repos against it before `1.0.0`.
+8. **Release candidate.** Tag a pre-release, run the two Streamlit apps and
+   two of the sibling analysis repos against it before releasing.
 
 ### Track B: server (../sweatstack, independent)
 
