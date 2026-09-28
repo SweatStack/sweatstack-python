@@ -20,15 +20,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+# Frame libraries are extras: the base package serves FastAPI services, webhook
+# consumers and anyone who only needs the models. CI's bare-install job keeps it so.
 dependencies = [
     "email-validator>=2.2.0",
     "httpx>=0.28.1",
     "open-sport-taxonomy[pydantic]>=0.10.0",
-    "pandas>=2.2.3",
     "platformdirs>=4.0.0",
-    # >=20: 18/19 raise "Repetition level histogram size mismatch" reading the server's
-    # polars-written parquet (size-statistics histograms); fixed in pyarrow 20.
-    "pyarrow>=20.0.0",
     "pydantic>=2.10.5",
 ]
 
@@ -40,10 +38,23 @@ Issues = "https://github.com/SweatStack/sweatstack-python/issues"
 Changelog = "https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+pandas = [
+    "pandas>=2.2.3",
+    # >=20: 18/19 raise "Repetition level histogram size mismatch" reading the server's
+    # polars-written parquet (size-statistics histograms); fixed in pyarrow 20.
+    "pyarrow>=20.0.0",
+]
+polars = [
+    # >=1.30 verified: reads the server's float16 columns (as Float32 before Float16
+    # support landed, as Float16 after; the client casts to Float32 either way).
+    "polars>=1.30",
+]
 streamlit = [
+    "sweatstack[pandas]",
     "streamlit>=1.42.0",
 ]
 jupyter = [
+    "sweatstack[pandas]",
     "ipython>=8.31.0",
     "jupyterlab>=4.3.4",
     "matplotlib>=3.10.0",
@@ -66,7 +77,9 @@ build-backend = "hatchling.build"
 dev = [
     "datamodel-code-generator[ruff]>=0.54.1",
     "myst-parser>=4.0.1",
+    "pandas>=2.2.3",
     "polars>=1.30",
+    "pyarrow>=20.0.0",
     "pytest>=9.0.3",
     "sphinx>=8.2.3",
     "sphinx-markdown-builder>=0.6.8",

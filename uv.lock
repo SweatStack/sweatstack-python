@@ -2634,9 +2634,7 @@ dependencies = [
     { name = "email-validator" },
     { name = "httpx" },
     { name = "open-sport-taxonomy", extra = ["pydantic"] },
-    { name = "pandas" },
     { name = "platformdirs" },
-    { name = "pyarrow" },
     { name = "pydantic" },
 ]
 
@@ -2649,8 +2647,19 @@ jupyter = [
     { name = "ipython" },
     { name = "jupyterlab" },
     { name = "matplotlib" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+]
+pandas = [
+    { name = "pandas" },
+    { name = "pyarrow" },
+]
+polars = [
+    { name = "polars" },
 ]
 streamlit = [
+    { name = "pandas" },
+    { name = "pyarrow" },
     { name = "streamlit" },
 ]
 
@@ -2658,7 +2667,9 @@ streamlit = [
 dev = [
     { name = "datamodel-code-generator", extra = ["ruff"] },
     { name = "myst-parser" },
+    { name = "pandas" },
     { name = "polars" },
+    { name = "pyarrow" },
     { name = "pytest" },
     { name = "sphinx" },
     { name = "sphinx-markdown-builder" },
@@ -2675,19 +2686,24 @@ requires-dist = [
     { name = "jupyterlab", marker = "extra == 'jupyter'", specifier = ">=4.3.4" },
     { name = "matplotlib", marker = "extra == 'jupyter'", specifier = ">=3.10.0" },
     { name = "open-sport-taxonomy", extras = ["pydantic"], specifier = ">=0.10.0" },
-    { name = "pandas", specifier = ">=2.2.3" },
+    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.2.3" },
     { name = "platformdirs", specifier = ">=4.0.0" },
-    { name = "pyarrow", specifier = ">=20.0.0" },
+    { name = "polars", marker = "extra == 'polars'", specifier = ">=1.30" },
+    { name = "pyarrow", marker = "extra == 'pandas'", specifier = ">=20.0.0" },
     { name = "pydantic", specifier = ">=2.10.5" },
     { name = "streamlit", marker = "extra == 'streamlit'", specifier = ">=1.42.0" },
+    { name = "sweatstack", extras = ["pandas"], marker = "extra == 'jupyter'" },
+    { name = "sweatstack", extras = ["pandas"], marker = "extra == 'streamlit'" },
 ]
-provides-extras = ["streamlit", "jupyter", "fastapi"]
+provides-extras = ["pandas", "polars", "streamlit", "jupyter", "fastapi"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "datamodel-code-generator", extras = ["ruff"], specifier = ">=0.54.1" },
     { name = "myst-parser", specifier = ">=4.0.1" },
+    { name = "pandas", specifier = ">=2.2.3" },
     { name = "polars", specifier = ">=1.30" },
+    { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "sphinx", specifier = ">=8.2.3" },
     { name = "sphinx-markdown-builder", specifier = ">=0.6.8" },

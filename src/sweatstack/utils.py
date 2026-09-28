@@ -1,11 +1,19 @@
+"""Dataframe and JWT helpers.
+
+pandas and numpy are optional extras (``sweatstack[pandas]``), so they are
+imported inside the functions that need them; importing this module must not
+pull them in.
+"""
+
+from __future__ import annotations
+
 import base64
 import json
 from enum import Enum
+from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
-
-from .schemas import Sport
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def convert_to_standard_dtypes(df: pd.DataFrame) -> pd.DataFrame:
@@ -41,6 +49,9 @@ def convert_to_standard_dtypes(df: pd.DataFrame) -> pd.DataFrame:
         dtype('float64')
         >>> df["power"].cumsum()  # No overflow issues
     """
+    import numpy as np
+    import pandas as pd
+
     df = df.copy()
 
     for col in df.columns:
