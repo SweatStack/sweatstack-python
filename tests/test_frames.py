@@ -216,3 +216,7 @@ class TestRequire:
         monkeypatch.setitem(sys.modules, "polars", None)  # import machinery raises ImportError
         with pytest.raises(ImportError, match=r'uv add "sweatstack\[polars\]"'):
             _frames.require("polars")
+        monkeypatch.setitem(sys.modules, "pyarrow", None)
+        monkeypatch.setitem(sys.modules, "pyarrow.parquet", None)
+        with pytest.raises(ImportError, match=r'uv add "sweatstack\[arrow\]"'):
+            _frames.require("pyarrow.parquet")

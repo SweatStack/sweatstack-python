@@ -137,13 +137,14 @@ it; they are listed here so the reasoning is in one place.
    (`.unnest("summary")` is the idiom) via the schema derivation below.
 7. **`as_dataframe` is removed**, not shimmed. Mechanical migration,
    loud CHANGELOG entry.
-8. **Extras.** Base package has no frame library. `[pandas]` = pandas +
-   pyarrow. `[polars]` = polars. `"arrow"` needs pyarrow (either via
-   `[pandas]` or installing it). `[streamlit]` and `[jupyter]` depend on
+8. **Extras.** Base package has no frame library. `[arrow]` = pyarrow
+   (what `output="arrow"` and DuckDB need). `[pandas]` = pandas +
+   `[arrow]`. `[polars]` = polars. `[streamlit]` and `[jupyter]` depend on
    `sweatstack[pandas]`. `[fastapi]` stays frame-free. Calling a frame
    output without its library raises `ImportError` with the exact
    `uv add "sweatstack[...]"` line.
-9. **The default frame library is the installed one, Polars if both.**
+9. **The default frame library is the installed one: Polars, then pandas,
+   then Arrow.**
    Decided 2026-09-28, reversing the earlier "pandas stays default": with
    frame libraries as extras, a hard-coded pandas default made a
    `sweatstack[polars]` install fail on its first call, and doing the flip
@@ -361,8 +362,10 @@ harmless and protects against older servers.
   benefit is a 35 vs 52 MB file that `output="polars"` or `"bytes"`
   already closes. Users who want files write them: one call per athlete,
   one glob in DuckDB.
-- **DuckDB integration in the SDK.** Nothing needed beyond `"arrow"` and
-  `"bytes"`; DuckDB queries both directly.
+- **DuckDB integration in the SDK.** Nothing needed beyond `"arrow"`,
+  `"polars"` and `"bytes"` plus the `[arrow]` extra (DuckDB's Python API
+  bridges in-memory frames through pyarrow, verified 2026-09-28); DuckDB
+  queries all three directly. README has the three routes.
 - **Narwhals.** Considered for the shaping layer; the shaping is small
   enough that per-backend branches are clearer.
 - **Transparent local answering of `get_longitudinal_data`** from cached

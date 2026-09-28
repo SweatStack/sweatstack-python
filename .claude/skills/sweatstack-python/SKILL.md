@@ -16,7 +16,7 @@ Python client library for the SweatStack sports data platform.
 **Install:** `uv add "sweatstack[pandas]"` for analysis (or `"sweatstack[polars]"`); plain `uv add sweatstack` for
 services that only need the models (no frame library is installed by default).
 
-**Extras:** `sweatstack[pandas]` · `sweatstack[polars]` · `sweatstack[streamlit]` (includes pandas) · `sweatstack[fastapi]`
+**Extras:** `sweatstack[pandas]` · `sweatstack[polars]` · `sweatstack[arrow]` (pyarrow only; DuckDB users) · `sweatstack[streamlit]` (includes pandas) · `sweatstack[fastapi]`
 
 ## Quick Start
 
@@ -40,7 +40,7 @@ df = client.get_activities(output="pandas")     # or output="polars"; default is
 ```
 
 Every collection method takes `output=` (`"pandas"`, `"polars"`, `"arrow"`, `"bytes"`; `"models"` for
-lists). Time series default to the installed frame library, Polars if both are, so code that assumes
+lists). Time series default to the installed frame library (Polars, then pandas, then Arrow), so code that assumes
 one library should set it once: `sweatstack.set_output("pandas")` or `Client(output="polars")`. No frame has an
 index: `timestamp`, the mean-max metric value and `date` are columns.
 

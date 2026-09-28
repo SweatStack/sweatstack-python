@@ -52,11 +52,11 @@ Every method that returns a collection takes `output=`:
 
 | Endpoints | Values | Default |
 |---|---|---|
-| Time series, mean-max, AWD, longitudinal | `"pandas"`, `"polars"`, `"arrow"`, `"bytes"` | the installed library, Polars if both |
+| Time series, mean-max, AWD, longitudinal | `"pandas"`, `"polars"`, `"arrow"`, `"bytes"` | the installed library: Polars, then pandas, then Arrow |
 | `get_activities`, `get_traces`, `get_tests`, `get_dailies` | `"models"`, `"pandas"`, `"polars"`, `"arrow"` | `"models"` |
 
 ```python
-df = client.get_activity_data("activity_id")                    # Polars if installed, else pandas
+df = client.get_activity_data("activity_id")                    # installed library: Polars, then pandas, then Arrow
 pf = client.get_activity_data("activity_id", output="polars")   # polars.DataFrame, wire dtypes
 tb = client.get_activity_data("activity_id", output="arrow")    # pyarrow.Table
 raw = client.get_activity_data("activity_id", output="bytes")   # parquet bytes: write to disk, query with DuckDB
@@ -65,8 +65,12 @@ sweatstack.set_output("polars")        # module-wide default, or Client(output="
 client.get_activities()                # now a polars frame; output="models" per call to get the list back
 ```
 
-Resolution: per-call > `Client(output=)` > `set_output()` > method default. Requires `sweatstack[pandas]` or
-`sweatstack[polars]`; a missing library raises `ImportError` naming the extra. No frame has an index on any
+Resolution: per-call > `Client(output=)` > `set_output()` > method default. Requires `sweatstack[pandas]`,
+`sweatstack[polars]` or `sweatstack[arrow]`; a missing library raises `ImportError` naming the extra.
+
+**DuckDB:** `duckdb.sql("select ... from tb")` works directly on an `output="arrow"` table or an `output="polars"`
+frame (both need pyarrow: `sweatstack[arrow]`), or on a file written from `output="bytes"`
+(`duckdb.sql("select ... from 'season.parquet'")`, no extra needed). No frame has an index on any
 backend: `timestamp`, the mean-max metric value and `date` are ordinary first columns (`df.set_index("timestamp")`
 if you need one). Polars and Arrow list frames give nested fields as structs (`df.unnest("summary")`); pandas flattens them
 to dotted columns (`summary.power.mean`).

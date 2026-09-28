@@ -65,7 +65,7 @@ LIST_OUTPUTS: frozenset[str] = frozenset({"models", "pandas", "polars", "arrow"}
 """Valid ``output`` values for endpoints that return a list of records."""
 
 # Which install extra provides the library behind each backend.
-_EXTRA_FOR_MODULE = {"pandas": "pandas", "pyarrow": "pandas", "polars": "polars"}
+_EXTRA_FOR_MODULE = {"pandas": "pandas", "pyarrow": "arrow", "polars": "polars"}
 
 
 def require(module: str) -> Any:
@@ -136,18 +136,18 @@ def resolve_output(requested: str | None, configured: str | None, *, allowed: fr
 
 
 def installed_frame_output() -> str:
-    """The frame library to use when nothing is configured: the one that is
-    installed, Polars if both are.
+    """The output to use when nothing is configured: the frame library that is
+    installed, in the order Polars, pandas, Arrow.
 
     Raises:
-        ImportError: If neither Polars nor pandas is installed.
+        ImportError: If none of them is installed.
     """
-    for module in ("polars", "pandas"):
+    for module, output in (("polars", "polars"), ("pandas", "pandas"), ("pyarrow", "arrow")):
         if find_spec(module) is not None:
-            return module
+            return output
     raise ImportError(
         "No frame library is installed. Install one with "
-        'uv add "sweatstack[polars]" or uv add "sweatstack[pandas]", '
+        'uv add "sweatstack[polars]", uv add "sweatstack[pandas]" or uv add "sweatstack[arrow]", '
         'or ask for output="bytes" to get the raw parquet.'
     )
 

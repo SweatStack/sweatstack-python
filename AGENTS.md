@@ -182,8 +182,8 @@ that diverges from how every other field behaves on these methods.
 `_frames.py` turns parquet bytes and lists of models into the container
 the caller asked for. Resolution: per-call `output` > `Client(output=)` >
 `sweatstack.set_output()` > the method's default: models for lists, and
-for parquet the installed frame library (`_frames.installed_frame_output`,
-Polars if both are installed, `ImportError` naming both extras if neither).
+for parquet the installed frame library (`_frames.installed_frame_output`:
+Polars, then pandas, then Arrow; `ImportError` naming the extras if none).
 A configured default a method cannot produce is skipped, a per-call one
 is a `ValueError`. Never hard-code a frame library as a default.
 

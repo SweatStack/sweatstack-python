@@ -123,9 +123,13 @@ class TestResolution:
             assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pl.DataFrame)
         with _installed("polars", "pandas"):
             assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pl.DataFrame)
+        with _installed("pyarrow"):  # a DuckDB-only environment
+            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pa.Table)
+        with _installed("pandas", "pyarrow"):
+            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pd.DataFrame)
 
     def test_no_frame_library_is_an_actionable_error(self, client):
-        with _installed(), pytest.raises(ImportError, match=r'sweatstack\[polars\].*sweatstack\[pandas\].*bytes'):
+        with _installed(), pytest.raises(ImportError, match=r'sweatstack\[polars\].*sweatstack\[pandas\].*sweatstack\[arrow\].*bytes'):
             _get_activity_mean_max(client, _mean_max_with_index())
         with _installed():  # explicit outputs that need no library still work
             assert isinstance(_get_activity_mean_max(client, _mean_max_with_index(), output="bytes"), bytes)

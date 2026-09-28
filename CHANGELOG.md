@@ -12,7 +12,8 @@ Frames on your terms. Every method that returns a collection takes `output=`:
 `"pandas"`, `"polars"`, `"arrow"` or `"bytes"` for time-series endpoints, and `"models"`
 (default), `"pandas"`, `"polars"` or `"arrow"` for list endpoints. Set it per call, per client
 (`Client(output="polars")`) or once for everything (`sweatstack.set_output("polars")`). When you
-don't say, time series come back in the frame library you installed, Polars if both are.
+don't say, time series come back in the frame library you installed: Polars, then pandas,
+then Arrow.
 Four breaking changes come with it; the upgrade is mechanical, see **Upgrading** below.
 
 ### Added
@@ -26,16 +27,18 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 - Polars frames keep the compact wire dtypes (Int16, Float32, Categorical, Duration) and
   give nested fields as typed structs (`df.unnest("summary")`), as do Arrow tables. On
   time-series endpoints Arrow tables are the response as-is. `"bytes"` is the raw parquet, ready for `duckdb.sql("... from 'file.parquet'")`.
-- `sweatstack[polars]` extra.
+- `sweatstack[polars]` and `sweatstack[arrow]` extras. `[arrow]` is pyarrow alone: what
+  `output="arrow"` needs, and what DuckDB needs to query any in-memory frame. See the
+  README's "Using DuckDB" for the three routes.
 
 ### Changed
 
 - **Breaking:** pandas is no longer installed by default. Install `sweatstack[pandas]`
-  (pandas + pyarrow) or `sweatstack[polars]`. The `streamlit` and `jupyter` extras include
-  pandas. FastAPI services and webhook consumers can stay on the base package. Asking for an
+  (pandas + pyarrow), `sweatstack[polars]` or `sweatstack[arrow]`. The `streamlit` and
+  `jupyter` extras include pandas. FastAPI services and webhook consumers can stay on the base package. Asking for an
   output whose library is missing raises an `ImportError` naming the extra to install.
-- **Breaking:** the default frame library is the one you installed, and Polars when both
-  are. An environment with pandas and Polars now gets Polars frames from the time-series
+- **Breaking:** the default frame library is the one you installed, in the order Polars,
+  pandas, Arrow. An environment with pandas and Polars now gets Polars frames from the time-series
   methods unless you set `output` (per call, `Client(output="pandas")`, or
   `sweatstack.set_output("pandas")` once).
 - **Breaking:** `as_dataframe=True` is removed. Use `output="pandas"`.
@@ -49,7 +52,8 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 
 ### Upgrading
 
-1. Change the install line: `uv add "sweatstack[pandas]"` (or `[polars]`). Streamlit and
+1. Change the install line: `uv add "sweatstack[pandas]"` (or `[polars]`, or `[arrow]` for
+   DuckDB). Streamlit and
    Jupyter users: `sweatstack[streamlit]` / `sweatstack[jupyter]` already include pandas.
 2. To keep pandas frames in an environment that also has Polars, add
    `sweatstack.set_output("pandas")` once (or `Client(output="pandas")`).
