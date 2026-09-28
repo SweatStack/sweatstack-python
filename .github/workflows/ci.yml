@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: pytest (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --all-extras
+      - run: uv run pytest
+
+  bare-install:
+    # The base package must import without pandas, pyarrow or polars. This job
+    # is what keeps the frame libraries optional: a top-level `import pandas`
+    # added by habit fails here, not in a user's FastAPI service.
+    name: bare install imports without frame libraries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv venv
+      - run: uv pip install .
+      - run: |
+          uv run --no-project python - <<'EOF'
+          import sys
+          import sweatstack
+          forbidden = {"pandas", "numpy", "pyarrow", "polars"} & set(sys.modules)
+          assert not forbidden, f"base import pulled in frame libraries: {sorted(forbidden)}"
+          print("ok: sweatstack imports without", "pandas/numpy/pyarrow/polars")
+          EOF
+      - run: uv pip install ".[fastapi]"
+      - run: |
+          uv run --no-project python - <<'EOF'
+          import sys
+          import sweatstack.fastapi
+          forbidden = {"pandas", "numpy", "pyarrow", "polars"} & set(sys.modules)
+          assert not forbidden, f"fastapi import pulled in frame libraries: {sorted(forbidden)}"
+          print("ok: sweatstack.fastapi imports without frame libraries")
+          EOF
