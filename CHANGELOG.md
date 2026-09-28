@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Frames on your terms. Every method that returns a collection takes `output=`:
-`"pandas"` (default), `"polars"`, `"arrow"` or `"bytes"` for time-series endpoints, and
-`"models"` (default), `"pandas"`, `"polars"` or `"arrow"` for list endpoints. Set it per call, per
-client (`Client(output="polars")`) or once for everything (`sweatstack.set_output("polars")`).
-Three breaking changes come with it; the upgrade is mechanical, see **Upgrading** below.
+`"pandas"`, `"polars"`, `"arrow"` or `"bytes"` for time-series endpoints, and `"models"`
+(default), `"pandas"`, `"polars"` or `"arrow"` for list endpoints. Set it per call, per client
+(`Client(output="polars")`) or once for everything (`sweatstack.set_output("polars")`). When you
+don't say, time series come back in the frame library you installed, Polars if both are.
+Four breaking changes come with it; the upgrade is mechanical, see **Upgrading** below.
 
 ### Added
 
@@ -33,6 +34,10 @@ Three breaking changes come with it; the upgrade is mechanical, see **Upgrading*
   (pandas + pyarrow) or `sweatstack[polars]`. The `streamlit` and `jupyter` extras include
   pandas. FastAPI services and webhook consumers can stay on the base package. Asking for an
   output whose library is missing raises an `ImportError` naming the extra to install.
+- **Breaking:** the default frame library is the one you installed, and Polars when both
+  are. An environment with pandas and Polars now gets Polars frames from the time-series
+  methods unless you set `output` (per call, `Client(output="pandas")`, or
+  `sweatstack.set_output("pandas")` once).
 - **Breaking:** `as_dataframe=True` is removed. Use `output="pandas"`.
 - **Breaking:** no frame carries an index any more, on any backend. `timestamp` (time
   series), the metric value (mean-max and AWD curves) and `date` (dailies) are now regular
@@ -46,8 +51,10 @@ Three breaking changes come with it; the upgrade is mechanical, see **Upgrading*
 
 1. Change the install line: `uv add "sweatstack[pandas]"` (or `[polars]`). Streamlit and
    Jupyter users: `sweatstack[streamlit]` / `sweatstack[jupyter]` already include pandas.
-2. Replace `as_dataframe=True` with `output="pandas"`.
-3. Search for `.index`, `.loc[<timestamp>]`, `.resample(`, `.plot()` on frames from the
+2. To keep pandas frames in an environment that also has Polars, add
+   `sweatstack.set_output("pandas")` once (or `Client(output="pandas")`).
+3. Replace `as_dataframe=True` with `output="pandas"`.
+4. Search for `.index`, `.loc[<timestamp>]`, `.resample(`, `.plot()` on frames from the
    time-series, mean-max, AWD and dailies methods. Where the index mattered, add
    `.set_index("timestamp")` (or the metric name, or `"date"`) right after the call.
 

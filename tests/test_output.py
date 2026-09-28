@@ -104,10 +104,36 @@ def _get_activities(client, activities, **kwargs):
 # ---------------------------------------------------------------------------
 
 
+def _installed(*modules):
+    """Patch importlib so only ``modules`` look installed."""
+    real = _frames.find_spec
+    return patch.object(_frames, "find_spec", side_effect=lambda name: real(name) if name in modules else None)
+
+
 class TestResolution:
     def test_method_defaults(self, client):
-        assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pd.DataFrame)
+        # dev environment has both libraries installed: Polars wins for parquet, lists stay models
+        assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pl.DataFrame)
         assert isinstance(_get_activities(client, [_activity(1)]), list)
+
+    def test_default_frame_is_the_installed_library(self, client):
+        with _installed("pandas"):
+            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pd.DataFrame)
+        with _installed("polars"):
+            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pl.DataFrame)
+        with _installed("polars", "pandas"):
+            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pl.DataFrame)
+
+    def test_no_frame_library_is_an_actionable_error(self, client):
+        with _installed(), pytest.raises(ImportError, match=r'sweatstack\[polars\].*sweatstack\[pandas\].*bytes'):
+            _get_activity_mean_max(client, _mean_max_with_index())
+        with _installed():  # explicit outputs that need no library still work
+            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index(), output="bytes"), bytes)
+            assert isinstance(_get_activities(client, [_activity(1)]), list)
+
+    def test_configured_output_beats_the_installed_default(self, client):
+        client.output = "pandas"
+        assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pd.DataFrame)
 
     def test_per_call_beats_client_beats_module(self, client):
         sweatstack.set_output("arrow")
@@ -148,7 +174,7 @@ class TestResolution:
     def test_set_output_is_public(self):
         assert "set_output" in sweatstack.__all__
         sweatstack.set_output("polars")
-        assert _frames.resolve_output(None, None, allowed=_frames.LIST_OUTPUTS, default="models") == "polars"
+        assert _frames.resolve_output(None, None, allowed=_frames.LIST_OUTPUTS) == "polars"
 
 
 # ---------------------------------------------------------------------------

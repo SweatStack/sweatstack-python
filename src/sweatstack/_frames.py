@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
 from importlib import import_module
+from importlib.util import find_spec
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
@@ -110,22 +111,17 @@ def check_frame_output(output: str | None) -> str | None:
     if output is not None and output not in PARQUET_OUTPUTS:
         raise ValueError(
             f"output={output!r} cannot be a default; choose one of {_choices(PARQUET_OUTPUTS)}, "
-            "or None to reset (list endpoints then return models, parquet endpoints pandas)"
+            "or None to reset (lists then return models, parquet endpoints the installed frame library)"
         )
     return output
 
 
-def resolve_output(
-    requested: str | None,
-    configured: str | None,
-    *,
-    allowed: frozenset[str],
-    default: str,
-) -> str:
-    """Pick the output for one call: per-call > client > module default > method default.
+def resolve_output(requested: str | None, configured: str | None, *, allowed: frozenset[str]) -> str | None:
+    """Pick the output for one call: per-call > client > module default.
 
-    A per-call value the method cannot produce is an error. A configured
-    default the method cannot produce is skipped, not an error.
+    Returns ``None`` when nothing applies, so the caller supplies the method's
+    own default. A per-call value the method cannot produce is an error. A
+    configured default the method cannot produce is skipped, not an error.
     """
     if requested is not None:
         if requested not in allowed:
@@ -136,7 +132,24 @@ def resolve_output(
     for candidate in (configured, _default_output):
         if candidate in allowed:
             return candidate
-    return default
+    return None
+
+
+def installed_frame_output() -> str:
+    """The frame library to use when nothing is configured: the one that is
+    installed, Polars if both are.
+
+    Raises:
+        ImportError: If neither Polars nor pandas is installed.
+    """
+    for module in ("polars", "pandas"):
+        if find_spec(module) is not None:
+            return module
+    raise ImportError(
+        "No frame library is installed. Install one with "
+        'uv add "sweatstack[polars]" or uv add "sweatstack[pandas]", '
+        'or ask for output="bytes" to get the raw parquet.'
+    )
 
 
 def _choices(allowed: frozenset[str]) -> str:

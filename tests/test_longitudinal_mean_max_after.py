@@ -1,4 +1,6 @@
-"""Tests for the `after` (fatigue-state) param on get_longitudinal_mean_max."""
+"""Tests for the `after` (fatigue-state) param on get_longitudinal_mean_max.
+
+Shapes are asserted on the pandas output; the backend choice itself is covered in test_output.py."""
 
 from io import BytesIO
 from unittest.mock import MagicMock, patch
@@ -43,7 +45,7 @@ def _call(client, **kwargs):
     with patch.object(client, "_http_client", return_value=http), \
          patch.object(client, "_raise_for_status"), \
          patch.object(client, "_cache_enabled", return_value=False):
-        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", **kwargs)
+        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", output="pandas", **kwargs)
     return result, http.get.call_args.kwargs["params"]
 
 
@@ -74,7 +76,7 @@ def test_no_after_is_unchanged(client):
     with patch.object(client, "_http_client", return_value=http), \
          patch.object(client, "_raise_for_status"), \
          patch.object(client, "_cache_enabled", return_value=False):
-        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power")
+        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", output="pandas")
     assert "after" not in http.get.call_args.kwargs["params"]
     assert isinstance(result.index, pd.RangeIndex)
     assert list(result.columns) == ["power", "duration"]
@@ -122,7 +124,7 @@ def test_by_duration_is_sent_and_duration_indexed(client):
          patch.object(client, "_raise_for_status"), \
          patch.object(client, "_cache_enabled", return_value=False):
         result = client.get_longitudinal_mean_max(
-            sports=["cycling"], metric="power", after=[0, 50], by="duration")
+            sports=["cycling"], metric="power", after=[0, 50], by="duration", output="pandas")
     params = http.get.call_args.kwargs["params"]
     assert params["by"] == "duration"
     # duration, power and after are all columns; nothing is indexed

@@ -757,8 +757,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 ``output=`` always wins; a value a method cannot produce (``"arrow"``
                 or ``"bytes"`` on list endpoints) is ignored for that method. When
                 ``None``, the module default from :func:`sweatstack.set_output`
-                applies, then each method's own default (pandas for time series,
-                models for lists).
+                applies; failing that, time series come back in the installed
+                frame library (Polars if both are installed) and lists as models.
         """
         self._api_key: SecretStr | None = _to_secret(api_key)
         self._refresh_token: SecretStr | None = _to_secret(refresh_token)
@@ -1111,7 +1111,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
 
     def _read_frame(self, content: bytes, output: str | None) -> Any:
         """Every parquet response becomes a frame through here."""
-        output = _frames.resolve_output(output, self.output, allowed=_frames.PARQUET_OUTPUTS, default="pandas")
+        output = (
+            _frames.resolve_output(output, self.output, allowed=_frames.PARQUET_OUTPUTS)
+            or _frames.installed_frame_output()
+        )
         if output == "bytes":
             return content
         if output == "arrow":
@@ -1127,7 +1130,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self, models: list, model: type, output: str | None, *, flatten: tuple[str, ...] = (),
     ) -> Any:
         """Every list-of-models response becomes a frame (or stays a list) through here."""
-        output = _frames.resolve_output(output, self.output, allowed=_frames.LIST_OUTPUTS, default="models")
+        output = _frames.resolve_output(output, self.output, allowed=_frames.LIST_OUTPUTS) or "models"
         if output == "models":
             return models
         if output == "arrow":
@@ -1288,7 +1291,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         segmentation_on: Literal["power", "speed"] | None = None,
         metrics: list[Metric | str] | None = None,
         *,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_activity_data(
+        self,
+        activity_id: str,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1339,8 +1352,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             segmentation_on: Downsample with AISC (Adaptive Intensity Segmentation Codec), keyed on
                 either "power" or "speed" data. If None, no AISC is applied.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the activity's time-series data, one row per sample; ``timestamp`` is a column.
@@ -1371,7 +1385,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         segmentation: bool = False,
         *,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_activity_mean_max(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        segmentation: bool = False,
+        *,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1422,8 +1446,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             metric: The metric to calculate mean-max values for, either "power" or "speed".
             segmentation: Downsample with AISC (Adaptive Intensity Segmentation Codec) to reduce data points
                 for visualization. Defaults to False.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the mean-max curve; the metric value and ``duration`` are columns.
@@ -1450,7 +1475,16 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
         *,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_activity_awd(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        *,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1497,8 +1531,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             activity_id: The unique identifier of the activity.
             metric: Optional metric type. Defaults to power for cycling, speed for other sports.
                 Can be either "power" or "speed".
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the AWD curve; the metric value and ``duration`` are columns.
@@ -1526,7 +1561,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         segmentation_on: Literal["power", "speed"] | None = None,
         metrics: list[Metric | str] | None = None,
         *,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_latest_activity_data(
+        self,
+        sport: Sport | str | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1577,8 +1622,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
                 Can be either "power" or "speed". Defaults to None.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the activity's time-series data, one row per sample; ``timestamp`` is a column.
@@ -1596,7 +1642,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         sport: Sport | str | None = None,
         segmentation: bool = False,
         *,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_latest_activity_mean_max(
+        self,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        sport: Sport | str | None = None,
+        segmentation: bool = False,
+        *,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1647,8 +1703,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             sport: Optional sport to filter by. Can be a Sport enum or string.
             segmentation: Downsample the mean-max curve with AISC (Adaptive Intensity Segmentation Codec).
                 Defaults to False.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the mean-max curve; the metric value and ``duration`` are columns.
@@ -1669,7 +1726,20 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
         segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_longitudinal_data(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        start: date | str,
+        end: date | str | None = None,
+        metrics: list[Metric | str] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1735,8 +1805,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
             segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
                 Can be either "power" or "speed". Defaults to None.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the concatenated time series, one row per sample, with ``timestamp``,
@@ -1799,7 +1870,23 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         window_days: int | None = None,
         after: list[float] | float | None = None,
         by: Literal["intensity", "duration"] | None = None,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_longitudinal_mean_max(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        after: list[float] | float | None = None,
+        by: Literal["intensity", "duration"] | None = None,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -1888,8 +1975,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 we recommend passing ``by="duration"`` explicitly. When left as ``None``
                 (default), the server picks: ``after`` with ``metric="power"`` resolves to
                 ``"duration"``, every other case to ``"intensity"``.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the mean-max curve with the metric value, ``duration``,
@@ -1978,7 +2066,21 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         end: date | str | None = None,
         date: date | str | None = None,
         window_days: int | None = None,
-        output: Literal["pandas"] | None = None,
+        output: None = None,
+    ) -> pd.DataFrame | pl.DataFrame: ...
+
+    @overload
+    def get_longitudinal_awd(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
     @overload
@@ -2050,8 +2152,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             end: End of the date range (defaults to today).
             date: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
             window_days: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
-            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
-                parquet response). Overrides the client-level default for this call.
+            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
+                response). Defaults to the installed frame library, Polars if both are.
+                Overrides the client-level default for this call.
 
         Returns:
             A frame (per ``output``) containing the longitudinal AWD data with intensity levels.

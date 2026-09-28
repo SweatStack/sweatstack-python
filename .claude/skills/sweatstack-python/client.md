@@ -52,11 +52,11 @@ Every method that returns a collection takes `output=`:
 
 | Endpoints | Values | Default |
 |---|---|---|
-| Time series, mean-max, AWD, longitudinal | `"pandas"`, `"polars"`, `"arrow"`, `"bytes"` | `"pandas"` |
+| Time series, mean-max, AWD, longitudinal | `"pandas"`, `"polars"`, `"arrow"`, `"bytes"` | the installed library, Polars if both |
 | `get_activities`, `get_traces`, `get_tests`, `get_dailies` | `"models"`, `"pandas"`, `"polars"`, `"arrow"` | `"models"` |
 
 ```python
-df = client.get_activity_data("activity_id")                    # pandas.DataFrame
+df = client.get_activity_data("activity_id")                    # Polars if installed, else pandas
 pf = client.get_activity_data("activity_id", output="polars")   # polars.DataFrame, wire dtypes
 tb = client.get_activity_data("activity_id", output="arrow")    # pyarrow.Table
 raw = client.get_activity_data("activity_id", output="bytes")   # parquet bytes: write to disk, query with DuckDB
@@ -98,7 +98,7 @@ latest = client.get_latest_activity(sport=Sport.running)
 
 ## Time-Series Data
 
-Returns a frame with 1-second sampled data (pandas by default; `output="polars"`, `"arrow"` or `"bytes"`). `timestamp` is a column, not an index.
+Returns a frame with 1-second sampled data (`output="pandas"`, `"polars"`, `"arrow"` or `"bytes"`; default is the installed library, Polars if both). `timestamp` is a column, not an index.
 
 ```python
 # All available metrics
@@ -451,7 +451,7 @@ Hierarchy:
 - **`sport` (singular) vs `sports` (list):** `get_latest_activity(sport=...)` and `create_trace(sport=...)` take a single sport. All other methods that filter by sport use `sports=[...]` (list). The singular `sport` parameter on longitudinal methods is deprecated.
 - **pandas frames have standard dtypes.** The library converts API-optimized types (Int16, float16) to float64/datetime64[ns] for pandas. Polars and Arrow keep the compact wire dtypes.
 - **No frame has an index.** `timestamp`, the mean-max metric value and `date` are columns. `df.set_index("timestamp")` if you need one.
-- **`output=`** is on every collection method; `as_dataframe` no longer exists. Time-series methods always return a frame (pandas by default), list methods return models by default.
+- **`output=`** is on every collection method; `as_dataframe` no longer exists. Time-series methods always return a frame (the installed library by default, Polars if both), list methods return models by default. Set `sweatstack.set_output(...)` once when the code assumes one library.
 - **`update_test()` and `update_trace()` are full replaces.** Omitted optional fields are set to null. Always re-pass all fields you want to keep.
 - **`summary` fields are optional.** Always null-check: `activity.summary.power.mean if activity.summary and activity.summary.power else None`.
 - **`metrics` on ActivitySummary** lists available data streams, not the data itself. Use to check availability before calling `get_activity_data()`.

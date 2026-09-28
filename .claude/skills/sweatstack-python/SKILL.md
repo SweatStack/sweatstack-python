@@ -40,7 +40,8 @@ df = client.get_activities(output="pandas")     # or output="polars"; default is
 ```
 
 Every collection method takes `output=` (`"pandas"`, `"polars"`, `"arrow"`, `"bytes"`; `"models"` for
-lists). Set it once with `sweatstack.set_output("polars")` or `Client(output="polars")`. No frame has an
+lists). Time series default to the installed frame library, Polars if both are, so code that assumes
+one library should set it once: `sweatstack.set_output("pandas")` or `Client(output="polars")`. No frame has an
 index: `timestamp`, the mean-max metric value and `date` are columns.
 
 ## Reference

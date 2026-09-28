@@ -20,7 +20,7 @@ reference, and Track B on the server.
 
 | Today | After |
 |---|---|
-| Parquet endpoints return pandas, always | `output="pandas" \| "polars" \| "arrow" \| "bytes"`, default pandas |
+| Parquet endpoints return pandas, always | `output="pandas" \| "polars" \| "arrow" \| "bytes"`, default: the installed library, Polars if both |
 | List endpoints take `as_dataframe=True` | `output="models" \| "pandas" \| "polars"`, default models |
 | No client-level choice | `Client(output=...)` / `sweatstack.set_output(...)` override every default |
 | pandas frames carry an index (timestamp, metric value, date) | Columns everywhere, on every backend |
@@ -77,9 +77,10 @@ it; they are listed here so the reasoning is in one place.
   already forward `url` and `streamlit_compatible`; forward `output` too.
   `switch_user` mutates in place and needs nothing.
 - **R4. Typing trade-off, stated (Track A steps 3 and 7).** Per-call `Literal` overloads are
-  precise. When `output` is omitted, the static return type is the
-  *method default* (`pd.DataFrame` / `list[Model]`), which is wrong for a
-  client configured for Polars. Accepted trade-off; documented in the
+  precise. When `output` is omitted, the static return type is
+  `pd.DataFrame | pl.DataFrame` for parquet endpoints (the library is only
+  known at runtime) and `list[Model]` for lists, which is wrong for a
+  client configured otherwise. Accepted trade-off; documented in the
   `output` docstring and README ("for type-checker precision, pass
   `output=` at the call site"). The alternative, no client-level
   override, was rejected: it defeats the set-once workflow.
@@ -142,9 +143,12 @@ it; they are listed here so the reasoning is in one place.
    `sweatstack[pandas]`. `[fastapi]` stays frame-free. Calling a frame
    output without its library raises `ImportError` with the exact
    `uv add "sweatstack[...]"` line.
-9. **Default stays pandas**, also after this release. Streamlit apps, matplotlib
-   notebooks and the skill files Claude writes code from are pandas today.
-   Flipping is a one-line decision to take later with adoption data.
+9. **The default frame library is the installed one, Polars if both.**
+   Decided 2026-09-28, reversing the earlier "pandas stays default": with
+   frame libraries as extras, a hard-coded pandas default made a
+   `sweatstack[polars]` install fail on its first call, and doing the flip
+   in the same breaking release avoids a second one. Existing pandas users
+   add `set_output("pandas")` once. Lists still default to models.
 10. **Cache unchanged.** It stores response bytes; every backend reads
     from it. Cache key does not include `output`.
 
@@ -237,7 +241,7 @@ grammar is missing a row in the table; add the row and its test.
 
 ```python
 # parquet endpoints
-df = client.get_activity_data(activity_id)                     # pandas (default)
+df = client.get_activity_data(activity_id)                     # installed library, Polars if both
 pf = client.get_activity_data(activity_id, output="polars")    # polars.DataFrame
 tb = client.get_activity_data(activity_id, output="arrow")     # pyarrow.Table
 raw = client.get_longitudinal_data(sports=["cycling"], start=date(2025, 1, 1), output="bytes")

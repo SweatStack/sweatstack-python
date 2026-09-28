@@ -21,8 +21,9 @@ uv add sweatstack               # models only: FastAPI services, webhook consume
 ## Choosing your frame library
 
 Every method that returns a collection takes `output=`. Time-series endpoints return
-`"pandas"` (default), `"polars"`, `"arrow"` or `"bytes"`; list endpoints return `"models"`
-(default), `"pandas"`, `"polars"` or `"arrow"`.
+`"pandas"`, `"polars"`, `"arrow"` or `"bytes"`; list endpoints return `"models"` (default),
+`"pandas"`, `"polars"` or `"arrow"`. When you don't say, time series come back in the frame
+library you installed, Polars if both are. Set it once to be explicit.
 
 ```python
 from datetime import date
@@ -33,7 +34,7 @@ import sweatstack
 
 sweatstack.authenticate()
 
-df = sweatstack.get_activity_data(activity_id)                    # pandas
+df = sweatstack.get_activity_data(activity_id)                    # Polars if installed, else pandas
 pf = sweatstack.get_activity_data(activity_id, output="polars")   # polars.DataFrame
 tb = sweatstack.get_activity_data(activity_id, output="arrow")    # pyarrow.Table
 
@@ -54,11 +55,14 @@ Arrow keep the compact wire dtypes.
 
 ## Upgrading from 0.88 and earlier
 
-Three mechanical changes:
+Four mechanical changes:
 
 1. **Install line.** pandas is an extra now: `uv add "sweatstack[pandas]"` (or `[polars]`).
    Streamlit and Jupyter extras already include it.
-2. **`as_dataframe=True` → `output="pandas"`.**
-3. **Indexes are columns.** If you relied on `df.index` (`.loc[timestamp]`, `.resample()`,
+2. **Keep pandas frames explicitly.** If Polars is also installed, time series now come back
+   as Polars frames. Add `sweatstack.set_output("pandas")` once (or `Client(output="pandas")`)
+   to keep every frame exactly as before.
+3. **`as_dataframe=True` → `output="pandas"`.**
+4. **Indexes are columns.** If you relied on `df.index` (`.loc[timestamp]`, `.resample()`,
    `.plot()`), add `.set_index("timestamp")` (or `"power"`, `"speed"`, `"date"`) once after
    the call. The set of columns is unchanged; the former index comes first.
