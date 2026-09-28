@@ -88,10 +88,12 @@ _default_output: str | None = None
 
 
 def set_output(output: FrameOutput | None) -> None:
-    """Set the default ``output`` for every method that returns a collection.
+    """Set the default ``output`` for every method that returns a data collection.
 
     Applies to the module-level singletons and to every :class:`Client` that
-    does not set its own ``output``. A per-call ``output=`` always wins.
+    does not set its own ``output``. Only the data endpoints take ``output``
+    (activities, traces, tests, dailies and the time series); account, team,
+    status and Portal methods always return models and are unaffected. A per-call ``output=`` always wins.
     A configured value that a method cannot produce (``"arrow"`` or ``"bytes"``
     on a list endpoint) is ignored for that method, which then uses its own
     default. Pass ``None`` to reset.

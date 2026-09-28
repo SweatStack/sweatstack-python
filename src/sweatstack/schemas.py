@@ -14,15 +14,44 @@ Example:
     print(sport.parent)                             # Sport("cycling")
     print(sport.is_subsport_of(Sport("cycling")))   # True
 """
+from enum import Enum
+
 from open_sport_taxonomy import Modifier, Sport
 
 from .openapi_schemas import (
-    ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
-    BackfillStatus, DailyMeasure, DailyResponse,
-    Marker, Metric, Scope,
+    AccountStatusResponse, ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
+    BackfillStatus, Capability, CapabilityStatus, DailyMeasure, DailyResponse,
+    Marker, Metric, PortalDestination, PortalSessionResponse, Scope,
+    StatusIssueCode, StatusIssueResponse,
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
+
+
+def _open_enum(enum_cls: type[Enum]) -> None:
+    """Let ``enum_cls`` accept values the bundled schema does not know yet.
+
+    The server treats some enums as open sets (new metrics, scopes, daily measures, status
+    codes and capabilities appear without notice). An unknown value becomes a pseudo-member
+    with ``.value`` and ``.name`` set to the string, cached so repeated lookups return the
+    same object, instead of a validation error that would break the client until it is
+    updated. Closed enums (``CapabilityStatus``, ``PortalDestination``, ...) are left strict
+    on purpose: the server promises those never grow, or a value the client does not know
+    is not something it should act on.
+    """
+    @classmethod
+    def _missing_(cls, value):
+        pseudo_member = object.__new__(cls)
+        pseudo_member._name_ = value
+        pseudo_member._value_ = value
+        cls._value2member_map_[value] = pseudo_member  # cache for future lookups
+        return pseudo_member
+
+    enum_cls._missing_ = _missing_
+
+
+for _open in (Metric, Scope, DailyMeasure, StatusIssueCode, Capability):
+    _open_enum(_open)
 
 
 def _metric_display_name(metric: Metric) -> str:
@@ -33,37 +62,8 @@ def _metric_display_name(metric: Metric) -> str:
     return metric.value.replace("_", " ")
 
 
-@classmethod
-def _metric_missing(cls, value: str):
-    """Handle unknown metric values from newer API versions.
-
-    This allows the client to gracefully handle new metrics added to the API
-    without requiring a client library update. Unknown values become dynamic
-    enum members that behave like regular Metric values.
-    """
-    pseudo_member = object.__new__(cls)
-    pseudo_member._name_ = value
-    pseudo_member._value_ = value
-    cls._value2member_map_[value] = pseudo_member  # Cache for future lookups
-    return pseudo_member
-
-
-Metric._missing_ = _metric_missing
 Metric.display_name = _metric_display_name
 Metric.display_name.__doc__ = _metric_display_name.__doc__
-
-
-@classmethod
-def _scope_missing(cls, value: str):
-    """Handle unknown scope values from newer API versions."""
-    pseudo_member = object.__new__(cls)
-    pseudo_member._name_ = value
-    pseudo_member._value_ = value
-    cls._value2member_map_[value] = pseudo_member
-    return pseudo_member
-
-
-Scope._missing_ = _scope_missing
 
 
 def _daily_measure_display_name(measure: DailyMeasure) -> str:
@@ -74,21 +74,5 @@ def _daily_measure_display_name(measure: DailyMeasure) -> str:
     return measure.value.replace("_", " ")
 
 
-@classmethod
-def _daily_measure_missing(cls, value: str):
-    """Handle unknown daily measure values from newer API versions.
-
-    This allows the client to gracefully handle new measures added to the API
-    without requiring a client library update. Unknown values become dynamic
-    enum members that behave like regular DailyMeasure values.
-    """
-    pseudo_member = object.__new__(cls)
-    pseudo_member._name_ = value
-    pseudo_member._value_ = value
-    cls._value2member_map_[value] = pseudo_member  # Cache for future lookups
-    return pseudo_member
-
-
-DailyMeasure._missing_ = _daily_measure_missing
 DailyMeasure.display_name = _daily_measure_display_name
 DailyMeasure.display_name.__doc__ = _daily_measure_display_name.__doc__

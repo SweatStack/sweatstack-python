@@ -45,9 +45,10 @@ from .exceptions import (
     SweatStackTokenRefreshError,
 )
 from .schemas import (
-    ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
-    BackfillStatus, DailyMeasure, DailyResponse,
-    Marker, Metric, Modifier, Scope, Sport,
+    AccountStatusResponse, ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
+    BackfillStatus, Capability, CapabilityStatus, DailyMeasure, DailyResponse,
+    Marker, Metric, Modifier, PortalDestination, PortalSessionResponse, Scope, Sport,
+    StatusIssueCode, StatusIssueResponse,
     TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
@@ -759,6 +760,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 ``None``, the module default from :func:`sweatstack.set_output`
                 applies; failing that, time series come back in the installed
                 frame library (Polars if both are installed) and lists as models.
+                Only the data endpoints take ``output`` (activities, traces, tests,
+                dailies and the time series); account, team, status and Portal
+                methods always return models.
         """
         self._api_key: SecretStr | None = _to_secret(api_key)
         self._refresh_token: SecretStr | None = _to_secret(refresh_token)
@@ -967,7 +971,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self._url = value
     
     @contextlib.contextmanager
-    def _http_client(self, skip_token_check: bool = False):
+    def _http_client(self, skip_token_check: bool = False, *, auth: bool = True):
         """
         Creates an httpx client with the base URL and authentication headers pre-configured.
 
@@ -977,11 +981,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Args:
             skip_token_check: If True, uses the raw _api_key without triggering token expiry check.
                               This prevents recursive token refresh attempts.
+            auth: If False, sends no Authorization header and never loads or refreshes a
+                  token. For server-to-server endpoints that authenticate with the app's
+                  own credentials in the body (Portal sessions), so a user's bearer is
+                  never sent where it is not needed.
         """
         headers = {
             "User-Agent": f"python-sweatstack/{__version__}",
         }
-        if skip_token_check:
+        if not auth:
+            token = None
+        elif skip_token_check:
             # Use raw token without triggering expiry check (used during refresh)
             token = self._api_key
         else:
@@ -3314,17 +3324,28 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 f.close()
 
     def get_userinfo(self) -> UserInfoResponse:
-        """Gets detailed information about the current user.
+        """Gets the OpenID Connect userinfo for the current user, plus why they may have no data.
 
-        This method retrieves comprehensive information about the user currently
-        authenticated with the client.
+        Requires the ``profile`` scope. Besides ``sub``, ``name``, ``given_name``,
+        ``family_name``, ``email`` and ``registered_at``, the response carries ``issue``
+        (beta): ``None`` when there is nothing to say, otherwise the one thing to tell
+        the user right now. The whole integration is::
+
+            user = client.get_userinfo()
+            if user.issue:
+                banner(user.issue.message, user.issue.action_url)
+
+        ``action_url`` opens the SweatStack Portal in the app's branding; it is ``None``
+        when the token is delegated (a coach viewing an athlete) and on ``syncing`` or
+        ``unavailable`` issues, so show a button only when it is present. Apps without
+        the ``profile`` scope get the same ``issue`` from :meth:`get_profile_status`.
 
         Returns:
-            UserInfoResponse: A UserInfoResponse object containing detailed user information
-                including profile data, permissions, and authentication details.
+            UserInfoResponse: The userinfo claims and the optional ``issue``.
 
         Raises:
-            SweatStackAPIError: If the API request fails.
+            SweatStackAuthError: If the token lacks the ``profile`` scope.
+            SweatStackAPIError: If the API request fails for any other reason.
         """
         with self._http_client() as client:
             response = client.get(
@@ -3333,20 +3354,109 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             return UserInfoResponse.model_validate(response.json())
 
+    def get_profile_status(self) -> AccountStatusResponse:
+        """Gets why this user has little or no data, and what the account can supply.
+
+        **Beta**: the server documents this endpoint as beta; its shape can change at
+        short notice.
+
+        ``issue`` is the same object :meth:`get_userinfo` carries: ``None`` when there
+        is nothing to say, otherwise ``{code, status, message, action_url}``. Branch on
+        ``issue.status`` (:class:`CapabilityStatus`: ``ready``, ``syncing``,
+        ``action_required``, ``unavailable``), display ``issue.message``, and show a
+        button only when ``issue.action_url`` is present. Do not parse ``message`` or
+        branch on ``code``; which code appears first is the server's to change.
+
+        ``capabilities`` maps each :class:`Capability` (``activities``,
+        ``activity_history``, ``dailies``, ``workouts``) to a :class:`CapabilityStatus`,
+        for apps with a specific requirement: read the key you need directly. Codes and
+        capability keys are open sets; a value the client does not know yet parses as a
+        pseudo-member, ignore it.
+
+        Accepts ``data:read`` or ``profile``. Delegated tokens are allowed and get
+        ``action_url=None``.
+
+        Returns:
+            AccountStatusResponse: ``issue`` and ``capabilities``.
+
+        Raises:
+            SweatStackAuthError: If the token holds neither ``data:read`` nor ``profile``.
+            SweatStackAPIError: If the API request fails for any other reason.
+        """
+        with self._http_client() as client:
+            response = client.get(url="/api/v1/profile/status")
+            self._raise_for_status(response)
+            return AccountStatusResponse.model_validate(response.json())
+
+    def create_portal_session(
+        self,
+        destination: PortalDestination | str,
+        *,
+        return_url: str | None = None,
+    ) -> PortalSessionResponse:
+        """Mints a SweatStack Portal link for this app's users.
+
+        **Beta**: the server documents the Portal as beta.
+
+        The Portal is a SweatStack-hosted page in the app's branding where a user
+        connects a source or grants a permission, then returns to the app. Most apps
+        never need this: ``issue.action_url`` from :meth:`get_userinfo` or
+        :meth:`get_profile_status` is already such a link. Mint one yourself to choose
+        the destination or the return link.
+
+        This is a server-to-server call. It authenticates with the client's own app
+        credentials (``client_id`` and, only if the app has one registered,
+        ``client_secret`` from the constructor) in the request body, never with a user
+        token; the user is identified when they open the link. A client left on the
+        default ``client_id`` mints a Portal branded as the SweatStack Python client.
+        The returned URL is opaque: never build one by hand.
+
+        Args:
+            destination: ``"manage-integrations"`` or ``"manage-teams"``, as
+                :class:`PortalDestination` or string. A string the client does not know
+                is sent as is, so a newer server destination is reachable.
+            return_url: Where "Back to {app}" points. Must be one of the app's
+                registered redirect URIs. Omitting it is meaningful: the Portal then
+                tells the user to close the page, which is what works for a native app
+                or an installed PWA that a link cannot reopen.
+
+        Returns:
+            PortalSessionResponse: ``url`` to send the user to.
+
+        Raises:
+            SweatStackAuthError: If the app credentials are invalid (401).
+            SweatStackBadRequestError: If ``return_url`` is not registered for the app,
+                or ``client_id`` is not an application (400).
+            SweatStackAPIError: If the API request fails for any other reason.
+        """
+        body: dict[str, Any] = {
+            "client_id": self.client_id,
+            "destination": self._enums_to_strings([destination])[0],
+        }
+        if self._client_secret is not None:
+            body["client_secret"] = self._client_secret.get_secret_value()
+        if return_url is not None:
+            body["return_url"] = return_url
+
+        with self._http_client(auth=False) as client:
+            response = client.post(url="/api/v1/portal/sessions", json=body)
+            self._raise_for_status(response)
+            return PortalSessionResponse.model_validate(response.json())
+
     def whoami(self) -> UserSummary:
         """Gets the authenticated user's summary information.
 
-        This method retrieves basic information about the currently authenticated user
-        by extracting the user ID from the JWT token and fetching the user details.
+        Reads the user ID from the access token and resolves it through
+        :meth:`get_user`, so it works for a principal and for a delegated client alike
+        and needs no ``profile`` scope (unlike :meth:`get_userinfo`). Two requests.
 
         Returns:
-            UserSummary: A UserSummary object containing the authenticated user's information.
+            UserSummary: The user this client acts as.
 
         Raises:
-            ValueError: If no authentication token is available.
-            SweatStackNotFoundError: If the user does not exist.
-            SweatStackAPIError: If the API request fails for any other
-                reason.
+            ValueError: If no authentication token is available, or the user cannot be
+                resolved.
+            SweatStackAPIError: If the API request fails.
         """
         if not self.api_key:
             raise ValueError("Not authenticated. Please call authenticate() or login() first.")
@@ -3359,7 +3469,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         except Exception as e:
             raise ValueError(f"Invalid authentication token: {e}")
 
-        return self._get_user_by_id(user_id)
+        return self.get_user(user_id, search_mode="id")
 
     def _parse_backfill_line(self, line: str) -> BackfillStatus | None:
         """Parse a single NDJSON line from backfill status stream."""
@@ -3471,18 +3581,25 @@ __all__ = sorted([
     "set_output",
     # Schemas / enums re-exported from .schemas — keep in sync with the
     # `from .schemas import (...)` block at the top of this file.
+    "AccountStatusResponse",
     "ActivityDetails",
     "ActivitySummary",
     "ApplicationMemberRole",
     "AuthorizedTeamResponse",
     "BackfillStatus",
+    "Capability",
+    "CapabilityStatus",
     "DailyMeasure",
     "DailyResponse",
     "Marker",
     "Metric",
     "Modifier",
+    "PortalDestination",
+    "PortalSessionResponse",
     "Scope",
     "Sport",
+    "StatusIssueCode",
+    "StatusIssueResponse",
     "TeamResponse",
     "TestDetails",
     "TestResults",
