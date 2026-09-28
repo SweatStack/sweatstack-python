@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING: mean-max curves are one row per duration** (server plan 063).
+  `get_activity_mean_max`, `get_latest_activity_mean_max` and `get_longitudinal_mean_max` return
+  `duration`, the metric (W or m/s) and `start` (UTC timestamp of the best effort), plus
+  `activity_id`, `sport` and `after` on the longitudinal curve. By default 19 durations from 1 s to
+  6 h; the curve can rise again at longer durations and is returned as it is.
+
+### Added
+
+- `durations=` on all three mean-max methods: `None` for the 19 defaults, `"all"` for the full grid,
+  or a list of seconds. Keyword-only.
+
+### Removed
+
+- **BREAKING:** `segmentation` on `get_activity_mean_max` and `get_latest_activity_mean_max` (it never
+  reduced the payload; the server ignores it). It was positional: passing `True` in that slot now
+  raises `TypeError`.
+- **BREAKING:** `by` on `get_longitudinal_mean_max`, and its `DeprecationWarning`. Every curve is
+  duration-oriented.
+
 ## [0.89.0] - 2026-09-28
 
 Frames on your terms. Every method that returns a collection takes `output=`:

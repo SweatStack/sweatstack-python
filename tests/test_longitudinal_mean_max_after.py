@@ -83,7 +83,7 @@ def test_no_after_is_unchanged(client):
 
 
 def _index_free_by_duration_response() -> bytes:
-    """A by=duration long-format response (duration-indexed on the wire as columns)."""
+    """An `after` response as the server returns it (plan 063): one row per duration, columns only."""
     df = pd.DataFrame({
         "duration": pd.to_timedelta([5, 60, 300, 5, 60], unit="s"),
         "power": [400.0, 300.0, 250.0, 380.0, 290.0],
@@ -96,25 +96,22 @@ def _index_free_by_duration_response() -> bytes:
     return buf.getvalue()
 
 
-def test_by_defaults_to_none_and_is_omitted(client):
-    # `by` unset -> omitted from the request so the server picks the orientation (0.85.0+),
-    # rather than the client forcing the deprecated value-indexed path.
+def test_durations_are_omitted_by_default_and_sent_when_given(client):
     _result, params = _call(client, after=[0, 500])
-    assert "by" not in params
+    assert "durations" not in params and "by" not in params
+    _result, params = _call(client, after=[0, 500], durations=[5, 60, 300])
+    assert params["durations"] == "5,60,300"
+    _result, params = _call(client, durations="all")
+    assert params["durations"] == "all"
 
 
-def test_after_with_explicit_intensity_is_metric_indexed_and_warns(client):
-    # The deprecated value-indexed orientation stays metric-indexed, is sent explicitly,
-    # and warns (preserves the coverage the old default-intensity test used to give).
-    with pytest.warns(DeprecationWarning):
-        result, params = _call(client, after=[0, 500], by="intensity")
-    assert params["by"] == "intensity"
-    assert isinstance(result.index, pd.RangeIndex)
-    assert {"power", "after"} <= set(result.columns)
-    assert result["duration"].dtype == "timedelta64[ns]"
+def test_by_is_removed(client):
+    # Server plan 063: every mean-max response is duration-oriented; `by` is gone.
+    with pytest.raises(TypeError):
+        _call(client, after=[0, 50], by="duration")
 
 
-def test_by_duration_is_sent_and_duration_indexed(client):
+def test_after_response_is_duration_rows_with_columns_only(client):
     response = MagicMock(status_code=200, content=_index_free_by_duration_response())
     http = MagicMock()
     http.__enter__ = MagicMock(return_value=http)
@@ -123,11 +120,7 @@ def test_by_duration_is_sent_and_duration_indexed(client):
     with patch.object(client, "_http_client", return_value=http), \
          patch.object(client, "_raise_for_status"), \
          patch.object(client, "_cache_enabled", return_value=False):
-        result = client.get_longitudinal_mean_max(
-            sports=["cycling"], metric="power", after=[0, 50], by="duration", output="pandas")
-    params = http.get.call_args.kwargs["params"]
-    assert params["by"] == "duration"
-    # duration, power and after are all columns; nothing is indexed
+        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", after=[0, 50], output="pandas")
     assert isinstance(result.index, pd.RangeIndex)
     assert {"duration", "power", "after"} <= set(result.columns)
     assert set(result["after"].unique()) == {0.0, 50.0}

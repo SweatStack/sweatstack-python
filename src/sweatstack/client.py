@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from inspect import getmembers, isfunction
 from pathlib import Path
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Dict, Generator, Literal, overload
 
 from pydantic import SecretStr
@@ -715,6 +716,15 @@ class _DelegationMixin:
         )
 
 
+def _with_durations(params: dict, durations: "Sequence[int] | str | None") -> dict:
+    """Add the mean-max ``durations`` query value: omitted, ``"all"``, or comma-separated seconds."""
+    if durations is None:
+        return params
+    if isinstance(durations, str):
+        return {**params, "durations": durations}
+    return {**params, "durations": ",".join(str(int(d)) for d in durations)}
+
+
 class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixin):
     """SweatStack API client for accessing activities, traces, and user data.
 
@@ -1393,8 +1403,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: None = None,
     ) -> pd.DataFrame | pl.DataFrame: ...
 
@@ -1403,8 +1413,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
@@ -1413,8 +1423,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
@@ -1423,8 +1433,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["arrow"],
     ) -> pa.Table: ...
 
@@ -1433,8 +1443,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["bytes"],
     ) -> bytes: ...
 
@@ -1442,8 +1452,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: FrameOutput | None = None,
     ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the mean-max data for a specific activity.
@@ -1454,14 +1464,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Args:
             activity_id: The unique identifier of the activity.
             metric: The metric to calculate mean-max values for, either "power" or "speed".
-            segmentation: Downsample with AISC (Adaptive Intensity Segmentation Codec) to reduce data points
-                for visualization. Defaults to False.
+            durations: The durations to return, in seconds. ``None`` (default) for 19 durations from
+                1 s to 6 h, ``"all"`` for the full grid (1 s steps to 3 min, then 5, 10, 30 and 60 s
+                steps), or a list of seconds. Durations the activity did not last are left out.
             output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
                 response). Defaults to the installed frame library, Polars if both are.
                 Overrides the client-level default for this call.
 
         Returns:
-            A frame (per ``output``) containing the mean-max curve; the metric value and ``duration`` are columns.
+            A frame (per ``output``), one row per duration: ``duration``, the metric (power in W or
+            speed in m/s) and ``start`` (UTC timestamp at which that best effort began). The curve
+            is returned as it is and can rise again at longer durations (intermittent efforts).
 
         Raises:
             SweatStackNotFoundError: If the activity does not exist.
@@ -1471,10 +1484,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         with self._http_client() as client:
             response = client.get(
                 url=f"/api/v1/activities/{activity_id}/mean-max",
-                params={
-                    "metric": metric,
-                    "segmentation": segmentation,
-                },
+                params=_with_durations({"metric": metric}, durations),
             )
             self._raise_for_status(response)
             return self._read_frame(response.content, output)
@@ -1650,8 +1660,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: None = None,
     ) -> pd.DataFrame | pl.DataFrame: ...
 
@@ -1660,8 +1670,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
@@ -1670,8 +1680,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
@@ -1680,8 +1690,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["arrow"],
     ) -> pa.Table: ...
 
@@ -1690,8 +1700,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["bytes"],
     ) -> bytes: ...
 
@@ -1699,8 +1709,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
-        segmentation: bool = False,
         *,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: FrameOutput | None = None,
     ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the mean-max curve for the latest activity of a specific sport.
@@ -1711,20 +1721,21 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Args:
             metric: The metric to calculate the mean-max curve for. Can be either "power" or "speed".
             sport: Optional sport to filter by. Can be a Sport enum or string.
-            segmentation: Downsample the mean-max curve with AISC (Adaptive Intensity Segmentation Codec).
-                Defaults to False.
+            durations: As for :meth:`get_activity_mean_max`.
             output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
                 response). Defaults to the installed frame library, Polars if both are.
                 Overrides the client-level default for this call.
 
         Returns:
-            A frame (per ``output``) containing the mean-max curve; the metric value and ``duration`` are columns.
+            A frame (per ``output``), one row per duration: ``duration``, the metric (power in W or
+            speed in m/s) and ``start`` (UTC timestamp at which that best effort began). The curve
+            is returned as it is and can rise again at longer durations (intermittent efforts).
 
         Raises:
             SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_mean_max(activity.id, metric, segmentation, output=output)
+        return self.get_activity_mean_max(activity.id, metric, durations=durations, output=output)
 
     @overload
     def get_longitudinal_data(
@@ -1879,7 +1890,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] | None = None,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: None = None,
     ) -> pd.DataFrame | pl.DataFrame: ...
 
@@ -1895,7 +1906,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] | None = None,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
@@ -1911,7 +1922,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] | None = None,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
@@ -1927,7 +1938,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] | None = None,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["arrow"],
     ) -> pa.Table: ...
 
@@ -1943,7 +1954,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] | None = None,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: Literal["bytes"],
     ) -> bytes: ...
 
@@ -1958,7 +1969,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         date: date | str | None = None,
         window_days: int | None = None,
         after: list[float] | float | None = None,
-        by: Literal["intensity", "duration"] | None = None,
+        durations: Sequence[int] | Literal["all"] | None = None,
         output: FrameOutput | None = None,
     ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the mean-max curve for one or more sports and a metric.
@@ -1977,22 +1988,19 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 enveloped across rides. The returned DataFrame then has an ``after``
                 column (one curve per value). Max 5 values; the date range is capped at
                 1 year when ``after`` is used.
-            by: Axis to index the curve on, only meaningful with ``after``. ``"duration"``
-                indexes by duration via the fast segment kernel (requires ``metric="power"``);
-                ``"intensity"`` indexes by the metric value and is **deprecated**. For the
-                ``after`` case ``"duration"`` will become the only supported orientation, and
-                more generally ``"duration"`` is set to become the default and only option, so
-                we recommend passing ``by="duration"`` explicitly. When left as ``None``
-                (default), the server picks: ``after`` with ``metric="power"`` resolves to
-                ``"duration"``, every other case to ``"intensity"``.
+            durations: The durations to return, in seconds. ``None`` (default) for 19 durations from
+                1 s to 6 h, ``"all"`` for the full grid (1 s steps to 3 min, then 5, 10, 30 and 60 s
+                steps), or a list of seconds. Durations no activity lasted are left out.
             output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
                 response). Defaults to the installed frame library, Polars if both are.
                 Overrides the client-level default for this call.
 
         Returns:
-            A frame (per ``output``) containing the mean-max curve with the metric value, ``duration``,
-            ``activity_id`` and ``sport`` as columns. With ``after``, an ``after`` column
-            distinguishes the fatigue states.
+            A frame (per ``output``), one row per duration: ``duration``, the metric (power in W or
+            speed in m/s), ``start`` (UTC timestamp at which that best effort began), and the
+            ``activity_id`` and ``sport`` that set it. With ``after``, an ``after`` column
+            distinguishes the fatigue states. The curve is returned as it is and can rise again at
+            longer durations (intermittent efforts).
 
         Raises:
             ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
@@ -2011,24 +2019,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             raise ValueError("'sports' is required.")
         metric = self._enums_to_strings([metric])[0]
 
-        # For the fatigue ('after') case, by='duration' is the default and the only
-        # orientation going forward; by='intensity' is deprecated there. (For metric='speed'
-        # it is still the only option, so no warning.)
-        if by == "intensity" and after is not None and metric == "power":
-            warnings.warn(
-                "by='intensity' is deprecated for 'after' (fatigue) mean-max; by='duration' "
-                "is the default and only supported orientation going forward. Pass "
-                "by='duration' or leave 'by' unset.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        params = {
+        params = _with_durations({
             "sport": self._enums_to_strings(sports),
             "metric": metric,
-        }
-        if by is not None:
-            params["by"] = by
+        }, durations)
         if start is not None:
             params["start"] = start
             if end is not None:

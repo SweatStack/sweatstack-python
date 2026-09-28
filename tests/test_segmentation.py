@@ -56,9 +56,21 @@ def test_get_longitudinal_data_sends_segmentation_on(client):
     assert params["segmentation_on"] == "power"
 
 
-def test_get_activity_mean_max_sends_segmentation(client):
-    params = _params_sent(client, lambda: client.get_activity_mean_max("a", "power", segmentation=True))
-    assert params["segmentation"] is True
+def test_get_activity_mean_max_sends_durations(client):
+    assert "durations" not in _params_sent(client, lambda: client.get_activity_mean_max("a", "power"))
+    params = _params_sent(client, lambda: client.get_activity_mean_max("a", "power", durations=[300, 5]))
+    assert params["durations"] == "300,5"
+    params = _params_sent(client, lambda: client.get_activity_mean_max("a", "power", durations="all"))
+    assert params["durations"] == "all"
+
+
+def test_mean_max_segmentation_is_removed(client):
+    # Server plan 063: `segmentation` never reduced the payload and is gone. A positional True
+    # in its old slot must fail loudly, not be read as durations.
+    with pytest.raises(TypeError):
+        client.get_activity_mean_max("a", "power", True)
+    with pytest.raises(TypeError):
+        client.get_activity_mean_max("a", "power", segmentation=True)
 
 
 def test_old_nlec_kwargs_are_rejected(client):
