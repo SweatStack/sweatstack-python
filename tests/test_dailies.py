@@ -9,7 +9,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from sweatstack import DailyMeasure, DailyResponse
+from sweatstack import DailyMeasure, DailyResponse, _frames
 from sweatstack.client import Client
 from sweatstack.openapi_schemas import DailySource, DailyStatus
 
@@ -64,19 +64,17 @@ class TestDailyMeasureEnum:
 
 
 class TestDataFrameConversion:
-    def test_dataframe_has_date_index(self, sample_dailies: list[DailyResponse]):
-        """DataFrame should have date as index."""
-        df = pd.DataFrame([d.model_dump() for d in sample_dailies])
-        df = df.set_index("date")
+    def test_dataframe_has_date_column(self, sample_dailies: list[DailyResponse]):
+        """Every frame is column-shaped: date is a column, not the index."""
+        df = _frames.models_to_pandas(sample_dailies, DailyResponse)
 
-        assert df.index.name == "date"
+        assert isinstance(df.index, pd.RangeIndex)
         assert len(df) == 3
-        assert list(df.columns) == ["value", "status", "source"]
+        assert list(df.columns) == ["date", "value", "status", "source"]
 
     def test_dataframe_values(self, sample_dailies: list[DailyResponse]):
         """DataFrame should contain correct values including None."""
-        df = pd.DataFrame([d.model_dump() for d in sample_dailies])
-        df = df.set_index("date")
+        df = _frames.models_to_pandas(sample_dailies, DailyResponse).set_index("date")
 
         assert df.loc[date(2026, 4, 1), "value"] == 75.2
         assert df.loc[date(2026, 4, 1), "status"] == DailyStatus.stored
@@ -86,13 +84,11 @@ class TestDataFrameConversion:
         assert df.loc[date(2026, 4, 3), "source"] is None
 
     def test_empty_dataframe(self):
-        """Empty dailies list should produce valid empty DataFrame."""
-        df = pd.DataFrame(columns=["date", "value", "status", "source"])
-        df = df.set_index("date")
+        """Empty dailies list should produce valid empty DataFrame with the same columns."""
+        df = _frames.models_to_pandas([], DailyResponse)
 
         assert len(df) == 0
-        assert df.index.name == "date"
-        assert list(df.columns) == ["value", "status", "source"]
+        assert list(df.columns) == ["date", "value", "status", "source"]
 
 
 # ---------------------------------------------------------------------------

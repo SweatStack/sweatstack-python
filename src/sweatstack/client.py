@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import contextlib
 import json
@@ -18,14 +20,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from inspect import getmembers, isfunction
 from pathlib import Path
-from typing import Any, Dict, Generator, get_type_hints, Literal
+from typing import TYPE_CHECKING, Any, Dict, Generator, Literal, overload
 
 from pydantic import SecretStr
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import pandas as pd
 from platformdirs import user_cache_dir, user_data_dir
+
+if TYPE_CHECKING:  # frame libraries are optional extras; only annotations need them here
+    import pandas as pd
+    import polars as pl
+    import pyarrow as pa
 
 from .constants import DEFAULT_URL
 from .exceptions import (
@@ -46,6 +52,7 @@ from .schemas import (
     TraceResolution, UserInfoResponse, UserResponse, UserSummary
 )
 from . import _frames
+from ._frames import FrameOutput, ListOutput, set_output
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
@@ -678,6 +685,7 @@ class _DelegationMixin:
             refresh_token=token_response["refresh_token"],
             url=self.url,
             streamlit_compatible=self.streamlit_compatible,
+            output=self.output,
         )
 
     def principal_client(self):
@@ -702,6 +710,7 @@ class _DelegationMixin:
             refresh_token=token_response["refresh_token"],
             url=self.url,
             streamlit_compatible=self.streamlit_compatible,
+            output=self.output,
         )
 
 
@@ -717,6 +726,10 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         activities = client.get_activities(limit=10)
     """
 
+    output: FrameOutput | None = None
+    """Default container for collections; see ``__init__``. Class-level so an
+    instance built without ``__init__`` (as the tests do) still resolves."""
+
     def __init__(
         self,
         api_key: str | SecretStr | None = None,
@@ -726,6 +739,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         client_id: str | None = None,
         client_secret: str | SecretStr | None = None,
         skip_token_expiry_check: bool = False,
+        output: FrameOutput | None = None,
     ):
         """Initialize a SweatStack client.
 
@@ -738,6 +752,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             client_secret: Optional OAuth client secret for confidential clients.
             skip_token_expiry_check: If True, skip JWT expiry validation and use the token as-is.
                 Use this when token lifecycle is managed externally (e.g. by a proxy).
+            output: Default container for every method that returns a collection:
+                ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"``. A per-call
+                ``output=`` always wins; a value a method cannot produce (``"arrow"``
+                or ``"bytes"`` on list endpoints) is ignored for that method. When
+                ``None``, the module default from :func:`sweatstack.set_output`
+                applies, then each method's own default (pandas for time series,
+                models for lists).
         """
         self._api_key: SecretStr | None = _to_secret(api_key)
         self._refresh_token: SecretStr | None = _to_secret(refresh_token)
@@ -745,6 +766,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self.url = url
         self.streamlit_compatible = streamlit_compatible
         self.skip_token_expiry_check = skip_token_expiry_check
+        self.output = _frames.check_frame_output(output)
         self.client_id = client_id or OAUTH2_CLIENT_ID
 
     def _load_token_pair(self) -> tuple[str | None, str | None]:
@@ -1087,19 +1109,72 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
-    def _read_frame(self, content: bytes) -> pd.DataFrame:
+    def _read_frame(self, content: bytes, output: str | None) -> Any:
         """Every parquet response becomes a frame through here."""
+        output = _frames.resolve_output(output, self.output, allowed=_frames.PARQUET_OUTPUTS, default="pandas")
+        if output == "bytes":
+            return content
+        if output == "arrow":
+            return _frames.parquet_to_arrow(content)
+        if output == "polars":
+            return _frames.parquet_to_polars(content)
         df = _frames.parquet_to_pandas(content)
         if self.streamlit_compatible:
             df = make_dataframe_streamlit_compatible(df)
         return df
 
-    def _frame_from_models(self, models: list, model: type, *, flatten: tuple[str, ...] = ()) -> pd.DataFrame:
-        """Every list-of-models response becomes a frame through here."""
+    def _frame_from_models(
+        self, models: list, model: type, output: str | None, *, flatten: tuple[str, ...] = (),
+    ) -> Any:
+        """Every list-of-models response becomes a frame (or stays a list) through here."""
+        output = _frames.resolve_output(output, self.output, allowed=_frames.LIST_OUTPUTS, default="models")
+        if output == "models":
+            return models
+        if output == "polars":
+            return _frames.models_to_polars(models, model)
         df = _frames.models_to_pandas(models, model, flatten=flatten)
         if self.streamlit_compatible:
             df = make_dataframe_streamlit_compatible(df)
         return df
+
+    @overload
+    def get_activities(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["models"] | None = None,
+    ) -> list[ActivitySummary]: ...
+
+    @overload
+    def get_activities(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["pandas"],
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_activities(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
 
     def get_activities(
         self,
@@ -1110,8 +1185,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         tags: list[str] | None = None,
         limit: int = 100,
         offset: int = 0,
-        as_dataframe: bool = False,
-    ) -> list[ActivitySummary] | pd.DataFrame:
+        output: ListOutput | None = None,
+    ) -> list[ActivitySummary] | pd.DataFrame | pl.DataFrame:
         """Gets a list of activities based on specified filters.
 
         Args:
@@ -1121,11 +1196,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             tags: Optional list of tags to filter activities by.
             limit: Maximum number of activities to return. Defaults to 100.
             offset: Number of activities to skip. Defaults to 0.
-            as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
+            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+                client-level default for this call.
 
         Returns:
-            Either a list of ActivitySummary objects or a pandas DataFrame containing
-            the activities data, depending on the value of as_dataframe.
+            A list of ActivitySummary objects, or a frame with one row per record.
+            Nested fields are flattened to dotted columns in pandas and typed
+            structs in Polars.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -1138,9 +1215,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             limit=limit,
             offset=offset,
         ))
-        if as_dataframe:
-            return self._frame_from_models(activities, ActivitySummary, flatten=("summary", "laps", "traces"))
-        return activities
+        return self._frame_from_models(activities, ActivitySummary, output, flatten=("summary", "laps", "traces"))
 
     def get_latest_activity(
         self,
@@ -1191,12 +1266,54 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             self._raise_for_status(response)
             return ActivityDetails.model_validate(response.json())
 
+    @overload
     def get_activity_data(
         self,
         activity_id: str,
         segmentation_on: Literal["power", "speed"] | None = None,
         metrics: list[Metric | str] | None = None,
-    ) -> pd.DataFrame:
+        *,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_activity_data(
+        self,
+        activity_id: str,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_activity_data(
+        self,
+        activity_id: str,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_activity_data(
+        self,
+        activity_id: str,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["bytes"],
+    ) -> bytes: ...
+
+    def get_activity_data(
+        self,
+        activity_id: str,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the raw data for a specific activity.
 
         This method retrieves the time-series data for a given activity, with optional AISC
@@ -1207,9 +1324,11 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             segmentation_on: Downsample with AISC (Adaptive Intensity Segmentation Codec), keyed on
                 either "power" or "speed" data. If None, no AISC is applied.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the activity's time-series data.
+            A frame (per ``output``) containing the activity's time-series data, one row per sample; ``timestamp`` is a column.
 
         Raises:
             SweatStackNotFoundError: If the activity does not exist.
@@ -1228,14 +1347,56 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             )
             self._raise_for_status(response)
 
-        return self._read_frame(response.content)
+        return self._read_frame(response.content, output)
+
+    @overload
+    def get_activity_mean_max(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        segmentation: bool = False,
+        *,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_activity_mean_max(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        segmentation: bool = False,
+        *,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_activity_mean_max(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        segmentation: bool = False,
+        *,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_activity_mean_max(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        segmentation: bool = False,
+        *,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_activity_mean_max(
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         segmentation: bool = False,
-    ) -> pd.DataFrame:
+        *,
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the mean-max data for a specific activity.
 
         This method retrieves the mean-max curve data for a given activity, which represents
@@ -1246,9 +1407,11 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             metric: The metric to calculate mean-max values for, either "power" or "speed".
             segmentation: Downsample with AISC (Adaptive Intensity Segmentation Codec) to reduce data points
                 for visualization. Defaults to False.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
+            A frame (per ``output``) containing the mean-max curve; the metric value and ``duration`` are columns.
 
         Raises:
             SweatStackNotFoundError: If the activity does not exist.
@@ -1264,13 +1427,51 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 },
             )
             self._raise_for_status(response)
-            return self._read_frame(response.content)
+            return self._read_frame(response.content, output)
+
+    @overload
+    def get_activity_awd(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        *,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_activity_awd(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        *,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_activity_awd(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        *,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_activity_awd(
+        self,
+        activity_id: str,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        *,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_activity_awd(
         self,
         activity_id: str,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-    ) -> pd.DataFrame:
+        *,
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the accumulated work duration (AWD) for a specific activity.
 
         This method retrieves accumulated work duration metrics for a specific activity.
@@ -1281,9 +1482,11 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             activity_id: The unique identifier of the activity.
             metric: Optional metric type. Defaults to power for cycling, speed for other sports.
                 Can be either "power" or "speed".
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the AWD data.
+            A frame (per ``output``) containing the AWD curve; the metric value and ``duration`` are columns.
 
         Raises:
             SweatStackNotFoundError: If the activity does not exist.
@@ -1299,14 +1502,56 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params=params,
             )
             self._raise_for_status(response)
-            return self._read_frame(response.content)
+            return self._read_frame(response.content, output)
+
+    @overload
+    def get_latest_activity_data(
+        self,
+        sport: Sport | str | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_latest_activity_data(
+        self,
+        sport: Sport | str | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_latest_activity_data(
+        self,
+        sport: Sport | str | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_latest_activity_data(
+        self,
+        sport: Sport | str | None = None,
+        segmentation_on: Literal["power", "speed"] | None = None,
+        metrics: list[Metric | str] | None = None,
+        *,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_latest_activity_data(
         self,
         sport: Sport | str | None = None,
         segmentation_on: Literal["power", "speed"] | None = None,
         metrics: list[Metric | str] | None = None,
-    ) -> pd.DataFrame:
+        *,
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the data for the latest activity of a specific sport.
 
         This method retrieves the time series data for the most recent activity of the specified sport.
@@ -1317,22 +1562,66 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
                 Can be either "power" or "speed". Defaults to None.
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the activity data.
+            A frame (per ``output``) containing the activity's time-series data, one row per sample; ``timestamp`` is a column.
 
         Raises:
             SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_data(activity.id, segmentation_on, metrics=metrics)
+        return self.get_activity_data(activity.id, segmentation_on, metrics=metrics, output=output)
+
+    @overload
+    def get_latest_activity_mean_max(
+        self,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        sport: Sport | str | None = None,
+        segmentation: bool = False,
+        *,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_latest_activity_mean_max(
+        self,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        sport: Sport | str | None = None,
+        segmentation: bool = False,
+        *,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_latest_activity_mean_max(
+        self,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        sport: Sport | str | None = None,
+        segmentation: bool = False,
+        *,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_latest_activity_mean_max(
+        self,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        sport: Sport | str | None = None,
+        segmentation: bool = False,
+        *,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_latest_activity_mean_max(
         self,
         metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
         sport: Sport | str | None = None,
         segmentation: bool = False,
-    ) -> pd.DataFrame:
+        *,
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the mean-max curve for the latest activity of a specific sport.
 
         This method retrieves the mean-max curve data for the most recent activity of the specified sport.
@@ -1343,15 +1632,69 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             sport: Optional sport to filter by. Can be a Sport enum or string.
             segmentation: Downsample the mean-max curve with AISC (Adaptive Intensity Segmentation Codec).
                 Defaults to False.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the mean-max curve data.
+            A frame (per ``output``) containing the mean-max curve; the metric value and ``duration`` are columns.
 
         Raises:
             SweatStackAPIError: If the API request fails.
         """
         activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_mean_max(activity.id, metric, segmentation)
+        return self.get_activity_mean_max(activity.id, metric, segmentation, output=output)
+
+    @overload
+    def get_longitudinal_data(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        start: date | str,
+        end: date | str | None = None,
+        metrics: list[Metric | str] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_longitudinal_data(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        start: date | str,
+        end: date | str | None = None,
+        metrics: list[Metric | str] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_longitudinal_data(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        start: date | str,
+        end: date | str | None = None,
+        metrics: list[Metric | str] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_longitudinal_data(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        start: date | str,
+        end: date | str | None = None,
+        metrics: list[Metric | str] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_longitudinal_data(
         self,
@@ -1362,7 +1705,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
         segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-    ) -> pd.DataFrame:
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets longitudinal data for activities within a specified date range.
 
         This method retrieves aggregated data for activities that match the specified criteria,
@@ -1376,9 +1720,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
             segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
                 Can be either "power" or "speed". Defaults to None.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the longitudinal activity data.
+            A frame (per ``output``) containing the concatenated time series, one row per sample, with ``timestamp``,
+            ``activity_id`` and ``sport`` columns.
 
         Raises:
             ValueError: If both 'sport' and 'sports' parameters are provided.
@@ -1410,7 +1757,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             cache_key = self._generate_cache_key("longitudinal_data", **params)
             cached = self._read_cache("longitudinal_data", cache_key)
             if cached is not None:
-                return self._read_frame(cached)
+                return self._read_frame(cached, output)
 
         with self._http_client() as client:
             response = client.get(
@@ -1422,7 +1769,71 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if self._cache_enabled():
                 self._write_cache("longitudinal_data", cache_key, response.content)
 
-        return self._read_frame(response.content)
+        return self._read_frame(response.content, output)
+
+    @overload
+    def get_longitudinal_mean_max(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        after: list[float] | float | None = None,
+        by: Literal["intensity", "duration"] | None = None,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_longitudinal_mean_max(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        after: list[float] | float | None = None,
+        by: Literal["intensity", "duration"] | None = None,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_longitudinal_mean_max(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        after: list[float] | float | None = None,
+        by: Literal["intensity", "duration"] | None = None,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_longitudinal_mean_max(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        after: list[float] | float | None = None,
+        by: Literal["intensity", "duration"] | None = None,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_longitudinal_mean_max(
         self,
@@ -1436,7 +1847,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         window_days: int | None = None,
         after: list[float] | float | None = None,
         by: Literal["intensity", "duration"] | None = None,
-    ) -> pd.DataFrame:
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the mean-max curve for one or more sports and a metric.
 
         Args:
@@ -1461,11 +1873,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 we recommend passing ``by="duration"`` explicitly. When left as ``None``
                 (default), the server picks: ``after`` with ``metric="power"`` resolves to
                 ``"duration"``, every other case to ``"intensity"``.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the mean-max curve data, indexed by
-                the metric value (``by="intensity"``) or by duration (``by="duration"``).
-                With ``after``, an ``after`` column distinguishes the fatigue states.
+            A frame (per ``output``) containing the mean-max curve with the metric value, ``duration``,
+            ``activity_id`` and ``sport`` as columns. With ``after``, an ``after`` column
+            distinguishes the fatigue states.
 
         Raises:
             ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
@@ -1496,13 +1910,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 stacklevel=2,
             )
 
-        # Mirror the server's default resolution so the returned frame is indexed on the
-        # orientation the server actually used. ``by=None`` omits the param (the server
-        # decides and the deprecated value-indexed path is not forced).
-        effective_by = by if by is not None else (
-            "duration" if (after is not None and metric == "power") else "intensity"
-        )
-
         params = {
             "sport": self._enums_to_strings(sports),
             "metric": metric,
@@ -1531,7 +1938,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             cache_key = self._generate_cache_key("mean_max", **params)
             cached = self._read_cache("mean_max", cache_key)
             if cached is not None:
-                return self._shape_mean_max(self._read_frame(cached), metric, after, effective_by)
+                return self._read_frame(cached, output)
 
         with self._http_client() as client:
             response = client.get(
@@ -1543,16 +1950,63 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if self._cache_enabled():
                 self._write_cache("mean_max", cache_key, response.content)
 
-            return self._shape_mean_max(self._read_frame(response.content), metric, after, effective_by)
+            return self._read_frame(response.content, output)
 
-    def _shape_mean_max(self, df: pd.DataFrame, metric: str, after, by: str = "intensity") -> pd.DataFrame:
-        """Standard post-processing for mean-max responses. The ``after`` response is
-        index-free on the wire; restore the natural index so its shape matches the
-        no-``after`` curve (with an extra ``after`` column): the metric value for
-        ``by="intensity"``, or ``duration`` for ``by="duration"``."""
-        if after is not None:
-            df = df.set_index("duration" if by == "duration" else metric)
-        return df
+    @overload
+    def get_longitudinal_awd(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        output: Literal["pandas"] | None = None,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_longitudinal_awd(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    @overload
+    def get_longitudinal_awd(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        output: Literal["arrow"],
+    ) -> pa.Table: ...
+
+    @overload
+    def get_longitudinal_awd(
+        self,
+        *,
+        sports: list[Sport | str] | None = None,
+        sport: Sport | str | None = None,
+        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
+        start: date | str | None = None,
+        end: date | str | None = None,
+        date: date | str | None = None,
+        window_days: int | None = None,
+        output: Literal["bytes"],
+    ) -> bytes: ...
 
     def get_longitudinal_awd(
         self,
@@ -1564,7 +2018,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         end: date | str | None = None,
         date: date | str | None = None,
         window_days: int | None = None,
-    ) -> pd.DataFrame:
+        output: FrameOutput | None = None,
+    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets the longitudinal accumulated work duration (AWD) for one or more sports.
 
         This method retrieves AWD values across four intensity levels: max (highest daily AWD),
@@ -1580,9 +2035,11 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             end: End of the date range (defaults to today).
             date: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
             window_days: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
+            output: ``"pandas"`` (default), ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw
+                parquet response). Overrides the client-level default for this call.
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the longitudinal AWD data with intensity levels.
+            A frame (per ``output``) containing the longitudinal AWD data with intensity levels.
 
         Raises:
             ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
@@ -1627,7 +2084,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params=params,
             )
             self._raise_for_status(response)
-            return self._read_frame(response.content)
+            return self._read_frame(response.content, output)
 
     def _get_traces_generator(
         self,
@@ -1674,6 +2131,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
+    @overload
     def get_traces(
         self,
         *,
@@ -1683,8 +2141,46 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         tags: list[str] | None = None,
         limit: int = 100,
         offset: int = 0,
-        as_dataframe: bool = False,
-    ) -> list[TraceDetails] | pd.DataFrame:
+        output: Literal["models"] | None = None,
+    ) -> list[TraceDetails]: ...
+
+    @overload
+    def get_traces(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["pandas"],
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_traces(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    def get_traces(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        output: ListOutput | None = None,
+    ) -> list[TraceDetails] | pd.DataFrame | pl.DataFrame:
         """Gets a list of traces based on specified filters.
 
         Args:
@@ -1694,11 +2190,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             tags: Optional list of tags to filter traces by.
             limit: Maximum number of traces to return. Defaults to 100.
             offset: Number of traces to skip. Defaults to 0.
-            as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
+            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+                client-level default for this call.
 
         Returns:
-            Either a list of TraceDetails objects or a pandas DataFrame containing
-            the traces data, depending on the value of as_dataframe.
+            A list of TraceDetails objects, or a frame with one row per record.
+            Nested fields are flattened to dotted columns in pandas and typed
+            structs in Polars.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -1711,9 +2209,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             limit=limit,
             offset=offset,
         ))
-        if as_dataframe:
-            return self._frame_from_models(traces, TraceDetails, flatten=("activity", "lap"))
-        return traces
+        return self._frame_from_models(traces, TraceDetails, output, flatten=("activity", "lap"))
 
     def create_trace(
         self,
@@ -1912,6 +2408,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 params["limit"] = min(default_limit, limit - num_returned)
                 params["offset"] += default_limit
 
+    @overload
     def get_tests(
         self,
         *,
@@ -1922,8 +2419,49 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         created_by: str | None = None,
         limit: int = 50,
         offset: int = 0,
-        as_dataframe: bool = False,
-    ) -> list[TestSummary] | pd.DataFrame:
+        output: Literal["models"] | None = None,
+    ) -> list[TestSummary]: ...
+
+    @overload
+    def get_tests(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        created_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output: Literal["pandas"],
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_tests(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        created_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    def get_tests(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        sports: list[Sport | str] | None = None,
+        tags: list[str] | None = None,
+        created_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output: ListOutput | None = None,
+    ) -> list[TestSummary] | pd.DataFrame | pl.DataFrame:
         """Gets a list of tests based on specified filters.
 
         Args:
@@ -1934,11 +2472,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             created_by: Optional app ID to filter tests by creator.
             limit: Maximum number of tests to return. Defaults to 50.
             offset: Number of tests to skip. Defaults to 0.
-            as_dataframe: Whether to return results as a pandas DataFrame. Defaults to False.
+            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+                client-level default for this call.
 
         Returns:
-            Either a list of TestSummary objects or a pandas DataFrame containing
-            the tests data, depending on the value of as_dataframe.
+            A list of TestSummary objects, or a frame with one row per record.
+            Nested fields are flattened to dotted columns in pandas and typed
+            structs in Polars.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -1952,9 +2492,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             limit=limit,
             offset=offset,
         ))
-        if as_dataframe:
-            return self._frame_from_models(tests, TestSummary, flatten=("results",))
-        return tests
+        return self._frame_from_models(tests, TestSummary, output, flatten=("results",))
 
     def get_test(
         self,
@@ -2111,6 +2649,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     # Dailies (daily health metrics)
     # -------------------------------------------------------------------------
 
+    @overload
     def get_dailies(
         self,
         measure: DailyMeasure | str,
@@ -2118,8 +2657,40 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date,
         end: date,
         interpolate: bool = True,
-        as_dataframe: bool = False,
-    ) -> list[DailyResponse] | pd.DataFrame:
+        output: Literal["models"] | None = None,
+    ) -> list[DailyResponse]: ...
+
+    @overload
+    def get_dailies(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        start: date,
+        end: date,
+        interpolate: bool = True,
+        output: Literal["pandas"],
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def get_dailies(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        start: date,
+        end: date,
+        interpolate: bool = True,
+        output: Literal["polars"],
+    ) -> pl.DataFrame: ...
+
+    def get_dailies(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        start: date,
+        end: date,
+        interpolate: bool = True,
+        output: ListOutput | None = None,
+    ) -> list[DailyResponse] | pd.DataFrame | pl.DataFrame:
         """Gets daily values for a measure over a date range.
 
         Args:
@@ -2129,12 +2700,12 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             interpolate: Whether to apply server-side estimation/interpolation.
                 Defaults to True. When False, missing dates return value=None
                 with source="missing".
-            as_dataframe: Whether to return results as a pandas DataFrame.
-                Defaults to False.
+            output: ``"models"`` (default), ``"pandas"`` or ``"polars"``. Overrides the
+                client-level default for this call.
 
         Returns:
-            Either a list of DailyResponse objects or a pandas DataFrame with
-            date as index. Always returns one entry per date in the range.
+            A list of DailyResponse objects, or a frame with one row per date
+            (``date`` is a column). Always returns one entry per date in the range.
         """
         measure_str = measure.value if isinstance(measure, Enum) else measure
         with self._http_client() as client:
@@ -2148,9 +2719,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             )
             self._raise_for_status(response)
             dailies = [DailyResponse.model_validate(item) for item in response.json()]
-        if as_dataframe:
-            return self._frame_from_models(dailies, DailyResponse).set_index("date")
-        return dailies
+        return self._frame_from_models(dailies, DailyResponse, output)
 
     def set_daily(
         self,
@@ -2722,7 +3291,7 @@ def _generate_singleton_methods() -> list[str]:
             return bound_method(*args, **kwargs)
 
         class_method = getattr(Client, method_name)
-        singleton_method.__annotations__ = get_type_hints(class_method)
+        singleton_method.__annotations__ = dict(class_method.__annotations__)
         return singleton_method
 
     names = sorted(
@@ -2743,6 +3312,7 @@ _SINGLETON_METHODS = _generate_singleton_methods()
 __all__ = sorted([
     "Client",
     "enable_cache",
+    "set_output",
     # Schemas / enums re-exported from .schemas — keep in sync with the
     # `from .schemas import (...)` block at the top of this file.
     "ActivityDetails",

@@ -462,6 +462,7 @@ class StreamlitAuth:
             sports=sports,
             tags=tags,
             limit=limit,
+            output="models",  # the selector iterates models whatever the client's default output
         )
         selected_activity = st.selectbox(
             "Select an activity",

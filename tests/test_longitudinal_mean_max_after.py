@@ -51,11 +51,10 @@ def test_after_list_is_sent_and_default_power_is_duration_indexed(client):
     result, params = _call(client, after=[0, 500])
     # repeated query param
     assert params["after"] == [0, 500]
-    # `by` unset for after+power resolves to `duration` server-side (0.85.0+): the frame is
-    # duration-indexed, with `after` a column (mirroring the no-after curve's index).
-    assert result.index.name == "duration"
-    assert "power" in result.columns
-    assert "after" in result.columns
+    # `by` unset for after+power resolves to `duration` server-side (0.85.0+). Every
+    # frame is column-shaped: duration, power and after are all columns, no index.
+    assert isinstance(result.index, pd.RangeIndex)
+    assert {"duration", "power", "after"} <= set(result.columns)
     assert set(result["after"].unique()) == {0.0, 500.0}
 
 
@@ -65,7 +64,7 @@ def test_single_after_is_normalised_to_a_list(client):
 
 
 def test_no_after_is_unchanged(client):
-    # without `after`, no after param is sent and the metric stays the index
+    # without `after`, no after param is sent; the server's metric index becomes a leading column
     response = MagicMock(status_code=200)
     df = pd.DataFrame({"duration": pd.to_timedelta([60], unit="s")}, index=pd.Index([200.0], name="power"))
     buf = BytesIO(); df.to_parquet(buf); response.content = buf.getvalue()
@@ -77,7 +76,8 @@ def test_no_after_is_unchanged(client):
          patch.object(client, "_cache_enabled", return_value=False):
         result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power")
     assert "after" not in http.get.call_args.kwargs["params"]
-    assert result.index.name == "power"
+    assert isinstance(result.index, pd.RangeIndex)
+    assert list(result.columns) == ["power", "duration"]
 
 
 def _index_free_by_duration_response() -> bytes:
@@ -107,8 +107,8 @@ def test_after_with_explicit_intensity_is_metric_indexed_and_warns(client):
     with pytest.warns(DeprecationWarning):
         result, params = _call(client, after=[0, 500], by="intensity")
     assert params["by"] == "intensity"
-    assert result.index.name == "power"
-    assert "after" in result.columns
+    assert isinstance(result.index, pd.RangeIndex)
+    assert {"power", "after"} <= set(result.columns)
     assert result["duration"].dtype == "timedelta64[ns]"
 
 
@@ -125,7 +125,7 @@ def test_by_duration_is_sent_and_duration_indexed(client):
             sports=["cycling"], metric="power", after=[0, 50], by="duration")
     params = http.get.call_args.kwargs["params"]
     assert params["by"] == "duration"
-    # duration-indexed (not metric-indexed), with power + after as columns
-    assert result.index.name == "duration"
-    assert "power" in result.columns and "after" in result.columns
+    # duration, power and after are all columns; nothing is indexed
+    assert isinstance(result.index, pd.RangeIndex)
+    assert {"duration", "power", "after"} <= set(result.columns)
     assert set(result["after"].unique()) == {0.0, 50.0}

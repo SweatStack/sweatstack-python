@@ -47,6 +47,15 @@ class FrameSchemaWarning(UserWarning):
 
 
 Output = Literal["models", "pandas", "polars", "arrow", "bytes"]
+"""Every container a collection can come back in."""
+
+FrameOutput = Literal["pandas", "polars", "arrow", "bytes"]
+"""The containers that can be configured as a default (``Client(output=...)``,
+:func:`set_output`). ``"models"`` is never a default worth configuring: it is
+already the default for list endpoints and impossible for parquet endpoints."""
+
+ListOutput = Literal["models", "pandas", "polars"]
+"""The containers a list endpoint can return."""
 
 PARQUET_OUTPUTS: frozenset[str] = frozenset({"pandas", "polars", "arrow", "bytes"})
 """Valid ``output`` values for endpoints that return parquet."""
@@ -63,7 +72,7 @@ def require(module: str) -> Any:
     try:
         return import_module(module)
     except ImportError as exc:
-        extra = _EXTRA_FOR_MODULE[module]
+        extra = _EXTRA_FOR_MODULE[module.split(".")[0]]
         raise ImportError(
             f"'{module}' is required for this output but is not installed. "
             f'Install it with: uv add "sweatstack[{extra}]"'
@@ -71,15 +80,124 @@ def require(module: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Choosing the output
+# ---------------------------------------------------------------------------
+
+_default_output: str | None = None
+
+
+def set_output(output: FrameOutput | None) -> None:
+    """Set the default ``output`` for every method that returns a collection.
+
+    Applies to the module-level singletons and to every :class:`Client` that
+    does not set its own ``output``. A per-call ``output=`` always wins.
+    A configured value that a method cannot produce (``"arrow"`` or ``"bytes"``
+    on a list endpoint) is ignored for that method, which then uses its own
+    default. Pass ``None`` to reset.
+
+    Args:
+        output: ``"pandas"``, ``"polars"``, ``"arrow"``, ``"bytes"`` or ``None``.
+
+    Raises:
+        ValueError: If ``output`` is not one of the frame outputs.
+    """
+    global _default_output
+    _default_output = check_frame_output(output)
+
+
+def check_frame_output(output: str | None) -> str | None:
+    """Validate a configurable default; returns it unchanged."""
+    if output is not None and output not in PARQUET_OUTPUTS:
+        raise ValueError(
+            f"output={output!r} cannot be a default; choose one of {_choices(PARQUET_OUTPUTS)}"
+        )
+    return output
+
+
+def resolve_output(
+    requested: str | None,
+    configured: str | None,
+    *,
+    allowed: frozenset[str],
+    default: str,
+) -> str:
+    """Pick the output for one call: per-call > client > module default > method default.
+
+    A per-call value the method cannot produce is an error. A configured
+    default the method cannot produce is skipped, not an error.
+    """
+    if requested is not None:
+        if requested not in allowed:
+            raise ValueError(
+                f"output={requested!r} is not available here; choose one of {_choices(allowed)}"
+            )
+        return requested
+    for candidate in (configured, _default_output):
+        if candidate in allowed:
+            return candidate
+    return default
+
+
+def _choices(allowed: frozenset[str]) -> str:
+    return ", ".join(repr(choice) for choice in sorted(allowed))
+
+
+# ---------------------------------------------------------------------------
 # Parquet responses
+#
+# The server may write a pandas index (timestamp for time series, the metric
+# value for mean-max curves, see server plan 020d). In parquet that is a normal
+# column plus a metadata blob. Every backend here returns it as a leading
+# column, so the shape is identical whether or not the server still writes the
+# blob.
 # ---------------------------------------------------------------------------
 
 def parquet_to_pandas(content: bytes) -> pd.DataFrame:
-    """Parquet bytes to a pandas DataFrame with standard dtypes."""
+    """Parquet bytes to a pandas DataFrame: columns only, standard dtypes."""
     pd = require("pandas")
     from .utils import convert_to_standard_dtypes
 
-    return convert_to_standard_dtypes(pd.read_parquet(BytesIO(content)))
+    df = pd.read_parquet(BytesIO(content))
+    if not isinstance(df.index, pd.RangeIndex):
+        df = df.reset_index()
+    return convert_to_standard_dtypes(df)
+
+
+def parquet_to_polars(content: bytes) -> pl.DataFrame:
+    """Parquet bytes to a Polars DataFrame with the wire dtypes, except
+    Float16 -> Float32 (Polars supports few operations on Float16)."""
+    pl = require("polars")
+
+    df = pl.read_parquet(BytesIO(content))
+    float16 = getattr(pl, "Float16", None)  # older Polars already reads float16 as Float32
+    if float16 is not None:
+        df = df.cast({name: pl.Float32 for name, dtype in df.schema.items() if dtype == float16})
+    metadata = pl.read_parquet_metadata(BytesIO(content))
+    return df.select(_index_columns_first(df.columns, metadata.get("pandas")))
+
+
+def parquet_to_arrow(content: bytes) -> Any:
+    """Parquet bytes to a ``pyarrow.Table`` exactly as on the wire, minus the
+    pandas index metadata (so ``to_pandas()`` also yields columns only)."""
+    pq = require("pyarrow.parquet")
+
+    table = pq.read_table(BytesIO(content))
+    metadata = dict(table.schema.metadata or {})
+    pandas_metadata = metadata.pop(b"pandas", None)
+    table = table.select(_index_columns_first(table.column_names, pandas_metadata))
+    return table.replace_schema_metadata(metadata or None)
+
+
+def _index_columns_first(columns: Sequence[str], pandas_metadata: str | bytes | None) -> list[str]:
+    """Column order with any former pandas index columns first, matching the
+    order ``DataFrame.reset_index()`` produces on the pandas path."""
+    if not pandas_metadata:
+        return list(columns)
+    index_columns = [
+        name for name in json.loads(pandas_metadata).get("index_columns", [])
+        if isinstance(name, str) and name in columns  # RangeIndex entries are dicts
+    ]
+    return index_columns + [name for name in columns if name not in index_columns]
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +350,7 @@ def _polars_dtype(node: dict, definitions: dict, path: str, stack: tuple[str, ..
             "naive-date-time": pl.Datetime("us", None),
             "date": pl.Date,
             "duration": pl.Duration("us"),
-        }.get(node.get("format"), pl.String)
+        }.get(node.get("format", ""), pl.String)
     if kind == "integer":
         return pl.Int64
     if kind == "number":
