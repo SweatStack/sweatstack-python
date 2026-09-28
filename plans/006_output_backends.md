@@ -309,6 +309,11 @@ each step is green on its own; R2–R6 land inside the steps that cite them:
    `as_dataframe` -> `output`, index -> column, install extra.
 8. **Release candidate.** Tag a pre-release, run the two Streamlit apps and
    two of the sibling analysis repos against it before releasing.
+   **Done 2026-09-28** for `paperplayground-hr-power` (Streamlit, locked at
+   0.64.0), branch `sdk-output-backends-rc` there: migrated, run headless
+   with real cached data, then run live by Aart; all checks passed. The
+   migration found one silent failure (a bare `except` around index access)
+   that only a live-shaped run would have caught.
 
 ### Track B: server (../sweatstack, independent)
 
