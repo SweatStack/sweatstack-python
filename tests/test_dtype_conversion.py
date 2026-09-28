@@ -15,6 +15,11 @@ import pytest
 from sweatstack.utils import convert_to_standard_dtypes
 
 
+def _is_text(dtype) -> bool:
+    """Text columns are ``object`` on pandas 2 and the Arrow-backed ``str`` dtype on pandas 3."""
+    return pd.api.types.is_object_dtype(dtype) or pd.api.types.is_string_dtype(dtype)
+
+
 def _pyarrow_available() -> bool:
     """Check if PyArrow is available."""
     try:
@@ -242,7 +247,7 @@ class TestUnchangedTypes:
 
         result = convert_to_standard_dtypes(df)
 
-        assert result["notes"].dtype == np.object_
+        assert _is_text(result["notes"].dtype)  # object (pandas 2) or str (pandas 3)
 
     def test_bool_unchanged(self):
         """Boolean columns should not be converted."""
@@ -372,7 +377,7 @@ class TestRobustness:
 
         assert result["activity_id"].dtype.name == "category"
         assert result["sport"].dtype.name == "category"
-        assert result["notes"].dtype == np.object_
+        assert _is_text(result["notes"].dtype)  # object (pandas 2) or str (pandas 3)
 
     def test_mixed_dtypes(self):
         """Mix of standard and optimized dtypes should be handled."""

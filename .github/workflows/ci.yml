@@ -7,18 +7,25 @@ on:
 
 jobs:
   test:
-    name: pytest (py${{ matrix.python }})
+    name: pytest (py${{ matrix.python }}${{ matrix.pandas && format(', pandas {0}', matrix.pandas) || '' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          # The lock file tracks the newest pandas; this leg keeps the declared
+          # lower bound (pyproject `pandas>=2.2.3`) honest.
+          - python: "3.12"
+            pandas: "2.2"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python }}
       - run: uv sync --all-extras
+      - if: matrix.pandas == '2.2'
+        run: uv pip install "pandas>=2.2.3,<3"
       - run: uv run pytest
 
   bare-install:
