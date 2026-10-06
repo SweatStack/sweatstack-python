@@ -39,7 +39,7 @@ def _mint(app, **kwargs):
         200, {"url": "https://app.sweatstack.no/portal/integrations?app=app_123"}
     )
     with patch.object(app, "_http_client", return_value=http) as http_client:
-        session = app.create_portal_session(**kwargs)
+        session = app.portal.sessions.create(**kwargs)
     return session, http.post.call_args.kwargs, http_client.call_args.kwargs
 
 
@@ -96,7 +96,7 @@ class TestErrors:
             patch.object(app, "_http_client", return_value=http),
             pytest.raises(SweatStackAuthError),
         ):
-            app.create_portal_session("manage-integrations")
+            app.portal.sessions.create("manage-integrations")
 
     def test_unregistered_return_url(self, app):
         http = _http_returning(400, {"detail": "return_url is not registered for this application"})
@@ -104,4 +104,4 @@ class TestErrors:
             patch.object(app, "_http_client", return_value=http),
             pytest.raises(SweatStackBadRequestError),
         ):
-            app.create_portal_session("manage-integrations", return_url="https://evil.example/")
+            app.portal.sessions.create("manage-integrations", return_url="https://evil.example/")

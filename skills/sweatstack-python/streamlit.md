@@ -32,8 +32,8 @@ if not auth.is_authenticated():
     st.stop()
 
 # Use auth.client for all API calls
-activities = auth.client.get_activities(limit=10)
-st.dataframe(auth.client.get_activities(output="pandas"))  # st.dataframe also accepts output="polars"
+activities = auth.client.activities.list(limit=10)
+st.dataframe(auth.client.activities.list(output="pandas"))  # st.dataframe also accepts output="polars"
 ```
 
 **`authenticate(login_label=None, show_logout=True)`** — renders login button if unauthenticated, logout button if authenticated. Handles OAuth callback automatically via `st.query_params`.
@@ -59,11 +59,11 @@ Built-in Streamlit widgets for common selection patterns. All return the selecte
 # Activity selector — dropdown formatted as "YYYY-MM-DD sport_name"
 activity = auth.select_activity(
     start=date(2025, 1, 1),       # optional
-    sports=[Sport.cycling],       # optional
+    sport="cycling",              # optional; one sport or a list
     tags=["race"],                # optional
     limit=100,                    # optional
 )
-data = auth.client.get_activity_data(activity.id)
+data = auth.client.activities.data(activity.id)
 
 # Sport selector
 sport = auth.select_sport()                          # single select
@@ -101,7 +101,7 @@ if not auth.is_authenticated():
     st.stop()
 
 auth.logout_button()  # Renders link to proxy's logout endpoint
-activities = auth.client.get_activities()
+activities = auth.client.activities.list()
 ```
 
 **Key difference:** The proxy manages token lifecycle (refresh, storage). The SDK skips its own token expiry checks in this mode.
@@ -112,18 +112,18 @@ activities = auth.client.get_activities()
 
 - **Always use `auth.client`** for API calls — never create a standalone `Client()` in a Streamlit app. The standalone client won't have the session's tokens.
 - **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`. Don't overwrite these.
-- **`select_user()` switches the client.** After calling it, `auth.client` operates as the selected user. Call `auth.switch_to_principal_user()` to revert.
+- **`select_user()` replaces `auth.client`** with a client delegated to the selected user (its own access and refresh token). Call `auth.switch_to_principal_user()` to go back.
 - **Scopes default to `data:read,profile`** in Streamlit — not the broader set used by `Client.authenticate()`. Add `offline_access` if you need refresh tokens in direct OAuth mode.
 
 ## Account Status and the Portal
 
 ```python
-user = auth.client.get_userinfo()
+user = auth.client.oauth.userinfo()
 if user.issue:
     st.warning(user.issue.message)
     if user.issue.action_url:
         st.link_button("Fix it", user.issue.action_url)
 ```
 
-`auth.client` carries the app credentials, so `auth.client.create_portal_session("manage-integrations",
-return_url=...)` works too. See [client.md](client.md#account-status-and-the-portal).
+`auth.client` carries the app credentials, so `auth.client.portal.sessions.create("manage-integrations",
+return_url=...)` works too. See [api.md](api.md#portal-and-oauth) and [data-models.md](data-models.md).

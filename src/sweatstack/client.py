@@ -1,40 +1,30 @@
 from __future__ import annotations
 
-import base64
 import contextlib
 import hashlib
 import json
 import logging
 import os
 import random
-import secrets
 import shutil
 import time
-import urllib
-import warnings
 import webbrowser
-from collections.abc import Generator, Sequence
 from datetime import date, datetime
 from enum import Enum
-from functools import wraps
+from functools import cached_property, wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from inspect import getmembers, isfunction
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 from platformdirs import user_cache_dir, user_data_dir
 from pydantic import SecretStr
 
-if TYPE_CHECKING:  # frame libraries are optional extras; only annotations need them here
-    import pandas as pd
-    import polars as pl
-    import pyarrow as pa
-
-from . import _frames
-from ._frames import FrameOutput, ListOutput, set_output
+from . import _frames, _renames
+from ._frames import FrameOutput, set_output
 from .constants import DEFAULT_URL
 from .exceptions import (
     SweatStackAPIError,
@@ -45,6 +35,17 @@ from .exceptions import (
     SweatStackRateLimitError,
     SweatStackServerError,
     SweatStackTokenRefreshError,
+)
+from .resources import (
+    Activities,
+    Dailies,
+    OAuth,
+    Portal,
+    Profile,
+    Teams,
+    Tests,
+    Traces,
+    Users,
 )
 from .schemas import (
     AccountStatusResponse,
@@ -63,6 +64,8 @@ from .schemas import (
     PortalDestination,
     PortalSessionResponse,
     Scope,
+    SourceError,
+    SourceResponse,
     Sport,
     StatusIssueCode,
     StatusIssueResponse,
@@ -89,7 +92,7 @@ _cache_config: dict | None = None
 
 
 def enable_cache(path: str | None = None) -> None:
-    """Enable local caching of API responses.
+    """Enable local caching of longitudinal responses.
 
     Args:
         path: Optional custom cache directory. Defaults to the platform cache dir.
@@ -115,144 +118,6 @@ AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 </html>"""
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
 
-
-class _LocalCacheMixin:
-    """Mixin for handling local filesystem caching of API responses.
-
-    Caching is enabled by calling :func:`sweatstack.enable_cache`.
-    Use :meth:`clear_cache` to remove all cached data for the current user.
-    """
-
-    def _cache_enabled(self) -> bool:
-        """Check if local caching is enabled."""
-        return _cache_config is not None
-
-    def _log_cache_error(self, operation: str, error: Exception) -> None:
-        """Log cache operation errors with context."""
-        try:
-            cache_dir = str(self._get_cache_dir())
-        except Exception:
-            cache_dir = "unknown"
-
-        logging.warning(
-            f"Failed to {operation} cache. Cache directory: {cache_dir}. Error: {error}"
-        )
-
-    def _get_user_id_from_token(self) -> str:
-        """Extract user ID from the JWT token."""
-        if not self.api_key:
-            raise ValueError("Not authenticated. Please call authenticate() first.")
-
-        try:
-            jwt_body = decode_jwt_body(self.api_key.get_secret_value())
-            user_id = jwt_body.get("sub")
-            if not user_id:
-                raise ValueError("Unable to extract user ID from token")
-            return user_id
-        except Exception as e:
-            raise ValueError(f"Invalid authentication token: {e}") from e
-
-    def _get_cache_dir(self) -> Path:
-        """Get cache directory for current user."""
-        user_id = self._get_user_id_from_token()
-
-        if _cache_config and _cache_config.get("path"):
-            cache_dir = Path(_cache_config["path"]) / user_id
-        else:
-            cache_dir = Path(user_cache_dir("SweatStack", "SweatStack")) / user_id
-
-        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        return cache_dir
-
-    def _generate_cache_key(self, namespace: str, **params) -> str:
-        """Generate a cache key for the given namespace and parameters."""
-        normalized_params = {}
-
-        for key, value in params.items():
-            if value is None:
-                continue
-            elif isinstance(value, list):
-                normalized_params[key] = sorted(
-                    [v.value if hasattr(v, "value") else str(v) for v in value]
-                )
-            elif hasattr(value, "value"):
-                normalized_params[key] = value.value
-            elif isinstance(value, (date, datetime)):
-                normalized_params[key] = value.isoformat()
-            else:
-                normalized_params[key] = str(value)
-
-        cache_data = f"{namespace}:{json.dumps(normalized_params, sort_keys=True)}"
-        return hashlib.sha256(cache_data.encode()).hexdigest()[:16]
-
-    def _read_cache(self, namespace: str, cache_key: str) -> bytes | None:
-        """Try to read cached data. Returns raw bytes or None."""
-        try:
-            cache_dir = self._get_cache_dir()
-            cache_file = cache_dir / f"{namespace}-{cache_key}.parquet"
-
-            if cache_file.exists():
-                return cache_file.read_bytes()
-        except Exception as e:
-            self._log_cache_error("read", e)
-
-        return None
-
-    def _write_cache(self, namespace: str, cache_key: str, content: bytes) -> None:
-        """Write raw bytes to cache."""
-        try:
-            cache_dir = self._get_cache_dir()
-            cache_file = cache_dir / f"{namespace}-{cache_key}.parquet"
-            cache_file.write_bytes(content)
-        except Exception as e:
-            self._log_cache_error("write", e)
-
-    def clear_cache(self) -> None:
-        """Clear all cached data for the current user."""
-        try:
-            cache_dir = self._get_cache_dir()
-            if cache_dir.exists():
-                shutil.rmtree(cache_dir)
-        except Exception as e:
-            self._log_cache_error("clear", e)
-
-
-class _TokenStorageMixin:
-    """Mixin for handling persistent token storage using platformdirs."""
-
-    def _get_token_file_path(self) -> Path:
-        """Get the path to the token storage file."""
-        data_dir = user_data_dir("SweatStack", "SweatStack")
-        return Path(data_dir) / "tokens.json"
-
-    def _save_tokens(self, access_token: str, refresh_token: str) -> None:
-        """Save tokens to the user data directory."""
-        token_file = self._get_token_file_path()
-        token_file.parent.mkdir(parents=True, exist_ok=True)
-
-        token_data = {"access_token": access_token, "refresh_token": refresh_token}
-
-        with open(token_file, "w") as f:
-            json.dump(token_data, f, indent=2)
-
-        # Set restrictive permissions (user read/write only)
-        token_file.chmod(0o600)
-
-    def _load_persistent_tokens(self) -> tuple[str | None, str | None]:
-        """Load tokens from the user data directory."""
-        token_file = self._get_token_file_path()
-
-        if not token_file.exists():
-            return None, None
-
-        try:
-            with open(token_file) as f:
-                token_data = json.load(f)
-            return token_data.get("access_token"), token_data.get("refresh_token")
-        except (json.JSONDecodeError, FileNotFoundError, KeyError):
-            return None, None
-
-
 try:
     __version__ = version("sweatstack")
 except ImportError:
@@ -268,497 +133,27 @@ def _to_secret(value: str | SecretStr | None) -> SecretStr | None:
     return SecretStr(value)
 
 
-class _OAuth2Mixin:
-    """OAuth2 authentication methods for the Client class."""
+class Client:
+    """The SweatStack API client.
 
-    def generate_pkce_params(self) -> tuple[str, str]:
-        """Generate PKCE parameters for OAuth2 authorization.
+    Every endpoint group is an attribute named after its URL segment: ``client.activities``,
+    ``client.traces``, ``client.tests``, ``client.dailies``, ``client.profile``,
+    ``client.users``, ``client.teams``, ``client.portal`` and ``client.oauth``.
 
-        This method generates a code verifier and its corresponding code challenge
-        for use in the PKCE (Proof Key for Code Exchange) OAuth2 flow.
+    Create one client per user. In a script or notebook, ``Client()`` finds your credentials
+    (``authenticate()``, the ``SWEATSTACK_API_KEY`` environment variable, or the tokens saved
+    by an earlier sign-in). In an app, use the client the FastAPI or Streamlit helper hands
+    you for each signed-in user.
 
-        Returns:
-            tuple[str, str]: A tuple of (code_verifier, code_challenge)
-        """
-        code_verifier = secrets.token_urlsafe(32)
-        code_challenge = hashlib.sha256(code_verifier.encode("ascii")).digest()
-        code_challenge = base64.urlsafe_b64encode(code_challenge).rstrip(b"=").decode("ascii")
-        return code_verifier, code_challenge
+    Examples:
+        ```python
+        from sweatstack import Client
 
-    def get_authorization_url(
-        self,
-        client_id: str,
-        redirect_uri: str,
-        code_challenge: str | None = None,
-        scope: str = "data:read data:write profile",
-        prompt: str | None = "none",
-        state: str | None = None,
-    ) -> str:
-        """Generate OAuth2 authorization URL.
-
-        Args:
-            client_id: OAuth2 client ID
-            redirect_uri: Redirect URI for OAuth callback
-            code_challenge: Optional PKCE code challenge for enhanced security
-            scope: OAuth2 scopes (default: "data:read data:write profile")
-            prompt: OAuth2 prompt parameter (default: "none"). Set to None to omit.
-            state: Optional state parameter for CSRF protection
-
-        Returns:
-            str: The authorization URL to redirect the user to
-        """
-        params = {
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "scope": scope,
-        }
-        if prompt is not None:
-            params["prompt"] = prompt
-        if code_challenge:
-            params["code_challenge"] = code_challenge
-            params["code_challenge_method"] = "S256"
-        if state:
-            params["state"] = state
-
-        base_url = self.url
-        path = "/oauth/authorize"
-        return urllib.parse.urljoin(base_url, path + "?" + urllib.parse.urlencode(params))
-
-    def exchange_code_for_token(
-        self,
-        code: str,
-        client_id: str,
-        code_verifier: str | None = None,
-        client_secret: str | None = None,
-        redirect_uri: str | None = None,
-        persist: bool = True,
-    ) -> TokenResponse:
-        """Exchange authorization code for access and refresh tokens.
-
-        This method exchanges an authorization code for tokens and automatically
-        sets them on the client instance.
-
-        Args:
-            code: The authorization code received from the OAuth callback
-            client_id: OAuth2 client ID
-            code_verifier: PKCE code verifier (required if PKCE was used in authorization)
-            client_secret: Client secret for standard OAuth2 flow
-            redirect_uri: Redirect URI if required by the server
-            persist: Whether to persist tokens to storage (default: True)
-
-        Returns:
-            TokenResponse: The token response containing access_token, refresh_token, etc.
-
-        Raises:
-            SweatStackAuthError: If the OAuth server rejects the code or
-                credentials.
-            SweatStackAPIError: If the token exchange fails for any other
-                reason.
-        """
-        token_data = {
-            "grant_type": "authorization_code",
-            "client_id": client_id,
-            "code": code,
-        }
-
-        if code_verifier:
-            token_data["code_verifier"] = code_verifier
-        if client_secret:
-            token_data["client_secret"] = client_secret
-        if redirect_uri:
-            token_data["redirect_uri"] = redirect_uri
-
-        try:
-            response = httpx.post(
-                f"{self.url}/api/v1/oauth/token",
-                data=token_data,
-            )
-        except httpx.HTTPError as exc:
-            raise SweatStackConnectionError(str(exc)) from exc
-
-        self._raise_for_status(response)
-
-        token_response = TokenResponse.model_validate(response.json())
-
-        self.api_key = token_response.access_token
-        self.refresh_token = token_response.refresh_token
-
-        if persist:
-            self._save_tokens(token_response.access_token, token_response.refresh_token)
-
-        return token_response
-
-    def _open_browser_oauth(self, persist: bool = True) -> None:
-        """Open browser for OAuth authentication flow.
-
-        Starts a local HTTP server to receive the OAuth callback, opens a browser
-        for user authentication, and exchanges the authorization code for tokens.
-
-        Args:
-            persist: Save tokens to persistent storage after successful auth.
-        """
-
-        class AuthHandler(BaseHTTPRequestHandler):
-            def log_message(self, format, *args):
-                # This override disables logging.
-                pass
-
-            def do_GET(self):
-                query = urlparse(self.path).query
-                params = parse_qs(query)
-
-                self.server.code = params.get("code", [None])[0]
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                self.wfile.write(AUTH_SUCCESSFUL_RESPONSE.encode())
-                self.server.server_close()
-
-        code_verifier, code_challenge = self.generate_pkce_params()
-
-        while True:
-            port = random.randint(8000, 9000)
-            try:
-                server = HTTPServer(("localhost", port), AuthHandler)
-                break
-            except OSError:
-                continue
-
-        redirect_uri = f"http://localhost:{port}"
-
-        authorization_url = self.get_authorization_url(
-            client_id=OAUTH2_CLIENT_ID,
-            redirect_uri=redirect_uri,
-            code_challenge=code_challenge,
-            scope="data:read data:write profile offline_access",
-            prompt=None,
-        )
-
-        webbrowser.open(authorization_url)
-
-        print(f"Waiting for authorization... (listening on port {port})")
-        print(f"If not redirected, open the following URL in your browser: {authorization_url}")
-        print("")
-
-        server.timeout = 30
-        try:
-            server.handle_request()
-        except TimeoutError:
-            raise Exception(
-                "SweatStack Python login timed out after 30 seconds. Please try again."
-            ) from None
-
-        if hasattr(server, "code"):
-            try:
-                self.exchange_code_for_token(
-                    code=server.code,
-                    client_id=OAUTH2_CLIENT_ID,
-                    code_verifier=code_verifier,
-                    persist=persist,
-                )
-                print("SweatStack Python authentication successful.")
-            except Exception as e:
-                raise Exception("SweatStack Python authentication failed. Please try again.") from e
-        else:
-            raise Exception("SweatStack Python authentication failed. Please try again.")
-
-    def authenticate(self, force: bool = False, persist: bool = True) -> None:
-        """Ensure the client is authenticated.
-
-        Checks for existing tokens in order: instance, environment variables,
-        persistent storage. Opens browser for OAuth only if no tokens are found
-        or if force=True.
-
-        For headless environments, set SWEATSTACK_API_KEY and SWEATSTACK_REFRESH_TOKEN
-        environment variables instead of calling this method.
-
-        Args:
-            force: Re-authenticate even if tokens exist.
-            persist: Save new tokens to persistent storage (default: True).
-
-        Raises:
-            Exception: If the browser-based authentication fails.
-
-        Example:
-            client = Client()
-            client.authenticate()  # Opens browser only if needed
-
-            # Force fresh authentication
-            client.authenticate(force=True)
-
-            # Headless: use env vars, don't call authenticate()
-            # SWEATSTACK_API_KEY=... SWEATSTACK_REFRESH_TOKEN=... python script.py
-        """
-        if not force:
-            access_token, _ = self._load_token_pair()
-            if access_token is not None:
-                return
-
-        self._open_browser_oauth(persist=persist)
-
-
-class _DelegationMixin:
-    """User delegation methods for accessing data on behalf of other users."""
-
-    def _validate_user(self, user: str | UserSummary):
-        if isinstance(user, UserSummary):
-            return user.id
-        else:
-            return user
-
-    def _get_delegated_token(self, user: str | UserSummary, *, team_id: str | None = None):
-        user_id = self._validate_user(user)
-        body = {"sub": user_id}
-        if team_id is not None:
-            body["team_id"] = team_id
-        with self._http_client() as client:
-            response = client.post(
-                "/api/v1/oauth/delegated-token",
-                json=body,
-            )
-            self._raise_for_status(response)
-
-        return response.json()
-
-    def _is_user_id(self, user: str) -> bool:
-        """Check if a string is a valid user ID.
-
-        Supports both legacy 16-character IDs and 26-character ULIDs.
-
-        Args:
-            user: The string to check.
-
-        Returns:
-            bool: True if the string is a valid user ID format, False otherwise.
-        """
-        if not isinstance(user, str):
-            return False
-
-        return len(user) in (16, 26) and user.isalnum()
-
-    def _find_user_by_name(self, name: str, users: list) -> UserSummary:
-        """Find a user by name from a list of users.
-
-        Args:
-            name: The (partial) display name to search for.
-            users: The list of UserSummary objects to search.
-
-        Returns:
-            UserSummary: The matching user.
-
-        Raises:
-            ValueError: If no match or multiple matches found.
-        """
-        matches = [u for u in users if name in u.display_name.lower()]
-
-        if len(matches) == 0:
-            raise ValueError(f"User with name {name} not found")
-        elif len(matches) > 1:
-            raise ValueError(
-                f"Multiple users found with name {name}: {', '.join([u.display_name for u in matches])}"
-            )
-        return matches[0]
-
-    def _find_user_by_id(self, id: str, users: list) -> UserSummary:
-        """Find a user by ID from a list of users.
-
-        Args:
-            id: The user ID to search for.
-            users: The list of UserSummary objects to search.
-
-        Returns:
-            UserSummary: The matching user, or None if not found.
-        """
-        return next((u for u in users if u.id == id), None)
-
-    def _find_user(
-        self, user: str, users: list, search_mode: Literal["auto", "id", "name"] = "auto"
-    ) -> UserSummary:
-        """Find a user by ID or name from a list of users.
-
-        Args:
-            user: User ID or (part of) display name.
-            users: The list of UserSummary objects to search.
-            search_mode: "auto" (detect), "id", or "name".
-
-        Returns:
-            UserSummary: The matching user.
-        """
-        if search_mode == "auto":
-            if self._is_user_id(user):
-                return self._find_user_by_id(user, users)
-            else:
-                return self._find_user_by_name(user, users)
-        elif search_mode == "id":
-            return self._find_user_by_id(user, users)
-        elif search_mode == "name":
-            return self._find_user_by_name(user, users)
-
-    def get_user(
-        self, user: str, *, search_mode: Literal["auto", "id", "name"] = "auto"
-    ) -> UserSummary:
-        """Get a user by ID or name.
-        This method will always authenticate as the principal user.
-
-        Args:
-            user: User ID or (part of) display name.
-            search_mode: "auto" (detect), "id", or "name".
-
-        Returns:
-            UserSummary: The user object.
-
-        Raises:
-            ValueError: If no match or multiple matches found.
-        """
-        client = self.principal_client()
-        users = client.get_users()
-        return client._find_user(user, users, search_mode)
-
-    def switch_user(
-        self,
-        user: str | UserSummary,
-        *,
-        team_id: str | None = None,
-        search_mode: Literal["auto", "id", "name"] = "auto",
-    ):
-        """Switches the client to operate on behalf of another user.
-
-        This method changes the current client's authentication to act on behalf of the specified user.
-        The client will use a delegated token for all subsequent API calls.
-
-        Args:
-            user: Either a UserSummary object or a string representing the user id or (part of) the user name to switch to.
-
-            team_id: Optional team ID. When provided, delegates via team membership
-                instead of direct user permissions.
-
-            search_mode:
-                The mode to use when searching for the user.
-                - "auto": Automatically determine the search mode based on the type of user argument.
-                - "id": Search for the user by ID.
-                - "name": Search for the user by name.
-
-        Returns:
-            None
-
-        Raises:
-            SweatStackAuthError: If the principal token is unauthorized
-                to delegate to this user (or via this team).
-            SweatStackAPIError: If the delegation request fails for any
-                other reason.
-        """
-        self.switch_back()
-
-        if not isinstance(user, UserSummary):
-            user = self.get_user(user, search_mode=search_mode)
-
-        token_response = self._get_delegated_token(user, team_id=team_id)
-        self.api_key = token_response["access_token"]
-        self.refresh_token = token_response["refresh_token"]
-
-    def _get_principal_token(self):
-        with self._http_client() as client:
-            response = client.get(
-                "/api/v1/oauth/principal-token",
-            )
-            self._raise_for_status(response)
-        return response.json()
-
-    def switch_back(self):
-        """Switches the client back to the principal user.
-
-        This method reverts the client's authentication from a delegated user back to the principal user.
-        The client will use the principal token for all subsequent API calls.
-
-        Returns:
-            None
-
-        Raises:
-            SweatStackAuthError: If the current token cannot resolve a
-                principal (e.g. the session is itself a delegated one
-                that has expired).
-            SweatStackAPIError: If the principal token request fails for
-                any other reason.
-        """
-
-        token_response = self._get_principal_token()
-        self.api_key = token_response["access_token"]
-        self.refresh_token = token_response["refresh_token"]
-
-    def delegated_client(self, user: str | UserSummary, *, team_id: str | None = None):
-        """Creates a new client instance that operates on behalf of another user.
-
-        This method creates a new client instance with delegated authentication for the specified user.
-        Unlike `switch_user`, this method does not modify the current client but returns a new one.
-
-        Args:
-            user: Either a UserSummary object or a string user ID representing the user to delegate to.
-            team_id: Optional team ID. When provided, delegates via team membership
-                instead of direct user permissions.
-
-        Returns:
-            Client: A new client instance authenticated as the delegated user.
-
-        Raises:
-            SweatStackAuthError: If the principal token is unauthorized
-                to delegate to this user (or via this team).
-            SweatStackAPIError: If the delegation request fails for any
-                other reason.
-        """
-        token_response = self._get_delegated_token(user, team_id=team_id)
-        return self.__class__(
-            api_key=token_response["access_token"],
-            refresh_token=token_response["refresh_token"],
-            url=self.url,
-            streamlit_compatible=self.streamlit_compatible,
-            output=self.output,
-        )
-
-    def principal_client(self):
-        """Creates a new client instance that operates as the principal user.
-
-        This method creates a new client instance with authentication for the principal user.
-        Unlike `switch_back`, this method does not modify the current client but returns a new one.
-
-        Returns:
-            Client: A new client instance authenticated as the principal user.
-
-        Raises:
-            SweatStackAuthError: If the current token cannot resolve a
-                principal (e.g. the session is itself a delegated one
-                that has expired).
-            SweatStackAPIError: If the principal token request fails for
-                any other reason.
-        """
-        token_response = self._get_principal_token()
-        return self.__class__(
-            api_key=token_response["access_token"],
-            refresh_token=token_response["refresh_token"],
-            url=self.url,
-            streamlit_compatible=self.streamlit_compatible,
-            output=self.output,
-        )
-
-
-def _with_durations(params: dict, durations: Sequence[int] | str | None) -> dict:
-    """Add the mean-max ``durations`` query value: omitted, ``"all"``, or comma-separated seconds."""
-    if durations is None:
-        return params
-    if isinstance(durations, str):
-        return {**params, "durations": durations}
-    return {**params, "durations": ",".join(str(int(d)) for d in durations)}
-
-
-class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixin):
-    """SweatStack API client for accessing activities, traces, and user data.
-
-    The Client handles authentication, API requests, and data retrieval from SweatStack.
-    You can initialize it with credentials or use authenticate()/login() for OAuth2.
-
-    Example:
         client = Client()
-        client.authenticate()
-        activities = client.get_activities(limit=10)
+        client.authenticate()  # opens the browser only when no saved sign-in exists
+        latest = client.activities.latest()
+        data = client.activities.data(latest.id)
+        ```
     """
 
     output: FrameOutput | None = None
@@ -807,6 +202,63 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self.output = _frames.check_frame_output(output)
         self.client_id = client_id or OAUTH2_CLIENT_ID
 
+    def __getattr__(self, name: str) -> Any:
+        # Only reached when normal lookup fails: names a removed method's replacement.
+        raise _renames.attribute_error(f"{type(self).__name__!r} object", name, prefix="client")
+
+    # -------------------------------------------------------------------------
+    # Resources: one per URL segment after /api/v1/ (plan 009, R1)
+    # -------------------------------------------------------------------------
+
+    @cached_property
+    def activities(self) -> Activities:
+        """Activities, their time series and analyses: ``/api/v1/activities/...``."""
+        return Activities(self)
+
+    @cached_property
+    def traces(self) -> Traces:
+        """Traces (point measurements such as lactate): ``/api/v1/traces/...``."""
+        return Traces(self)
+
+    @cached_property
+    def tests(self) -> Tests:
+        """Tests (fitness assessments): ``/api/v1/tests/...``."""
+        return Tests(self)
+
+    @cached_property
+    def dailies(self) -> Dailies:
+        """Daily measures (body mass, HRV, ...): ``/api/v1/dailies/...``."""
+        return Dailies(self)
+
+    @cached_property
+    def profile(self) -> Profile:
+        """The user the client acts as: ``/api/v1/profile/...``."""
+        return Profile(self)
+
+    @cached_property
+    def users(self) -> Users:
+        """The users you can access, and managed users: ``/api/v1/users/...``."""
+        return Users(self)
+
+    @cached_property
+    def teams(self) -> Teams:
+        """Teams: ``/api/v1/teams/...``."""
+        return Teams(self)
+
+    @cached_property
+    def portal(self) -> Portal:
+        """The SweatStack Portal (beta): ``/api/v1/portal/...``."""
+        return Portal(self)
+
+    @cached_property
+    def oauth(self) -> OAuth:
+        """OAuth2 and OpenID Connect: ``/oauth/...`` and ``/api/v1/oauth/...``."""
+        return OAuth(self)
+
+    # -------------------------------------------------------------------------
+    # Credentials
+    # -------------------------------------------------------------------------
+
     def _load_token_pair(self) -> tuple[str | None, str | None]:
         """Load access and refresh tokens from available sources.
 
@@ -843,12 +295,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def _do_token_refresh(self, refresh_token: str) -> str:
         """Exchange refresh token for a new access token.
 
-        Args:
-            refresh_token: The refresh token to use.
-
-        Returns:
-            New access token string.
-
         Raises:
             SweatStackTokenRefreshError: If the refresh request fails.
         """
@@ -875,10 +321,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def _refresh_if_expired(self, access_token: str, refresh_token: str | None) -> str:
         """Check token expiry and refresh if needed.
 
-        Args:
-            access_token: The current access token (JWT).
-            refresh_token: The refresh token, if available.
-
         Returns:
             Valid access token (original if not expired, refreshed otherwise).
 
@@ -898,7 +340,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         if not is_expired:
             return access_token
 
-        # Token needs refresh
         if refresh_token is None:
             raise SweatStackTokenRefreshError(
                 "Access token expired but no refresh token available. "
@@ -906,14 +347,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             )
 
         new_access_token = self._do_token_refresh(refresh_token)
-
-        # Update instance state
         self._api_key = SecretStr(new_access_token)
-
-        # Persist refreshed token
         self._save_tokens(new_access_token, refresh_token)
         logger.debug("Refreshed and persisted access token")
-
         return new_access_token
 
     @property
@@ -979,20 +415,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         self._client_secret = _to_secret(value)
 
     @property
-    def jwt(self) -> SecretStr | None:
-        """Alias for api_key (backward compatibility)."""
-        return self.api_key
-
-    @jwt.setter
-    def jwt(self, value: str | SecretStr | None):
-        self.api_key = value
-
-    @property
     def url(self) -> str:
-        """
-        This determines which SweatStack URL to use, allowing the use of a non-default instance.
-        This is useful for example during local development.
-        Please note that changing the url probably requires changing the `OAUTH2_CLIENT_ID` as well.
+        """The SweatStack instance URL: the constructor's ``url``, else ``SWEATSTACK_URL``,
+        else production. A non-default instance usually needs its own ``client_id`` too.
         """
         if self._url is not None:
             return self._url
@@ -1003,36 +428,360 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         return DEFAULT_URL
 
     @url.setter
-    def url(self, value: str):
+    def url(self, value: str | None):
         self._url = value
+
+    # -------------------------------------------------------------------------
+    # Token storage
+    # -------------------------------------------------------------------------
+
+    def _get_token_file_path(self) -> Path:
+        """Get the path to the token storage file."""
+        return Path(user_data_dir("SweatStack", "SweatStack")) / "tokens.json"
+
+    def _save_tokens(self, access_token: str, refresh_token: str | None) -> None:
+        """Save tokens to the user data directory, readable by the user only."""
+        token_file = self._get_token_file_path()
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(token_file, "w") as f:
+            json.dump({"access_token": access_token, "refresh_token": refresh_token}, f, indent=2)
+        token_file.chmod(0o600)
+
+    def _load_persistent_tokens(self) -> tuple[str | None, str | None]:
+        """Load tokens from the user data directory."""
+        token_file = self._get_token_file_path()
+
+        if not token_file.exists():
+            return None, None
+
+        try:
+            with open(token_file) as f:
+                token_data = json.load(f)
+            return token_data.get("access_token"), token_data.get("refresh_token")
+        except (json.JSONDecodeError, FileNotFoundError, KeyError):
+            return None, None
+
+    # -------------------------------------------------------------------------
+    # Signing in
+    # -------------------------------------------------------------------------
+
+    def authenticate(self, force: bool = False, persist: bool = True) -> None:
+        """Signs the client in, opening the browser only when no saved credentials exist.
+
+        Looks for credentials in order: this client, the ``SWEATSTACK_API_KEY`` and
+        ``SWEATSTACK_REFRESH_TOKEN`` environment variables, then the tokens saved by an earlier
+        sign-in on this machine. Opens the browser for a SweatStack sign-in only when none are
+        found, or when ``force=True``.
+
+        In headless environments, set the environment variables instead of calling this.
+
+        Args:
+            force: Sign in again even if credentials exist.
+            persist: Save new tokens on this machine for later sessions.
+
+        Raises:
+            Exception: If the browser sign-in fails or times out.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            client.authenticate()            # opens the browser only if needed
+            client.authenticate(force=True)  # sign in again, e.g. as another user
+            ```
+        """
+        if not force:
+            access_token, _ = self._load_token_pair()
+            if access_token is not None:
+                return
+
+        self._open_browser_oauth(persist=persist)
+
+    def _open_browser_oauth(self, persist: bool = True) -> None:
+        """Sign in through the browser: PKCE, a local callback server, then the code exchange."""
+
+        class AuthHandler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass  # silence the default request logging
+
+            def do_GET(self):
+                params = parse_qs(urlparse(self.path).query)
+                self.server.code = params.get("code", [None])[0]  # ty: ignore[unresolved-attribute]  # stashed on the server for the caller
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(AUTH_SUCCESSFUL_RESPONSE.encode())
+                self.server.server_close()
+
+        code_verifier, code_challenge = self.oauth.generate_pkce_params()
+
+        while True:
+            port = random.randint(8000, 9000)
+            try:
+                server = HTTPServer(("localhost", port), AuthHandler)
+                break
+            except OSError:
+                continue
+
+        authorization_url = self.oauth.authorization_url(
+            client_id=OAUTH2_CLIENT_ID,
+            redirect_uri=f"http://localhost:{port}",
+            code_challenge=code_challenge,
+            scope="data:read data:write profile offline_access",
+            prompt=None,
+        )
+
+        webbrowser.open(authorization_url)
+
+        print(f"Waiting for authorization... (listening on port {port})")
+        print(f"If not redirected, open the following URL in your browser: {authorization_url}")
+        print("")
+
+        server.timeout = 30
+        try:
+            server.handle_request()
+        except TimeoutError:
+            raise Exception(
+                "SweatStack Python login timed out after 30 seconds. Please try again."
+            ) from None
+
+        code = getattr(server, "code", None)
+        if code is None:
+            raise Exception("SweatStack Python authentication failed. Please try again.")
+        try:
+            self.oauth.exchange_code(
+                code, client_id=OAUTH2_CLIENT_ID, code_verifier=code_verifier, persist=persist
+            )
+        except Exception as e:
+            raise Exception("SweatStack Python authentication failed. Please try again.") from e
+        print("SweatStack Python authentication successful.")
+
+    # -------------------------------------------------------------------------
+    # Acting as another user
+    # -------------------------------------------------------------------------
+
+    def delegated_client(self, user: str | UserSummary, *, team_id: str | None = None) -> Client:
+        """Returns a new client that acts as another user. This client is left unchanged.
+
+        Endpoint: ``POST /api/v1/oauth/delegated-token``
+
+        Args:
+            user: The user's ID, or a UserSummary from ``client.users.list()`` or
+                ``client.teams.users(team_id)``.
+            team_id: Delegate through this team's access instead of a direct share.
+
+        Returns:
+            Client: A client acting as ``user``, with this client's settings.
+
+        Raises:
+            SweatStackAuthError: If you have no access to this user (or not via this team).
+            SweatStackAPIError: If the API request fails for any other reason.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            coach = Client()
+            for athlete in coach.users.list(include_managed=False):
+                athlete_client = coach.delegated_client(athlete)
+                print(athlete.display_name, athlete_client.activities.latest())
+            ```
+        """
+        body: dict[str, Any] = {"sub": user.id if isinstance(user, UserSummary) else user}
+        if team_id is not None:
+            body["team_id"] = team_id
+        tokens = self._request("post", "/api/v1/oauth/delegated-token", json=body).json()
+        return self._with_tokens(tokens)
+
+    def principal_client(self) -> Client:
+        """Returns a new client that acts as the signed-in user, also from a delegated client.
+
+        Endpoint: ``GET /api/v1/oauth/principal-token``
+
+        Returns:
+            Client: A client acting as the principal user, with this client's settings.
+
+        Raises:
+            SweatStackAuthError: If the current token cannot resolve a principal (e.g. a
+                delegated session that has expired).
+            SweatStackAPIError: If the API request fails for any other reason.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            athlete_client = client.delegated_client("usr_carla")
+            coach_client = athlete_client.principal_client()
+            ```
+        """
+        tokens = self._request("get", "/api/v1/oauth/principal-token").json()
+        return self._with_tokens(tokens)
+
+    def _with_tokens(self, tokens: dict[str, Any]) -> Client:
+        """A new client with these tokens and this client's settings."""
+        return self.__class__(
+            api_key=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            url=self._url,
+            streamlit_compatible=self.streamlit_compatible,
+            client_id=self.client_id,
+            client_secret=self._client_secret,
+            output=self.output,
+        )
+
+    def whoami(self) -> UserSummary:
+        """Returns the user this client acts as.
+
+        Reads the user ID from the access token and finds it among ``client.users.list()``, so
+        it works on a principal and a delegated client alike and needs no ``profile`` scope
+        (unlike ``client.oauth.userinfo()``).
+
+        Returns:
+            UserSummary: The user this client acts as.
+
+        Raises:
+            ValueError: If the client is not signed in, or the user cannot be found.
+            SweatStackAPIError: If the API request fails.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            print(client.whoami().display_name)
+            ```
+        """
+        user_id = self._get_user_id_from_token()
+        for user in self.users.list():
+            if user.id == user_id:
+                return user
+        raise ValueError(f"User {user_id} is not among the users this client can access")
+
+    def _get_user_id_from_token(self) -> str:
+        """The ``sub`` claim of the access token."""
+        api_key = self.api_key
+        if not api_key:
+            raise ValueError("Not authenticated. Call client.authenticate() first.")
+        try:
+            user_id = decode_jwt_body(api_key.get_secret_value()).get("sub")
+        except Exception as e:
+            raise ValueError(f"Invalid authentication token: {e}") from e
+        if not user_id:
+            raise ValueError("Invalid authentication token: no user ID")
+        return user_id
+
+    # -------------------------------------------------------------------------
+    # Local cache
+    # -------------------------------------------------------------------------
+
+    def _cache_enabled(self) -> bool:
+        """Whether :func:`enable_cache` was called."""
+        return _cache_config is not None
+
+    def _log_cache_error(self, operation: str, error: Exception) -> None:
+        """Log cache operation errors with context."""
+        try:
+            cache_dir = str(self._get_cache_dir())
+        except Exception:
+            cache_dir = "unknown"
+        logger.warning(f"Failed to {operation} cache. Cache directory: {cache_dir}. Error: {error}")
+
+    def _get_cache_dir(self) -> Path:
+        """Get cache directory for current user."""
+        user_id = self._get_user_id_from_token()
+
+        if _cache_config and _cache_config.get("path"):
+            cache_dir = Path(_cache_config["path"]) / user_id
+        else:
+            cache_dir = Path(user_cache_dir("SweatStack", "SweatStack")) / user_id
+
+        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return cache_dir
+
+    def _generate_cache_key(self, namespace: str, **params) -> str:
+        """Generate a cache key for the given namespace and parameters."""
+        normalized_params = {}
+
+        for key, value in params.items():
+            if value is None:
+                continue
+            elif isinstance(value, list):
+                normalized_params[key] = sorted(
+                    [v.value if hasattr(v, "value") else str(v) for v in value]
+                )
+            elif hasattr(value, "value"):
+                normalized_params[key] = value.value
+            elif isinstance(value, (date, datetime)):
+                normalized_params[key] = value.isoformat()
+            else:
+                normalized_params[key] = str(value)
+
+        cache_data = f"{namespace}:{json.dumps(normalized_params, sort_keys=True)}"
+        return hashlib.sha256(cache_data.encode()).hexdigest()[:16]
+
+    def _read_cache(self, namespace: str, cache_key: str) -> bytes | None:
+        """Try to read cached data. Returns raw bytes or None."""
+        try:
+            cache_file = self._get_cache_dir() / f"{namespace}-{cache_key}.parquet"
+            if cache_file.exists():
+                return cache_file.read_bytes()
+        except Exception as e:
+            self._log_cache_error("read", e)
+        return None
+
+    def _write_cache(self, namespace: str, cache_key: str, content: bytes) -> None:
+        """Write raw bytes to cache."""
+        try:
+            (self._get_cache_dir() / f"{namespace}-{cache_key}.parquet").write_bytes(content)
+        except Exception as e:
+            self._log_cache_error("write", e)
+
+    def clear_cache(self) -> None:
+        """Deletes everything :func:`sweatstack.enable_cache` cached for the current user.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            client.clear_cache()
+            ```
+        """
+        try:
+            cache_dir = self._get_cache_dir()
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+        except Exception as e:
+            self._log_cache_error("clear", e)
+
+    # -------------------------------------------------------------------------
+    # Transport: the internal API the resources use
+    # -------------------------------------------------------------------------
 
     @contextlib.contextmanager
     def _http_client(self, skip_token_check: bool = False, *, auth: bool = True):
-        """
-        Creates an httpx client with the base URL and authentication headers pre-configured.
+        """An httpx client with the base URL and authentication headers set.
 
-        Transport-level errors (DNS, timeouts, connection refused) are caught and
-        re-raised as SweatStackConnectionError so consumers never see raw httpx types.
+        Transport-level errors (DNS, timeouts, connection refused) are re-raised as
+        SweatStackConnectionError so consumers never see raw httpx types.
 
         Args:
-            skip_token_check: If True, uses the raw _api_key without triggering token expiry check.
-                              This prevents recursive token refresh attempts.
-            auth: If False, sends no Authorization header and never loads or refreshes a
-                  token. For server-to-server endpoints that authenticate with the app's
-                  own credentials in the body (Portal sessions), so a user's bearer is
-                  never sent where it is not needed.
+            skip_token_check: Use the raw token without the expiry check (used during
+                refresh, to avoid recursion).
+            auth: If False, send no Authorization header and never load or refresh a token.
+                For endpoints that authenticate with the app's own credentials in the body
+                (Portal sessions, the token exchange), so a user's bearer is never sent where
+                it is not needed.
         """
-        headers = {
-            "User-Agent": f"python-sweatstack/{__version__}",
-        }
+        headers = {"User-Agent": f"python-sweatstack/{__version__}"}
         if not auth:
             token = None
         elif skip_token_check:
-            # Use raw token without triggering expiry check (used during refresh)
             token = self._api_key
         else:
-            # Normal path: may trigger token refresh
-            token = self.api_key
+            token = self.api_key  # may refresh
 
         if token:
             headers["Authorization"] = f"Bearer {token.get_secret_value()}"
@@ -1043,19 +792,34 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         except httpx.HTTPError as exc:
             raise SweatStackConnectionError(str(exc)) from exc
 
+    def _request(
+        self,
+        method: Literal["get", "post", "put", "delete"],
+        path: str,
+        *,
+        auth: bool = True,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Send one request and raise the typed exception for an error status.
+
+        Every resource method that makes a single request goes through here.
+        """
+        with self._http_client(auth=auth) as http:
+            response = getattr(http, method)(url=path, **kwargs)
+        self._raise_for_status(response)
+        return response
+
     def _raise_for_status(self, response: httpx.Response) -> None:
         if response.is_success:
             return
 
         status = response.status_code
-        body = self._parse_error_body(response)
-        request_id = response.headers.get("x-request-id")
-        common = dict(
+        common: dict[str, Any] = dict(
             status_code=status,
             url=str(response.request.url),
             method=response.request.method,
-            request_id=request_id,
-            body=body,
+            request_id=response.headers.get("x-request-id"),
+            body=self._parse_error_body(response),
         )
 
         if status in (401, 403):
@@ -1079,7 +843,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             text = response.text
             return text if text else None
 
-    def _enums_to_strings(self, values: list[Enum | str]) -> list[str]:
+    def _enums_to_strings(self, values: list[Any]) -> list[str]:
         out = []
         for value in values:
             if isinstance(value, Sport):
@@ -1094,10 +858,8 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     def _require_aware(value: datetime, param: str) -> datetime:
         """Guard a write timestamp: it must carry an explicit UTC offset.
 
-        The API stores each timestamp as an absolute instant paired with its
-        local offset, so it rejects naive datetimes with HTTP 422. Failing fast
-        here names the offending argument and shows how to fix it, which the raw
-        server error does not.
+        The API stores each timestamp as an absolute instant paired with its local offset,
+        so it rejects naive datetimes with HTTP 422. Failing fast names the argument.
 
         Raises:
             ValueError: If ``value`` is timezone-naive.
@@ -1109,51 +871,6 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                 f"or datetime.now(timezone.utc)."
             )
         return value
-
-    def _get_activities_generator(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> Generator[ActivitySummary, None, None]:
-        num_returned = 0
-        default_limit = 100
-        params = {
-            "limit": default_limit,
-            "offset": offset,
-        }
-        if start is not None:
-            params["start"] = start.isoformat()
-        if end is not None:
-            params["end"] = end.isoformat()
-        if sports is not None:
-            params["sport"] = self._enums_to_strings(sports)
-        if tags is not None:
-            params["tags"] = tags
-
-        with self._http_client() as client:
-            while True:
-                response = client.get(
-                    url="/api/v1/activities/",
-                    params=params,
-                )
-                self._raise_for_status(response)
-                activities = response.json()
-                for activity in activities:
-                    yield ActivitySummary.model_validate(activity)
-
-                    num_returned += 1
-                    if num_returned >= limit:
-                        return
-                if len(activities) < default_limit:
-                    return
-
-                params["limit"] = min(default_limit, limit - num_returned)
-                params["offset"] += default_limit
 
     def _read_frame(self, content: bytes, output: str | None) -> Any:
         """Every parquet response becomes a frame through here."""
@@ -1195,2410 +912,27 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             df = make_dataframe_streamlit_compatible(df)
         return df
 
-    @overload
-    def get_activities(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["models"] | None = None,
-    ) -> list[ActivitySummary]: ...
 
-    @overload
-    def get_activities(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_activities(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_activities(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    def get_activities(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: ListOutput | None = None,
-    ) -> list[ActivitySummary] | pd.DataFrame | pl.DataFrame | pa.Table:
-        """Gets a list of activities based on specified filters.
-
-        Args:
-            start: Optional start date to filter activities.
-            end: Optional end date to filter activities.
-            sports: Optional list of sports to filter activities by. Can be Sport objects or string IDs.
-            tags: Optional list of tags to filter activities by.
-            limit: Maximum number of activities to return. Defaults to 100.
-            offset: Number of activities to skip. Defaults to 0.
-            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
-                client-level default for this call.
-
-        Returns:
-            A list of ActivitySummary objects, or a frame with one row per record.
-            Nested fields are flattened to dotted columns in pandas and typed
-            structs in Polars and Arrow.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        activities = list(
-            self._get_activities_generator(
-                start=start,
-                end=end,
-                sports=sports,
-                tags=tags,
-                limit=limit,
-                offset=offset,
-            )
-        )
-        return self._frame_from_models(
-            activities, ActivitySummary, output, flatten=("summary", "laps", "traces")
-        )
-
-    def get_latest_activity(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sport: Sport | None = None,
-        tag: str | None = None,
-    ) -> ActivityDetails:
-        """Gets the most recent activity based on specified filters.
-
-        Args:
-            start: Optional start date to filter activities.
-            end: Optional end date to filter activities.
-            sport: Optional sport to filter activities by. Can be a Sport object or string ID.
-            tag: Optional tag to filter activities by.
-
-        Returns:
-            ActivityDetails: The most recent activity matching the filters.
-
-        Raises:
-            StopIteration: If no activities match the filters.
-            SweatStackAPIError: If the API request fails.
-        """
-        return next(
-            self._get_activities_generator(
-                start=start,
-                end=end,
-                sports=[sport] if sport is not None else None,
-                tags=[tag] if tag is not None else None,
-                limit=1,
-            )
-        )
-
-    def get_activity(self, activity_id: str) -> ActivityDetails:
-        """Gets details for a specific activity by ID.
-
-        Args:
-            activity_id: The unique identifier of the activity to retrieve.
-
-        Returns:
-            ActivityDetails: The activity details object containing all information about the activity.
-
-        Raises:
-            SweatStackNotFoundError: If the activity does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        with self._http_client() as client:
-            response = client.get(url=f"/api/v1/activities/{activity_id}")
-            self._raise_for_status(response)
-            return ActivityDetails.model_validate(response.json())
-
-    @overload
-    def get_activity_data(
-        self,
-        activity_id: str,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_activity_data(
-        self,
-        activity_id: str,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_activity_data(
-        self,
-        activity_id: str,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_activity_data(
-        self,
-        activity_id: str,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_activity_data(
-        self,
-        activity_id: str,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_activity_data(
-        self,
-        activity_id: str,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the raw data for a specific activity.
-
-        This method retrieves the time-series data for a given activity, with optional AISC
-        (Adaptive Intensity Segmentation Codec) downsampling to reduce data points for visualization.
-
-        Args:
-            activity_id: The unique identifier of the activity.
-            segmentation_on: Downsample with AISC (Adaptive Intensity Segmentation Codec), keyed on
-                either "power" or "speed" data. If None, no AISC is applied.
-            metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``) containing the activity's time-series data, one row per sample; ``timestamp`` is a column.
-
-        Raises:
-            SweatStackNotFoundError: If the activity does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        params = {}
-        if segmentation_on is not None:
-            params["segmentation_on"] = segmentation_on
-        if metrics is not None:
-            params["metrics"] = self._enums_to_strings(metrics)
-
-        with self._http_client() as client:
-            response = client.get(
-                url=f"/api/v1/activities/{activity_id}/data",
-                params=params,
-            )
-            self._raise_for_status(response)
-
-        return self._read_frame(response.content, output)
-
-    @overload
-    def get_activity_mean_max(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_activity_mean_max(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_activity_mean_max(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_activity_mean_max(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_activity_mean_max(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_activity_mean_max(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the mean-max data for a specific activity.
-
-        This method retrieves the mean-max curve data for a given activity, which represents
-        the maximum average value of a metric (power or speed) for different time durations.
-
-        Args:
-            activity_id: The unique identifier of the activity.
-            metric: The metric to calculate mean-max values for, either "power" or "speed".
-            durations: The durations to return, in seconds. ``None`` (default) for 19 durations from
-                1 s to 6 h, ``"all"`` for the full grid (1 s steps to 3 min, then 5, 10, 30 and 60 s
-                steps), or a list of seconds. Durations the activity did not last are left out.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``), one row per duration: ``duration``, the metric (power in W or
-            speed in m/s) and ``start`` (UTC timestamp at which that best effort began). The curve
-            is returned as it is and can rise again at longer durations (intermittent efforts).
-
-        Raises:
-            SweatStackNotFoundError: If the activity does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        metric = self._enums_to_strings([metric])[0]
-        with self._http_client() as client:
-            response = client.get(
-                url=f"/api/v1/activities/{activity_id}/mean-max",
-                params=_with_durations({"metric": metric}, durations),
-            )
-            self._raise_for_status(response)
-            return self._read_frame(response.content, output)
-
-    @overload
-    def get_activity_awd(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        *,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_activity_awd(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        *,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_activity_awd(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        *,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_activity_awd(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        *,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_activity_awd(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        *,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_activity_awd(
-        self,
-        activity_id: str,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
-        *,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the accumulated work duration (AWD) for a specific activity.
-
-        This method retrieves accumulated work duration metrics for a specific activity.
-        AWD represents the total duration spent at each intensity level by sorting
-        activity data by intensity.
-
-        Args:
-            activity_id: The unique identifier of the activity.
-            metric: Optional metric type. Defaults to power for cycling, speed for other sports.
-                Can be either "power" or "speed".
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``) containing the AWD curve; the metric value and ``duration`` are columns.
-
-        Raises:
-            SweatStackNotFoundError: If the activity does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        params = {}
-        if metric is not None:
-            params["metric"] = self._enums_to_strings([metric])[0]
-
-        with self._http_client() as client:
-            response = client.get(
-                url=f"/api/v1/activities/{activity_id}/accumulated-work-duration",
-                params=params,
-            )
-            self._raise_for_status(response)
-            return self._read_frame(response.content, output)
-
-    @overload
-    def get_latest_activity_data(
-        self,
-        sport: Sport | str | None = None,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_latest_activity_data(
-        self,
-        sport: Sport | str | None = None,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_latest_activity_data(
-        self,
-        sport: Sport | str | None = None,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_latest_activity_data(
-        self,
-        sport: Sport | str | None = None,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_latest_activity_data(
-        self,
-        sport: Sport | str | None = None,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_latest_activity_data(
-        self,
-        sport: Sport | str | None = None,
-        segmentation_on: Literal["power", "speed"] | None = None,
-        metrics: list[Metric | str] | None = None,
-        *,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the data for the latest activity of a specific sport.
-
-        This method retrieves the time series data for the most recent activity of the specified sport.
-        If no sport is specified, it returns data for the latest activity regardless of sport.
-
-        Args:
-            sport: Optional sport to filter by. Can be a Sport enum or string.
-            segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
-                Can be either "power" or "speed". Defaults to None.
-            metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``) containing the activity's time-series data, one row per sample; ``timestamp`` is a column.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_data(activity.id, segmentation_on, metrics=metrics, output=output)
-
-    @overload
-    def get_latest_activity_mean_max(
-        self,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        sport: Sport | str | None = None,
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_latest_activity_mean_max(
-        self,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        sport: Sport | str | None = None,
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_latest_activity_mean_max(
-        self,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        sport: Sport | str | None = None,
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_latest_activity_mean_max(
-        self,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        sport: Sport | str | None = None,
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_latest_activity_mean_max(
-        self,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        sport: Sport | str | None = None,
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_latest_activity_mean_max(
-        self,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        sport: Sport | str | None = None,
-        *,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the mean-max curve for the latest activity of a specific sport.
-
-        This method retrieves the mean-max curve data for the most recent activity of the specified sport.
-        If no sport is specified, it returns data for the latest activity regardless of sport.
-
-        Args:
-            metric: The metric to calculate the mean-max curve for. Can be either "power" or "speed".
-            sport: Optional sport to filter by. Can be a Sport enum or string.
-            durations: As for :meth:`get_activity_mean_max`.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``), one row per duration: ``duration``, the metric (power in W or
-            speed in m/s) and ``start`` (UTC timestamp at which that best effort began). The curve
-            is returned as it is and can rise again at longer durations (intermittent efforts).
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        activity = self.get_latest_activity(sport=sport)
-        return self.get_activity_mean_max(activity.id, metric, durations=durations, output=output)
-
-    @overload
-    def get_longitudinal_data(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        start: date | str,
-        end: date | str | None = None,
-        metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed]
-        | Literal["power", "speed"]
-        | None = None,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_longitudinal_data(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        start: date | str,
-        end: date | str | None = None,
-        metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed]
-        | Literal["power", "speed"]
-        | None = None,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_longitudinal_data(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        start: date | str,
-        end: date | str | None = None,
-        metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed]
-        | Literal["power", "speed"]
-        | None = None,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_longitudinal_data(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        start: date | str,
-        end: date | str | None = None,
-        metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed]
-        | Literal["power", "speed"]
-        | None = None,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_longitudinal_data(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        start: date | str,
-        end: date | str | None = None,
-        metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed]
-        | Literal["power", "speed"]
-        | None = None,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_longitudinal_data(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        start: date | str,
-        end: date | str | None = None,
-        metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed]
-        | Literal["power", "speed"]
-        | None = None,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets longitudinal data for activities within a specified date range.
-
-        This method retrieves aggregated data for activities that match the specified criteria,
-        including sport type and date range. The data is returned as a pandas DataFrame.
-
-        Args:
-            sports: Optional list of sports to filter by. Can be a list of Sport enums or strings.
-            sport: Deprecated. Use ``sports`` instead.
-            start: The start date for the data range. Can be a date object or string in ISO format.
-            end: Optional end date for the data range. Can be a date object or string in ISO format.
-            metrics: Optional list of metrics to include in the results. Can be a list of Metric enums or strings.
-            segmentation_on: Metric to downsample on with AISC (Adaptive Intensity Segmentation Codec); omit to disable.
-                Can be either "power" or "speed". Defaults to None.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``) containing the concatenated time series, one row per sample, with ``timestamp``,
-            ``activity_id`` and ``sport`` columns.
-
-        Raises:
-            ValueError: If both 'sport' and 'sports' parameters are provided.
-            SweatStackAPIError: If the API request fails.
-        """
-        if sport is not None and sports is not None:
-            raise ValueError("Cannot specify both 'sport' and 'sports'.")
-        if sport is not None:
-            warnings.warn(
-                "'sport' is deprecated, use 'sports' instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            sports = [sport]
-        resolved = sports if sports is not None else []
-
-        params = {"sport": self._enums_to_strings(resolved), "start": start}
-        if end is not None:
-            params["end"] = end
-        if metrics is not None:
-            params["metrics"] = self._enums_to_strings(metrics)
-        if segmentation_on is not None:
-            params["segmentation_on"] = self._enums_to_strings([segmentation_on])[0]
-
-        if self._cache_enabled():
-            cache_key = self._generate_cache_key("longitudinal_data", **params)
-            cached = self._read_cache("longitudinal_data", cache_key)
-            if cached is not None:
-                return self._read_frame(cached, output)
-
-        with self._http_client() as client:
-            response = client.get(
-                url="/api/v1/activities/longitudinal-data",
-                params=params,
-            )
-            self._raise_for_status(response)
-
-            if self._cache_enabled():
-                self._write_cache("longitudinal_data", cache_key, response.content)
-
-        return self._read_frame(response.content, output)
-
-    @overload
-    def get_longitudinal_mean_max(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        after: list[float] | float | None = None,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_longitudinal_mean_max(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        after: list[float] | float | None = None,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_longitudinal_mean_max(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        after: list[float] | float | None = None,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_longitudinal_mean_max(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        after: list[float] | float | None = None,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_longitudinal_mean_max(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        after: list[float] | float | None = None,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_longitudinal_mean_max(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        after: list[float] | float | None = None,
-        durations: Sequence[int] | Literal["all"] | None = None,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the mean-max curve for one or more sports and a metric.
-
-        Args:
-            sports: List of sports to get mean-max data for. Can be Sport enums or strings.
-            sport: Deprecated. Use ``sports`` instead.
-            metric: The metric to calculate mean-max for. Must be either "power" or "speed".
-            start: Start of the date range.
-            end: End of the date range (defaults to today).
-            date: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
-            window_days: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
-            after: One or more fatigue states. For each value, the mean-max is computed
-                over the portion of each ride after that much accumulated work (kJ, for
-                ``power``) or distance (metres, for ``speed``; experimental), then
-                enveloped across rides. The returned DataFrame then has an ``after``
-                column (one curve per value). Max 5 values; the date range is capped at
-                1 year when ``after`` is used.
-            durations: The durations to return, in seconds. ``None`` (default) for 19 durations from
-                1 s to 6 h, ``"all"`` for the full grid (1 s steps to 3 min, then 5, 10, 30 and 60 s
-                steps), or a list of seconds. Durations no activity lasted are left out.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``), one row per duration: ``duration``, the metric (power in W or
-            speed in m/s), ``start`` (UTC timestamp at which that best effort began), and the
-            ``activity_id`` and ``sport`` that set it. With ``after``, an ``after`` column
-            distinguishes the fatigue states. The curve is returned as it is and can rise again at
-            longer durations (intermittent efforts).
-
-        Raises:
-            ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
-            SweatStackAPIError: If the API request fails.
-        """
-        if sport is not None and sports is not None:
-            raise ValueError("Cannot specify both 'sport' and 'sports'.")
-        if sport is not None:
-            warnings.warn(
-                "'sport' is deprecated, use 'sports' instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            sports = [sport]
-        if sports is None:
-            raise ValueError("'sports' is required.")
-        metric = self._enums_to_strings([metric])[0]
-
-        params = _with_durations(
-            {
-                "sport": self._enums_to_strings(sports),
-                "metric": metric,
-            },
-            durations,
-        )
-        if start is not None:
-            params["start"] = start
-            if end is not None:
-                params["end"] = end
-        else:
-            if date is not None or window_days is not None:
-                warnings.warn(
-                    "'date' and 'window_days' are deprecated, use 'start' and 'end' instead",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            if date is not None:
-                params["date"] = date
-            if window_days is not None:
-                params["window_days"] = window_days
-        if after is not None:
-            params["after"] = [after] if isinstance(after, (int, float)) else after
-
-        if self._cache_enabled():
-            cache_key = self._generate_cache_key("mean_max", **params)
-            cached = self._read_cache("mean_max", cache_key)
-            if cached is not None:
-                return self._read_frame(cached, output)
-
-        with self._http_client() as client:
-            response = client.get(
-                url="/api/v1/activities/longitudinal-mean-max",
-                params=params,
-            )
-            self._raise_for_status(response)
-
-            if self._cache_enabled():
-                self._write_cache("mean_max", cache_key, response.content)
-
-            return self._read_frame(response.content, output)
-
-    @overload
-    def get_longitudinal_awd(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        output: None = None,
-    ) -> pd.DataFrame | pl.DataFrame: ...
-
-    @overload
-    def get_longitudinal_awd(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_longitudinal_awd(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_longitudinal_awd(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    @overload
-    def get_longitudinal_awd(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        output: Literal["bytes"],
-    ) -> bytes: ...
-
-    def get_longitudinal_awd(
-        self,
-        *,
-        sports: list[Sport | str] | None = None,
-        sport: Sport | str | None = None,
-        metric: Literal[Metric.power, Metric.speed] | Literal["power", "speed"],
-        start: date | str | None = None,
-        end: date | str | None = None,
-        date: date | str | None = None,
-        window_days: int | None = None,
-        output: FrameOutput | None = None,
-    ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
-        """Gets the longitudinal accumulated work duration (AWD) for one or more sports.
-
-        This method retrieves AWD values across four intensity levels: max (highest daily AWD),
-        hard, medium, and easy (sustainable durations for respective workout intensities).
-
-        Note: This endpoint is in development and subject to change.
-
-        Args:
-            sports: List of sports to get AWD data for. Can be Sport enums or strings.
-            sport: Deprecated. Use ``sports`` instead.
-            metric: The metric to calculate AWD for. Must be either "power" or "speed".
-            start: Start of the date range.
-            end: End of the date range (defaults to today).
-            date: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
-            window_days: Deprecated since 0.70.0. Use ``start`` and ``end`` instead.
-            output: ``"pandas"``, ``"polars"``, ``"arrow"`` or ``"bytes"`` (the raw parquet
-                response). Defaults to the installed frame library, Polars if both are.
-                Overrides the client-level default for this call.
-
-        Returns:
-            A frame (per ``output``) containing the longitudinal AWD data with intensity levels.
-
-        Raises:
-            ValueError: If both ``sport`` and ``sports`` are provided, or neither is provided.
-            SweatStackAPIError: If the API request fails.
-        """
-        if sport is not None and sports is not None:
-            raise ValueError("Cannot specify both 'sport' and 'sports'.")
-        if sport is not None:
-            warnings.warn(
-                "'sport' is deprecated, use 'sports' instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            sports = [sport]
-        if sports is None:
-            raise ValueError("'sports' is required.")
-        metric = self._enums_to_strings([metric])[0]
-
-        params = {
-            "sport": self._enums_to_strings(sports),
-            "metric": metric,
-        }
-        if start is not None:
-            params["start"] = start
-            if end is not None:
-                params["end"] = end
-        else:
-            if date is not None or window_days is not None:
-                warnings.warn(
-                    "'date' and 'window_days' are deprecated, use 'start' and 'end' instead",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            if date is not None:
-                params["date"] = date
-            if window_days is not None:
-                params["window_days"] = window_days
-
-        with self._http_client() as client:
-            response = client.get(
-                url="/api/v1/activities/longitudinal-accumulated-work-duration",
-                params=params,
-            )
-            self._raise_for_status(response)
-            return self._read_frame(response.content, output)
-
-    def _get_traces_generator(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> Generator[TraceDetails, None, None]:
-        num_returned = 0
-        default_limit = 100
-        params = {
-            "limit": default_limit,
-            "offset": offset,
-        }
-        if start is not None:
-            params["start"] = start.isoformat()
-        if end is not None:
-            params["end"] = end.isoformat()
-        if sports is not None:
-            params["sport"] = self._enums_to_strings(sports)
-        if tags is not None:
-            params["tags"] = tags
-
-        with self._http_client() as client:
-            while True:
-                response = client.get(
-                    url="/api/v1/traces/",
-                    params=params,
-                )
-                self._raise_for_status(response)
-                traces = response.json()
-                for trace in traces:
-                    yield TraceDetails.model_validate(trace)
-
-                    num_returned += 1
-                    if num_returned >= limit:
-                        return
-                if len(traces) < default_limit:
-                    return
-
-                params["limit"] = min(default_limit, limit - num_returned)
-                params["offset"] += default_limit
-
-    @overload
-    def get_traces(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["models"] | None = None,
-    ) -> list[TraceDetails]: ...
-
-    @overload
-    def get_traces(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_traces(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_traces(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    def get_traces(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        limit: int = 100,
-        offset: int = 0,
-        output: ListOutput | None = None,
-    ) -> list[TraceDetails] | pd.DataFrame | pl.DataFrame | pa.Table:
-        """Gets a list of traces based on specified filters.
-
-        Args:
-            start: Optional start date to filter traces.
-            end: Optional end date to filter traces.
-            sports: Optional list of sports to filter traces by. Can be Sport objects or string IDs.
-            tags: Optional list of tags to filter traces by.
-            limit: Maximum number of traces to return. Defaults to 100.
-            offset: Number of traces to skip. Defaults to 0.
-            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
-                client-level default for this call.
-
-        Returns:
-            A list of TraceDetails objects, or a frame with one row per record.
-            Nested fields are flattened to dotted columns in pandas and typed
-            structs in Polars and Arrow.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        traces = list(
-            self._get_traces_generator(
-                start=start,
-                end=end,
-                sports=sports,
-                tags=tags,
-                limit=limit,
-                offset=offset,
-            )
-        )
-        return self._frame_from_models(traces, TraceDetails, output, flatten=("activity", "lap"))
-
-    def create_trace(
-        self,
-        *,
-        timestamp: datetime,
-        lactate: float | None = None,
-        rpe: int | None = None,
-        notes: str | None = None,
-        power: int | None = None,
-        speed: float | None = None,
-        heart_rate: int | None = None,
-        tags: list[str] | None = None,
-        sport: Sport | str | None = None,
-        test_id: str | None = None,
-    ) -> TraceDetails:
-        """Creates a new trace with the specified parameters.
-
-        This method creates a new trace entry with the given timestamp and optional
-        measurement values.
-
-        Args:
-            timestamp: The date and time when the trace was recorded. Must be
-                timezone-aware; the offset is stored alongside the instant.
-            lactate: Optional blood lactate concentration in mmol/L.
-            rpe: Optional rating of perceived exertion (typically on a scale of 1-10).
-            notes: Optional text notes associated with this trace.
-            power: Optional power measurement in watts.
-            speed: Optional speed measurement in meters per second.
-            heart_rate: Optional heart rate measurement in beats per minute.
-            tags: Optional list of tags to associate with this trace.
-            sport: Optional sport to associate with this trace.
-            test_id: Optional ID of a test to explicitly link this trace to.
-                The link is independent of timestamp: a linked trace appears
-                in the test's traces list regardless of whether its timestamp
-                falls inside the test window.
-
-        Returns:
-            TraceDetails: The created trace object with all details.
-
-        Raises:
-            ValueError: If ``timestamp`` is timezone-naive.
-            SweatStackNotFoundError: If ``test_id`` references a test that
-                does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        self._require_aware(timestamp, "timestamp")
-        sport = self._enums_to_strings([sport])[0] if sport else None
-        with self._http_client() as client:
-            response = client.post(
-                url="/api/v1/traces/",
-                json={
-                    "timestamp": timestamp.isoformat(),
-                    "lactate": lactate,
-                    "rpe": rpe,
-                    "notes": notes,
-                    "power": power,
-                    "speed": speed,
-                    "heart_rate": heart_rate,
-                    "tags": tags,
-                    "sport": sport,
-                    "test_id": test_id,
-                },
-            )
-            self._raise_for_status(response)
-            return TraceDetails.model_validate(response.json())
-
-    def update_trace(
-        self,
-        trace_id: str,
-        *,
-        timestamp: datetime,
-        lactate: float | None = None,
-        rpe: int | None = None,
-        notes: str | None = None,
-        power: int | None = None,
-        speed: float | None = None,
-        heart_rate: int | None = None,
-        tags: list[str] | None = None,
-        sport: Sport | str | None = None,
-        test_id: str | None = None,
-    ) -> None:
-        """Updates a trace by replacing all fields.
-
-        This is a full replace operation. Fields not provided will be set to null
-        server-side. To modify a single field, first fetch the trace with
-        ``get_traces()``, then pass all fields back.
-
-        In particular: if the trace was previously linked to a test via
-        ``test_id`` and you do not pass ``test_id`` here, the link is cleared.
-        Pass the existing ``test_id`` back in to preserve it.
-
-        Args:
-            trace_id: The unique identifier of the trace to update.
-            timestamp: The date and time when the trace was recorded. Must be
-                timezone-aware; the offset is stored alongside the instant.
-            lactate: Optional blood lactate concentration in mmol/L.
-            rpe: Optional rating of perceived exertion (typically on a scale of 1-10).
-            notes: Optional text notes associated with this trace.
-            power: Optional power measurement in watts.
-            speed: Optional speed measurement in meters per second.
-            heart_rate: Optional heart rate measurement in beats per minute.
-            tags: Optional list of tags to associate with this trace.
-            sport: Optional sport to associate with this trace.
-            test_id: Optional ID of a test to explicitly link this trace to.
-                Pass ``None`` (or omit) to leave the trace unlinked.
-
-        Raises:
-            ValueError: If ``timestamp`` is timezone-naive.
-            SweatStackNotFoundError: If ``trace_id`` does not exist, or if
-                ``test_id`` references a test that does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        self._require_aware(timestamp, "timestamp")
-        sport = self._enums_to_strings([sport])[0] if sport else None
-        with self._http_client() as client:
-            response = client.put(
-                url=f"/api/v1/traces/{trace_id}",
-                json={
-                    "timestamp": timestamp.isoformat(),
-                    "lactate": lactate,
-                    "rpe": rpe,
-                    "notes": notes,
-                    "power": power,
-                    "speed": speed,
-                    "heart_rate": heart_rate,
-                    "tags": tags,
-                    "sport": sport,
-                    "test_id": test_id,
-                },
-            )
-            self._raise_for_status(response)
-
-    def delete_trace(self, trace_id: str) -> None:
-        """Deletes a trace.
-
-        Args:
-            trace_id: The unique identifier of the trace to delete.
-
-        Raises:
-            SweatStackNotFoundError: If the trace does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        with self._http_client() as client:
-            response = client.delete(url=f"/api/v1/traces/{trace_id}")
-            self._raise_for_status(response)
-
-    # -------------------------------------------------------------------------
-    # Tests
-    # -------------------------------------------------------------------------
-
-    def _get_tests_generator(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        created_by: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> Generator[TestSummary, None, None]:
-        num_returned = 0
-        default_limit = 50
-        params = {
-            "limit": default_limit,
-            "offset": offset,
-        }
-        if start is not None:
-            params["start"] = start.isoformat()
-        if end is not None:
-            params["end"] = end.isoformat()
-        if sports is not None:
-            params["sport"] = self._enums_to_strings(sports)
-        if tags is not None:
-            params["tags"] = tags
-        if created_by is not None:
-            params["created_by"] = created_by
-
-        with self._http_client() as client:
-            while True:
-                response = client.get(
-                    url="/api/v1/tests/",
-                    params=params,
-                )
-                self._raise_for_status(response)
-                tests = response.json()
-                for test in tests:
-                    yield TestSummary.model_validate(test)
-
-                    num_returned += 1
-                    if num_returned >= limit:
-                        return
-                if len(tests) < default_limit:
-                    return
-
-                params["limit"] = min(default_limit, limit - num_returned)
-                params["offset"] += default_limit
-
-    @overload
-    def get_tests(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        created_by: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output: Literal["models"] | None = None,
-    ) -> list[TestSummary]: ...
-
-    @overload
-    def get_tests(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        created_by: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_tests(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        created_by: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_tests(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        created_by: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    def get_tests(
-        self,
-        *,
-        start: date | None = None,
-        end: date | None = None,
-        sports: list[Sport | str] | None = None,
-        tags: list[str] | None = None,
-        created_by: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output: ListOutput | None = None,
-    ) -> list[TestSummary] | pd.DataFrame | pl.DataFrame | pa.Table:
-        """Gets a list of tests based on specified filters.
-
-        Args:
-            start: Optional start date to filter tests.
-            end: Optional end date to filter tests.
-            sports: Optional list of sports to filter tests by. Can be Sport objects or string IDs.
-            tags: Optional list of tags to filter tests by.
-            created_by: Optional app ID to filter tests by creator.
-            limit: Maximum number of tests to return. Defaults to 50.
-            offset: Number of tests to skip. Defaults to 0.
-            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
-                client-level default for this call.
-
-        Returns:
-            A list of TestSummary objects, or a frame with one row per record.
-            Nested fields are flattened to dotted columns in pandas and typed
-            structs in Polars and Arrow.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        tests = list(
-            self._get_tests_generator(
-                start=start,
-                end=end,
-                sports=sports,
-                tags=tags,
-                created_by=created_by,
-                limit=limit,
-                offset=offset,
-            )
-        )
-        return self._frame_from_models(tests, TestSummary, output, flatten=("results",))
-
-    def get_test(
-        self,
-        test_id: str,
-        *,
-        trace_resolution: TraceResolution | str = TraceResolution.auto,
-    ) -> TestDetails:
-        """Gets details for a specific test by ID.
-
-        Args:
-            test_id: The unique identifier of the test to retrieve.
-            trace_resolution: How traces are matched to this test. Affects only
-                the ``traces`` list on the response; ``activities`` is always
-                time-overlap matched. Accepts a ``TraceResolution`` enum or
-                its string value (``"auto"`` or ``"linked"``).
-
-                - ``"auto"`` (default): traces whose timestamp falls in the
-                  test's time range, plus any traces explicitly linked to
-                  this test, minus any traces explicitly linked to a
-                  different test.
-                - ``"linked"``: only traces explicitly linked to this test
-                  via ``test_id``, regardless of timestamp.
-
-                Maps to the ``traces`` query parameter on the wire.
-
-        Returns:
-            TestDetails: The test details including resolved traces and overlapping activities.
-
-        Raises:
-            SweatStackNotFoundError: If the test does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        resolution = self._enums_to_strings([trace_resolution])[0]
-        params = {} if resolution == TraceResolution.auto.value else {"traces": resolution}
-        with self._http_client() as client:
-            response = client.get(url=f"/api/v1/tests/{test_id}", params=params)
-            self._raise_for_status(response)
-            return TestDetails.model_validate(response.json())
-
-    def create_test(
-        self,
-        *,
-        sport: Sport | str,
-        start: datetime,
-        title: str | None = None,
-        end: datetime | None = None,
-        results: TestResults | None = None,
-        tags: list[str] | None = None,
-    ) -> TestSummary:
-        """Creates a new test.
-
-        Args:
-            sport: The sport for this test. Can be a Sport enum or string ID.
-            start: The start time of the test. Must be timezone-aware; the
-                offset is stored alongside the instant.
-            title: Optional title for the test.
-            end: Optional end time. Must be timezone-aware when given. Defaults
-                to start + 3 hours server-side.
-            results: Optional structured test results (thresholds, capacities, etc.).
-            tags: Optional list of tags to associate with this test.
-
-        Returns:
-            TestSummary: The created test.
-
-        Raises:
-            ValueError: If ``start`` or ``end`` is timezone-naive.
-            SweatStackAPIError: If the API request fails.
-        """
-        self._require_aware(start, "start")
-        if end is not None:
-            self._require_aware(end, "end")
-        sport = self._enums_to_strings([sport])[0]
-        with self._http_client() as client:
-            response = client.post(
-                url="/api/v1/tests/",
-                json={
-                    "title": title,
-                    "sport": sport,
-                    "start": start.isoformat(),
-                    "end": end.isoformat() if end is not None else None,
-                    "results": results.model_dump() if results is not None else None,
-                    "tags": tags,
-                },
-            )
-            self._raise_for_status(response)
-            return TestSummary.model_validate(response.json())
-
-    def update_test(
-        self,
-        test_id: str,
-        *,
-        sport: Sport | str,
-        start: datetime,
-        title: str | None = None,
-        end: datetime | None = None,
-        results: TestResults | None = None,
-        tags: list[str] | None = None,
-    ) -> None:
-        """Updates a test by replacing all fields.
-
-        This is a full replace operation. Fields not provided will be set to null
-        server-side. To modify a single field, first fetch the test with
-        ``get_test()``, then pass all fields back.
-
-        Args:
-            test_id: The unique identifier of the test to update.
-            sport: The sport for this test. Can be a Sport enum or string ID.
-            start: The start time of the test. Must be timezone-aware; the
-                offset is stored alongside the instant.
-            title: Optional title for the test.
-            end: Optional end time. Must be timezone-aware when given. Defaults
-                to start + 3 hours server-side.
-            results: Optional structured test results (thresholds, capacities, etc.).
-            tags: Optional list of tags to associate with this test.
-
-        Raises:
-            ValueError: If ``start`` or ``end`` is timezone-naive.
-            SweatStackNotFoundError: If the test does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        self._require_aware(start, "start")
-        if end is not None:
-            self._require_aware(end, "end")
-        sport = self._enums_to_strings([sport])[0]
-        with self._http_client() as client:
-            response = client.put(
-                url=f"/api/v1/tests/{test_id}",
-                json={
-                    "title": title,
-                    "sport": sport,
-                    "start": start.isoformat(),
-                    "end": end.isoformat() if end is not None else None,
-                    "results": results.model_dump() if results is not None else None,
-                    "tags": tags,
-                },
-            )
-            self._raise_for_status(response)
-
-    def delete_test(self, test_id: str) -> None:
-        """Deletes a test.
-
-        Args:
-            test_id: The unique identifier of the test to delete.
-
-        Raises:
-            SweatStackNotFoundError: If the test does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        with self._http_client() as client:
-            response = client.delete(url=f"/api/v1/tests/{test_id}")
-            self._raise_for_status(response)
-
-    # -------------------------------------------------------------------------
-    # Dailies (daily health metrics)
-    # -------------------------------------------------------------------------
-
-    @overload
-    def get_dailies(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        start: date,
-        end: date,
-        interpolate: bool = True,
-        output: Literal["models"] | None = None,
-    ) -> list[DailyResponse]: ...
-
-    @overload
-    def get_dailies(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        start: date,
-        end: date,
-        interpolate: bool = True,
-        output: Literal["pandas"],
-    ) -> pd.DataFrame: ...
-
-    @overload
-    def get_dailies(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        start: date,
-        end: date,
-        interpolate: bool = True,
-        output: Literal["polars"],
-    ) -> pl.DataFrame: ...
-
-    @overload
-    def get_dailies(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        start: date,
-        end: date,
-        interpolate: bool = True,
-        output: Literal["arrow"],
-    ) -> pa.Table: ...
-
-    def get_dailies(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        start: date,
-        end: date,
-        interpolate: bool = True,
-        output: ListOutput | None = None,
-    ) -> list[DailyResponse] | pd.DataFrame | pl.DataFrame | pa.Table:
-        """Gets daily values for a measure over a date range.
-
-        Args:
-            measure: The daily measure to retrieve (e.g. DailyMeasure.body_mass).
-            start: Start date (inclusive).
-            end: End date (inclusive).
-            interpolate: Whether to apply server-side estimation/interpolation.
-                Defaults to True. When False, missing dates return value=None
-                with source="missing".
-            output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``. Overrides the
-                client-level default for this call.
-
-        Returns:
-            A list of DailyResponse objects, or a frame with one row per date
-            (``date`` is a column). Always returns one entry per date in the range.
-        """
-        measure_str = measure.value if isinstance(measure, Enum) else measure
-        with self._http_client() as client:
-            response = client.get(
-                url=f"/api/v1/dailies/{measure_str}",
-                params={
-                    "start": start.isoformat(),
-                    "end": end.isoformat(),
-                    "interpolate": interpolate,
-                },
-            )
-            self._raise_for_status(response)
-            dailies = [DailyResponse.model_validate(item) for item in response.json()]
-        return self._frame_from_models(dailies, DailyResponse, output)
-
-    def set_daily(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        date: date,
-        value: float,
-    ) -> DailyResponse:
-        """Sets a daily value (creates or updates).
-
-        Args:
-            measure: The daily measure (e.g. DailyMeasure.body_mass).
-            date: The date for the measurement.
-            value: The measurement value.
-
-        Returns:
-            DailyResponse: The created/updated daily entry.
-        """
-        measure_str = measure.value if isinstance(measure, Enum) else measure
-        with self._http_client() as client:
-            response = client.post(
-                url=f"/api/v1/dailies/{measure_str}",
-                json={"date": date.isoformat(), "value": value},
-            )
-            self._raise_for_status(response)
-            return DailyResponse.model_validate(response.json())
-
-    def delete_daily(
-        self,
-        measure: DailyMeasure | str,
-        *,
-        date: date,
-    ) -> None:
-        """Deletes a daily value.
-
-        Args:
-            measure: The daily measure to delete.
-            date: The date of the entry to delete.
-
-        Raises:
-            SweatStackNotFoundError: If no entry exists for that
-                measure/date pair.
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        measure_str = measure.value if isinstance(measure, Enum) else measure
-        with self._http_client() as client:
-            response = client.delete(
-                url=f"/api/v1/dailies/{measure_str}",
-                params={"date": date.isoformat()},
-            )
-            self._raise_for_status(response)
-
-    # -------------------------------------------------------------------------
-    # App Metadata
-    # -------------------------------------------------------------------------
-
-    def _set_app_metadata(self, path: str, data: dict) -> None:
-        with self._http_client() as client:
-            response = client.put(url=path, json=data)
-            self._raise_for_status(response)
-
-    def _delete_app_metadata(self, path: str) -> None:
-        with self._http_client() as client:
-            response = client.delete(url=path)
-            self._raise_for_status(response)
-
-    def set_activity_app_metadata(self, activity_id: str, *, data: dict) -> None:
-        """Sets app metadata on an activity (requires app token).
-
-        Replaces the entire metadata dict for this app on the given activity.
-
-        Args:
-            activity_id: The activity to attach metadata to.
-            data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackBadRequestError: If the metadata exceeds the size
-                limit (413).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._set_app_metadata(f"/api/v1/activities/{activity_id}/app-metadata", data)
-
-    def delete_activity_app_metadata(self, activity_id: str) -> None:
-        """Deletes app metadata from an activity (requires app token).
-
-        Args:
-            activity_id: The activity to remove metadata from.
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._delete_app_metadata(f"/api/v1/activities/{activity_id}/app-metadata")
-
-    def set_trace_app_metadata(self, trace_id: str, *, data: dict) -> None:
-        """Sets app metadata on a trace (requires app token).
-
-        Replaces the entire metadata dict for this app on the given trace.
-
-        Args:
-            trace_id: The trace to attach metadata to.
-            data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackBadRequestError: If the metadata exceeds the size
-                limit (413).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._set_app_metadata(f"/api/v1/traces/{trace_id}/app-metadata", data)
-
-    def delete_trace_app_metadata(self, trace_id: str) -> None:
-        """Deletes app metadata from a trace (requires app token).
-
-        Args:
-            trace_id: The trace to remove metadata from.
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._delete_app_metadata(f"/api/v1/traces/{trace_id}/app-metadata")
-
-    def set_test_app_metadata(self, test_id: str, *, data: dict) -> None:
-        """Sets app metadata on a test (requires app token).
-
-        Replaces the entire metadata dict for this app on the given test.
-
-        Args:
-            test_id: The test to attach metadata to.
-            data: Arbitrary JSON-serializable dict (max 1KB, max nesting depth 32).
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackBadRequestError: If the metadata exceeds the size
-                limit (413).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._set_app_metadata(f"/api/v1/tests/{test_id}/app-metadata", data)
-
-    def delete_test_app_metadata(self, test_id: str) -> None:
-        """Deletes app metadata from a test (requires app token).
-
-        Args:
-            test_id: The test to remove metadata from.
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._delete_app_metadata(f"/api/v1/tests/{test_id}/app-metadata")
-
-    def set_user_app_metadata(self, *, data: dict) -> None:
-        """Sets app metadata on the authenticated user (requires app token).
-
-        Replaces the entire metadata dict for this app on the current user.
-
-        Args:
-            data: Arbitrary JSON-serializable dict (max 4KB, max nesting depth 32).
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackBadRequestError: If the metadata exceeds the size
-                limit (413).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._set_app_metadata("/api/v1/profile/app-metadata", data)
-
-    def delete_user_app_metadata(self) -> None:
-        """Deletes app metadata from the authenticated user (requires app token).
-
-        Raises:
-            SweatStackAuthError: If the request is not authenticated with
-                an app token (403).
-            SweatStackAPIError: If the API request fails for any other
-                reason.
-        """
-        self._delete_app_metadata("/api/v1/profile/app-metadata")
-
-    def get_sports(self, only_root: bool = False) -> list[Sport]:
-        """Gets a list of available sports.
-
-        This method retrieves all sports available to the user, with an option to only
-        return root sports (top-level sports without parents).
-
-        Args:
-            only_root: If True, only returns root sports without parents. Defaults to False.
-
-        Returns:
-            list[Sport]: A list of Sport objects representing the available sports.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        with self._http_client() as client:
-            response = client.get(
-                url="/api/v1/profile/sports/",
-                params={"only_root": only_root},
-            )
-            self._raise_for_status(response)
-            # Sport.parse: the recommended OST way to ingest external input (tolerates sports newer
-            # than the bundled taxonomy).
-            return [Sport.parse(sport) for sport in response.json()]
-
-    def get_tags(self) -> list[str]:
-        """Gets a list of all tags used by the user.
-
-        This method retrieves all tags that the user has created or used across
-        their activities and traces.
-
-        Returns:
-            list[str]: A list of tag strings.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        with self._http_client() as client:
-            response = client.get(
-                url="/api/v1/profile/tags/",
-            )
-            self._raise_for_status(response)
-            return response.json()
-
-    def get_users(self) -> list[UserSummary]:
-        """Gets a list of all users accessible to the current user.
-
-        This method retrieves all users that the current user has access to view.
-        For regular users, this typically returns only their own user information.
-        For admin users, this may return information about multiple users.
-        This method will always authenticate as the principal user.
-
-        Returns:
-            list[UserSummary]: A list of UserSummary objects containing basic user information.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        client = self.principal_client()
-        with client._http_client() as client:
-            response = client.get(
-                url="/api/v1/users/",
-            )
-            self._raise_for_status(response)
-            return [UserSummary.model_validate(user) for user in response.json()]
-
-    def create_user(self, first_name: str, last_name: str | None = None) -> UserResponse:
-        """Creates a managed user.
-
-        Managed users have no login credentials — their data is controlled
-        by the creating user via delegated tokens.
-
-        Args:
-            first_name: The user's first name.
-            last_name: Optional last name.
-
-        Returns:
-            UserResponse: The created user.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        with self._http_client() as client:
-            response = client.post(
-                url="/api/v1/users/",
-                json={"first_name": first_name, "last_name": last_name},
-            )
-            self._raise_for_status(response)
-            return UserResponse.model_validate(response.json())
-
-    def get_teams(self) -> list[TeamResponse]:
-        """Lists all teams the current user owns or is a member of.
-
-        Returns:
-            list[TeamResponse]: Teams with the user's role (owner or member).
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        with self._http_client() as client:
-            response = client.get(url="/api/v1/teams/")
-            self._raise_for_status(response)
-            return [TeamResponse.model_validate(team) for team in response.json()]
-
-    def get_authorized_teams(self) -> list[AuthorizedTeamResponse]:
-        """Lists all teams the current user has authorized to access their data.
-
-        Returns:
-            list[AuthorizedTeamResponse]: Teams with their granted scopes.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        with self._http_client() as client:
-            response = client.get(url="/api/v1/teams/authorized")
-            self._raise_for_status(response)
-            return [AuthorizedTeamResponse.model_validate(team) for team in response.json()]
-
-    def get_team_users(self, team_id: str) -> list[UserSummary]:
-        """Lists all users who have authorized a team to access their data.
-
-        Only accessible to members of the team.
-
-        Args:
-            team_id: The team's ID.
-
-        Returns:
-            list[UserSummary]: Users who have authorized the team, with their granted scopes.
-
-        Raises:
-            SweatStackNotFoundError: If the team does not exist.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        with self._http_client() as client:
-            response = client.get(
-                url=f"/api/v1/teams/{team_id}/users",
-            )
-            self._raise_for_status(response)
-            return [UserSummary.model_validate(user) for user in response.json()]
-
-    def get_team_user(
-        self,
-        *,
-        team_id: str,
-        user: str,
-        search_mode: Literal["auto", "id", "name"] = "auto",
-    ) -> UserSummary:
-        """Get a team-authorized user by ID or name.
-
-        Args:
-            team_id: The team's ID.
-            user: User ID or (part of) display name.
-            search_mode: "auto" (detect), "id", or "name".
-
-        Returns:
-            UserSummary: The matching user.
-
-        Raises:
-            ValueError: If no match or multiple matches found.
-            SweatStackAPIError: If the API request fails.
-        """
-        users = self.get_team_users(team_id)
-        return self._find_user(user, users, search_mode)
-
-    def authorize_team(self, team_id: str, scopes: list[Scope | str] | None = None):
-        """Authorizes a team to access the current user's data.
-
-        When called as a delegated user, authorizes the team for that user.
-
-        Args:
-            team_id: The team's ID.
-            scopes: Scopes to grant. Defaults to ``[Scope.data_read]``.
-
-        Returns:
-            dict: Confirmation with team_id, user_id, and granted scopes.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        if scopes is None:
-            scopes = [Scope.data_read]
-        scopes = self._enums_to_strings(scopes)
-        with self._http_client() as client:
-            response = client.post(
-                url=f"/api/v1/teams/{team_id}/authorize",
-                json={"scopes": scopes},
-            )
-            self._raise_for_status(response)
-            return response.json()
-
-    def upload(
-        self,
-        files: str | Path | list[str | Path],
-        *,
-        sport: Sport | str | None = None,
-    ):
-        """Uploads activity files (CSV or FIT).
-
-        CSV files require the ``sport`` parameter and must contain a ``timestamp``
-        column with **offset-aware** ISO 8601 datetimes (e.g. ``...+02:00`` or
-        ``...Z``); naive timestamps are rejected during processing. FIT files
-        include sport metadata so ``sport`` is optional for them.
-
-        Args:
-            files: A file path, or a list of file paths, to upload.
-            sport: Sport for the activity. Required for CSV files.
-
-        Returns:
-            dict: Confirmation message.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-            FileNotFoundError: If a file does not exist.
-        """
-        if isinstance(files, (str, Path)):
-            files = [files]
-
-        multipart_files = []
-        opened = []
-        try:
-            for path in files:
-                path = Path(path)
-                f = path.open("rb")
-                opened.append(f)
-                multipart_files.append(("files", (path.name, f)))
-
-            data = {}
-            if sport is not None:
-                data["sport"] = self._enums_to_strings([sport])[0]
-
-            with self._http_client() as client:
-                response = client.post(
-                    url="/api/v1/activities/upload",
-                    files=multipart_files,
-                    data=data,
-                )
-                self._raise_for_status(response)
-                return response.json()
-        finally:
-            for f in opened:
-                f.close()
-
-    def get_userinfo(self) -> UserInfoResponse:
-        """Gets the OpenID Connect userinfo for the current user, plus why they may have no data.
-
-        Requires the ``profile`` scope. Besides ``sub``, ``name``, ``given_name``,
-        ``family_name``, ``email`` and ``registered_at``, the response carries ``issue``
-        (beta): ``None`` when there is nothing to say, otherwise the one thing to tell
-        the user right now. The whole integration is::
-
-            user = client.get_userinfo()
-            if user.issue:
-                banner(user.issue.message, user.issue.action_url)
-
-        ``action_url`` opens the SweatStack Portal in the app's branding; it is ``None``
-        when the token is delegated (a coach viewing an athlete) and on ``syncing`` or
-        ``unavailable`` issues, so show a button only when it is present. Apps without
-        the ``profile`` scope get the same ``issue`` from :meth:`get_profile_status`.
-
-        Returns:
-            UserInfoResponse: The userinfo claims and the optional ``issue``.
-
-        Raises:
-            SweatStackAuthError: If the token lacks the ``profile`` scope.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        with self._http_client() as client:
-            response = client.get(
-                url="/api/v1/oauth/userinfo",
-            )
-            self._raise_for_status(response)
-            return UserInfoResponse.model_validate(response.json())
-
-    def get_profile_status(self) -> AccountStatusResponse:
-        """Gets why this user has little or no data, and what the account can supply.
-
-        **Beta**: the server documents this endpoint as beta; its shape can change at
-        short notice.
-
-        ``issue`` is the same object :meth:`get_userinfo` carries: ``None`` when there
-        is nothing to say, otherwise ``{code, status, message, action_url}``. Branch on
-        ``issue.status`` (:class:`CapabilityStatus`: ``ready``, ``syncing``,
-        ``action_required``, ``unavailable``), display ``issue.message``, and show a
-        button only when ``issue.action_url`` is present. Do not parse ``message`` or
-        branch on ``code``; which code appears first is the server's to change.
-
-        ``capabilities`` maps each :class:`Capability` (``activities``,
-        ``activity_history``, ``dailies``, ``workouts``) to a :class:`CapabilityStatus`,
-        for apps with a specific requirement: read the key you need directly. Codes and
-        capability keys are open sets; a value the client does not know yet parses as a
-        pseudo-member, ignore it.
-
-        Accepts ``data:read`` or ``profile``. Delegated tokens are allowed and get
-        ``action_url=None``.
-
-        Returns:
-            AccountStatusResponse: ``issue`` and ``capabilities``.
-
-        Raises:
-            SweatStackAuthError: If the token holds neither ``data:read`` nor ``profile``.
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        with self._http_client() as client:
-            response = client.get(url="/api/v1/profile/status")
-            self._raise_for_status(response)
-            return AccountStatusResponse.model_validate(response.json())
-
-    def create_portal_session(
-        self,
-        destination: PortalDestination | str,
-        *,
-        return_url: str | None = None,
-    ) -> PortalSessionResponse:
-        """Mints a SweatStack Portal link for this app's users.
-
-        **Beta**: the server documents the Portal as beta.
-
-        The Portal is a SweatStack-hosted page in the app's branding where a user
-        connects a source or grants a permission, then returns to the app. Most apps
-        never need this: ``issue.action_url`` from :meth:`get_userinfo` or
-        :meth:`get_profile_status` is already such a link. Mint one yourself to choose
-        the destination or the return link.
-
-        This is a server-to-server call. It authenticates with the client's own app
-        credentials (``client_id`` and, only if the app has one registered,
-        ``client_secret`` from the constructor) in the request body, never with a user
-        token; the user is identified when they open the link. A client left on the
-        default ``client_id`` mints a Portal branded as the SweatStack Python client.
-        The returned URL is opaque: never build one by hand.
-
-        Args:
-            destination: ``"manage-integrations"`` or ``"manage-teams"``, as
-                :class:`PortalDestination` or string. A string the client does not know
-                is sent as is, so a newer server destination is reachable.
-            return_url: Where "Back to {app}" points. Must be one of the app's
-                registered redirect URIs. Omitting it is meaningful: the Portal then
-                tells the user to close the page, which is what works for a native app
-                or an installed PWA that a link cannot reopen.
-
-        Returns:
-            PortalSessionResponse: ``url`` to send the user to.
-
-        Raises:
-            SweatStackAuthError: If the app credentials are invalid (401).
-            SweatStackBadRequestError: If ``return_url`` is not registered for the app,
-                or ``client_id`` is not an application (400).
-            SweatStackAPIError: If the API request fails for any other reason.
-        """
-        body: dict[str, Any] = {
-            "client_id": self.client_id,
-            "destination": self._enums_to_strings([destination])[0],
-        }
-        if self._client_secret is not None:
-            body["client_secret"] = self._client_secret.get_secret_value()
-        if return_url is not None:
-            body["return_url"] = return_url
-
-        with self._http_client(auth=False) as client:
-            response = client.post(url="/api/v1/portal/sessions", json=body)
-            self._raise_for_status(response)
-            return PortalSessionResponse.model_validate(response.json())
-
-    def whoami(self) -> UserSummary:
-        """Gets the authenticated user's summary information.
-
-        Reads the user ID from the access token and resolves it through
-        :meth:`get_user`, so it works for a principal and for a delegated client alike
-        and needs no ``profile`` scope (unlike :meth:`get_userinfo`). Two requests.
-
-        Returns:
-            UserSummary: The user this client acts as.
-
-        Raises:
-            ValueError: If no authentication token is available, or the user cannot be
-                resolved.
-            SweatStackAPIError: If the API request fails.
-        """
-        if not self.api_key:
-            raise ValueError("Not authenticated. Please call authenticate() or login() first.")
-
-        try:
-            jwt_body = decode_jwt_body(self.api_key.get_secret_value())
-            user_id = jwt_body.get("sub")
-            if not user_id:
-                raise ValueError("Unable to extract user ID from token")
-        except Exception as e:
-            raise ValueError(f"Invalid authentication token: {e}") from e
-
-        return self.get_user(user_id, search_mode="id")
-
-    def _parse_backfill_line(self, line: str) -> BackfillStatus | None:
-        """Parse a single NDJSON line from backfill status stream."""
-        try:
-            return BackfillStatus.model_validate_json(line)
-        except Exception:
-            pass
-        return None
-
-    def watch_backfill_status(
-        self, *, auto_reconnect: bool = False
-    ) -> Generator[BackfillStatus, None, None]:
-        """Watches backfill status from the activities backfill-status endpoint.
-
-        This method connects to the backfill status event stream and yields
-        backfill_loaded_until timestamps as they are received. The connection
-        automatically closes after 60 seconds, but can be configured to auto-reconnect.
-
-        Args:
-            auto_reconnect: Whether to automatically reconnect when the connection
-                closes and continue receiving updates. Defaults to False.
-
-        Yields:
-            BackfillStatus: A BackfillStatus object for each received message.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-        """
-        while True:
-            try:
-                with self._http_client() as client:
-                    with client.stream("GET", "/api/v1/activities/backfill-status") as response:
-                        self._raise_for_status(response)
-
-                        for line in response.iter_lines():
-                            if line.strip():
-                                parsed = self._parse_backfill_line(line)
-                                if parsed:
-                                    yield parsed
-
-            except httpx.RequestError:
-                if not auto_reconnect:
-                    raise
-                time.sleep(1)
-            if not auto_reconnect:
-                break
-
-    def get_backfill_status(self) -> BackfillStatus:
-        """Gets the current backfill status from the activities backfill-status endpoint.
-
-        This method connects to the backfill status event stream and returns
-        the first backfill_loaded_until timestamp received.
-
-        Returns:
-            BackfillStatus: A BackfillStatus object containing the current backfill status.
-
-        Raises:
-            SweatStackAPIError: If the API request fails.
-            ValueError: If no status message is received.
-        """
-        for status in self.watch_backfill_status(auto_reconnect=False):
-            return status
-        raise ValueError("No backfill status received")
-
+# -----------------------------------------------------------------------------
+# The module-level interface: one shared client, for scripts and notebooks
+# -----------------------------------------------------------------------------
 
 _default_client = Client()
 
+RESOURCES = tuple(
+    sorted(name for name, obj in vars(Client).items() if isinstance(obj, cached_property))
+)
+"""The resource attributes of ``Client``, mirrored at module level (``sweatstack.activities``)."""
+
 
 def _generate_singleton_methods() -> list[str]:
-    """Expose every public method on Client as a module-level function.
+    """Expose every public ``Client`` method as a module-level function on the default client.
 
-    Discovery is automatic: each method on ``Client`` (including those
-    inherited from mixins) whose name does not start with an underscore
-    becomes a module-level function bound to ``_default_client``. This
-    means ``sweatstack.get_activities(...)`` always reaches the same
-    surface as ``Client().get_activities(...)``, with no hand-maintained
-    list to drift.
+    Discovery is automatic, so ``sweatstack.authenticate()`` always reaches the same surface
+    as ``Client().authenticate()``, with no hand-maintained list to drift.
 
     Returns:
-        The sorted list of generated function names. Fed into ``__all__``.
+        The sorted names of the generated functions. Fed into ``__all__``.
     """
 
     def create_singleton_method(method_name: str):
@@ -3608,8 +942,7 @@ def _generate_singleton_methods() -> list[str]:
         def singleton_method(*args: Any, **kwargs: Any) -> Any:
             return bound_method(*args, **kwargs)
 
-        class_method = getattr(Client, method_name)
-        singleton_method.__annotations__ = dict(class_method.__annotations__)
+        singleton_method.__annotations__ = dict(getattr(Client, method_name).__annotations__)
         return singleton_method
 
     names = sorted(
@@ -3621,6 +954,9 @@ def _generate_singleton_methods() -> list[str]:
 
 
 _SINGLETON_METHODS = _generate_singleton_methods()
+
+for _name in RESOURCES:
+    globals()[_name] = getattr(_default_client, _name)
 
 
 # Public surface. Wildcard imports from this module are well-defined.
@@ -3649,6 +985,8 @@ __all__ = sorted(
         "PortalDestination",
         "PortalSessionResponse",
         "Scope",
+        "SourceError",
+        "SourceResponse",
         "Sport",
         "StatusIssueCode",
         "StatusIssueResponse",
@@ -3663,5 +1001,6 @@ __all__ = sorted(
         "UserResponse",
         "UserSummary",
         *_SINGLETON_METHODS,
+        *RESOURCES,
     ]
 )

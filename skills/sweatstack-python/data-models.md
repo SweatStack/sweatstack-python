@@ -1,77 +1,65 @@
-# Data Models
+# Data models
 
-All models are importable from `sweatstack.schemas`.
+Import everything from `sweatstack`: `from sweatstack import Sport, Metric, ActivitySummary`.
 
-## Sport Enum
+## Sport (OpenSportTaxonomy)
 
-Hierarchical values — root sports have sub-sports:
+`Sport` is OpenSportTaxonomy's type: dotted codes (`cycling.road`) plus `+modifiers`
+(`cycling+stationary` for an indoor trainer).
 
-| Root | Sub-sports |
-|------|-----------|
-| `cycling` | `road`, `tt`, `cyclocross`, `gravel`, `mountainbike`, `track`, `trainer` |
-| `running` | `road`, `track`, `trail`, `treadmill` |
-| `swimming` | `pool`, `pool.25m`, `pool.50m`, `open_water`, `flume` |
-| `cross_country_skiing` | `classic`, `skating` |
-| `rowing` | _(none)_ |
-| `walking` | `hiking` |
-| `generic` | _(none)_ |
+```python
+from sweatstack import Sport
 
-**Usage:** `Sport.cycling_road` (underscore, not dot). String values use dots: `"cycling.road"`.
+Sport("cycling.road")           # a known sport; raises on an unknown code
+Sport.parse("kitesurfing")      # tolerant: use for external input
+sport.label                     # "road cycling"
+sport.parent                    # Sport("cycling")
+sport.is_subsport_of(Sport("cycling"))
+sport.modifiers                 # e.g. {Modifier.STATIONARY}
+str(sport)                      # "cycling.road", the wire value
+Sport.all()                     # every standard sport
+```
 
-**Utility methods:**
-- `sport.display_name()` → `"cycling (road)"`
-- `sport.root_sport()` → `Sport.cycling`
-- `sport.is_root_sport()` → `True`/`False`
-- `sport.is_sub_sport_of(Sport.cycling)` → `True`/`False`
+Filters take strings or `Sport`: `client.activities.list(sport="cycling")` matches every
+cycling sub-sport. Sports in responses are always parsed, so a sport newer than the installed
+taxonomy is preserved (`is_standard` is `False`) instead of failing.
 
-**Unknown sports:** The enum handles unknown values from newer API versions gracefully — no crashes on new sports.
+## Metric, Scope, DailyMeasure
 
-## Metric Enum
+- `Metric`: data streams such as `power`, `speed`, `heart_rate`, `cadence`, `altitude`,
+  `distance`, `temperature`, `core_temperature`, `smo2`, `lactate`, `rpe`. `metric.display_name()`
+  gives a readable form. Open set: unknown values from a newer server still parse.
+- `Scope`: `Scope.data_read` (`"data:read"`), `data_write`, `profile`, `openid`, `offline_access`, `admin`. Open set.
+- `DailyMeasure`: `body_mass`, `body_fat_pct`, `resting_hr`, `hrv`, `sleep_duration`,
+  `sleep_altitude`, `menstrual_cycle_day`. Open set.
 
-Available data stream names: `duration`, `power`, `speed`, `heart_rate`, `cadence`, `altitude`, `elevation`, `temperature`, `core_temperature`, `smo2`, `distance`, `latitude`, `longitude`, `lactate`, `rpe`, `respiration_rate`, `notes`
+## Response models (Pydantic)
 
-`metric.display_name()` → human-readable form.
-
-## Scope Enum
-
-| Enum member | Value |
-|---|---|
-| `Scope.data_read` | `data:read` |
-| `Scope.data_write` | `data:write` |
-| `Scope.profile` | `profile` |
-| `Scope.openid` | `openid` |
-| `Scope.admin` | `admin` |
-
-## Account Status Models
-
-- `StatusIssueResponse`: `code` (`StatusIssueCode`, open set), `status` (`CapabilityStatus`, closed:
-  `ready`, `syncing`, `action_required`, `unavailable`), `message` (display only), `action_url` (`str | None`).
-- `AccountStatusResponse`: `issue: StatusIssueResponse | None`, `capabilities: dict[Capability, CapabilityStatus]`
-  (`Capability` is an open set: `activities`, `activity_history`, `dailies`, `workouts`, ...).
-- `UserInfoResponse.issue: StatusIssueResponse | None`.
-- `PortalDestination` (`manage-integrations`, `manage-teams`) and `PortalSessionResponse` (`url`).
-
-## Response Models
-
-**ActivitySummary** — returned by `get_activities()`:
-`id`, `sport: Sport`, `start: datetime`, `end: datetime`, `start_local: datetime`, `end_local: datetime`, `duration: timedelta`, `distance: float?`, `name: str?`, `description: str?`, `metrics: list[Metric]`, `summary: ActivitySummarySummary?`, `tags: list[str]?`
-
-The `summary` object contains per-metric aggregates: `summary.power.mean`, `summary.power.max`, `summary.heart_rate.mean`, `summary.distance.sum`, `summary.altitude.gain`, etc. All fields optional.
-
-The `metrics` list indicates which data streams are available (e.g., `[Metric.power, Metric.heart_rate]`). Use to check availability without fetching data.
-
-**ActivityDetails** — returned by `get_activity()`, `get_latest_activity()`:
-Extends ActivitySummary with `traces: list[TraceDetails]?`, `devices: list[str]?`, `laps: list[Lap]?`
-
-**TraceDetails** — returned by `get_traces()`, `create_trace()`:
-`id`, `timestamp: datetime`, `timestamp_local: datetime`, `lactate: float?`, `rpe: int?`, `notes: str?`, `power: int?`, `speed: float?`, `heart_rate: int?`, `tags: list[str]?`, `sport: Sport?`, `activity: ActivitySummary?`
-
-**UserSummary:** `id`, `first_name: str?`, `last_name: str?`, `display_name: str`, `admin: bool`
-
-**UserInfoResponse:** `sub: str`, `name: str`, `given_name: str?`, `family_name: str?`, `email: str?`, `registered_at: datetime`
-
-**UserResponse:** `id`, `first_name: str?`, `last_name: str?`, `display_name: str`, `admin: bool`, `is_managed: bool`, `registered_at: datetime`
-
-**TokenResponse:** `access_token: str`, `token_type: str`, `expires_in: int`, `refresh_token: str`, `scope: str?`, `id_token: str?`
-
-**BackfillStatus:** `backfill_loaded_until: datetime?`, `backfill_errors: list?`
+- **ActivitySummary** (`activities.list()`): `id`, `sport`, `start`, `end` (UTC), `start_local`,
+  `end_local` (naive local wall-clock), `duration`, `metrics` (the streams the activity has),
+  `summary` (per-metric aggregates, e.g. `summary.power.mean`; every field optional), `laps`,
+  `traces`, `tags`, `source_id`, `app_metadata`.
+- **ActivityDetails** (`activities.retrieve()`, `latest()`): the summary plus `distance`,
+  `devices`.
+- **TraceDetails**: `id`, `timestamp`, `timestamp_local`, `lactate`, `rpe`, `notes`, `power`,
+  `speed`, `heart_rate`, `vo2`, `sport`, `tags`, `test_id`, `activity`, `lap`, `test`,
+  `test_match`, `app_metadata`.
+- **TestSummary** / **TestDetails**: `id`, `title`, `sport`, `start`, `end`, `start_local`,
+  `end_local`, `results` (`TestResults`: thresholds `lt1`, `lt2`, `vt1`, `vt2`, `mlss`, `fatmax`
+  as `Marker`s, plus `vo2max`, `critical_power`, `w_prime`, ...), `tags`, `created_by`;
+  `TestDetails` adds the resolved `traces` and overlapping `activities`.
+- **DailyResponse**: `date`, `value`, `status`, `source`.
+- **UserSummary** (`users.list()`): `id`, `first_name`, `last_name`, `display_name`, `scopes`,
+  `is_managed`.
+- **UserResponse** (`users.create()`, `retrieve()`, `update()`): `id`, `first_name`,
+  `last_name`, `display_name`, `admin`, `is_managed`, `registered_at`.
+- **SourceResponse** (`activities.upload()`): `id`, `type`, `origin`, `filename`, `status`
+  (`processing`, `processed`, `failed`), `error`, `activity_ids`, `created_at`.
+- **UserInfoResponse** (`oauth.userinfo()`): `sub`, `name`, `given_name`, `family_name`,
+  `email`, `registered_at`, `issue`.
+- **AccountStatusResponse** (`profile.status()`, beta): `issue` (`StatusIssueResponse | None`:
+  `code` (open set), `status` (`CapabilityStatus`: `ready`, `syncing`, `action_required`,
+  `unavailable`), `message` (display only), `action_url`) and `capabilities`
+  (`dict[Capability, CapabilityStatus]`). Branch on `status`, show `message`, show a button
+  only when `action_url` is set.
+- **PortalSessionResponse**: `url` (opaque; never build one by hand).

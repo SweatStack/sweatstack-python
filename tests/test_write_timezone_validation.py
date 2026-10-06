@@ -36,34 +36,34 @@ class TestRequireAware:
 
 
 class TestTraceWritesRejectNaive:
-    def test_create_trace_rejects_naive_timestamp(self):
+    def test_traces_create_rejects_naive_timestamp(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="timestamp must be timezone-aware"):
-            client.create_trace(timestamp=NAIVE, lactate=2.0)
+            client.traces.create(timestamp=NAIVE, lactate=2.0)
 
-    def test_update_trace_rejects_naive_timestamp(self):
+    def test_traces_replace_rejects_naive_timestamp(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="timestamp must be timezone-aware"):
-            client.update_trace("trace_1", timestamp=NAIVE, lactate=2.0)
+            client.traces.replace("trace_1", timestamp=NAIVE, lactate=2.0)
 
 
 class TestTestWritesRejectNaive:
-    def test_create_test_rejects_naive_start(self):
+    def test_tests_create_rejects_naive_start(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="start must be timezone-aware"):
-            client.create_test(sport=Sport("cycling"), start=NAIVE)
+            client.tests.create(sport=Sport("cycling"), start=NAIVE)
 
-    def test_create_test_rejects_naive_end(self):
+    def test_tests_create_rejects_naive_end(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="end must be timezone-aware"):
-            client.create_test(sport=Sport("cycling"), start=AWARE_UTC, end=NAIVE)
+            client.tests.create(sport=Sport("cycling"), start=AWARE_UTC, end=NAIVE)
 
-    def test_update_test_rejects_naive_start(self):
+    def test_tests_replace_rejects_naive_start(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="start must be timezone-aware"):
-            client.update_test("test_1", sport=Sport("cycling"), start=NAIVE)
+            client.tests.replace("test_1", sport=Sport("cycling"), start=NAIVE)
 
-    def test_update_test_rejects_naive_end(self):
+    def test_tests_replace_rejects_naive_end(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="end must be timezone-aware"):
-            client.update_test("test_1", sport=Sport("cycling"), start=AWARE_UTC, end=NAIVE)
+            client.tests.replace("test_1", sport=Sport("cycling"), start=AWARE_UTC, end=NAIVE)

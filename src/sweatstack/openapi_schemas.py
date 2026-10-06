@@ -87,7 +87,7 @@ class BackfillError(BaseModel):
 
 
 class BackfillStatus(BaseModel):
-    backfill_loaded_until: AwareDatetime | None = Field(
+    backfill_loaded_until: AwareDatetime | NaiveDatetime | None = Field(
         ..., title='Backfill Loaded Until'
     )
 

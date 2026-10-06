@@ -1,4 +1,4 @@
-"""Identity methods: ``whoami`` and ``get_userinfo``."""
+"""Identity methods: ``whoami`` and ``oauth.userinfo``."""
 
 import base64
 import json
@@ -30,18 +30,27 @@ def client():
 
 
 class TestWhoami:
-    def test_resolves_the_token_subject_by_id(self, client):
-        me = UserSummary(
-            id="01JUSER",
-            first_name="A",
-            last_name=None,
-            scopes=[],
-            display_name="A",
-            is_managed=False,
+    def test_finds_the_token_subject_among_accessible_users(self, client):
+        me, other = (
+            UserSummary(
+                id=user_id,
+                first_name=user_id,
+                last_name=None,
+                scopes=[],
+                display_name=user_id,
+                is_managed=False,
+            )
+            for user_id in ("01JUSER", "01JOTHER")
         )
-        with patch.object(client, "get_user", return_value=me) as get_user:
+        with patch.object(client.users, "list", return_value=[other, me]):
             assert client.whoami() is me
-        get_user.assert_called_once_with("01JUSER", search_mode="id")
+
+    def test_unknown_subject_raises(self, client):
+        with (
+            patch.object(client.users, "list", return_value=[]),
+            pytest.raises(ValueError, match="01JUSER"),
+        ):
+            client.whoami()
 
     def test_requires_a_token(self, client):
         client._api_key = None
@@ -53,7 +62,7 @@ class TestWhoami:
             client.whoami()
 
 
-class TestGetUserinfo:
+class TestUserinfo:
     def test_issue_is_exposed(self, client):
         request = httpx.Request("GET", "https://test.sweatstack.no/api/v1/oauth/userinfo")
         payload = {
@@ -72,6 +81,6 @@ class TestGetUserinfo:
         http.__exit__ = MagicMock(return_value=False)
         http.get.return_value = httpx.Response(200, json=payload, request=request)
         with patch.object(client, "_http_client", return_value=http):
-            user = client.get_userinfo()
+            user = client.oauth.userinfo()
         assert isinstance(user, UserInfoResponse)
         assert user.issue is not None and user.issue.action_url.endswith("/portal/x")

@@ -17,12 +17,12 @@ Example:
     @app.get("/activities")
     def get_activities(user: SelectedUser):
         # Returns activities for the currently selected user
-        return user.client.get_activities()
+        return user.client.activities.list()
 
     @app.get("/my-athletes")
     def get_athletes(user: AuthenticatedUser):
         # Always returns the principal user's accessible users
-        return user.client.get_users()
+        return user.client.users.list()
 
 User Switching:
     The module supports two methods of user switching:
@@ -34,13 +34,13 @@ User Switching:
             <button>View as {{ athlete.name }}</button>
         </form>
 
-    2. Programmatic switching:
-        Call client.switch_user() in your endpoint code:
+    2. A client for another user within one request:
+        delegated_client() returns a new client and leaves user.client unchanged:
 
-        @app.post("/select/{athlete_id}")
-        def select(athlete_id: str, user: AuthenticatedUser):
-            user.client.switch_user(athlete_id)
-            return RedirectResponse("/dashboard")
+        @app.get("/athletes/{athlete_id}/latest")
+        def athlete_latest(athlete_id: str, user: AuthenticatedUser):
+            athlete = user.client.delegated_client(athlete_id)
+            return athlete.activities.latest()
 
 Dependency Types:
     - AuthenticatedUser: Always returns the principal (logged-in) user

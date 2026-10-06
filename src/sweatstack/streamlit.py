@@ -21,7 +21,7 @@ Example:
         st.stop()
 
     st.write("Welcome!")
-    latest = auth.client.get_latest_activity()
+    latest = auth.client.activities.latest()
     st.write(f"Latest: {latest.sport}")
 """
 
@@ -74,7 +74,7 @@ class StreamlitAuth:
 
         # Use the authenticated client
         st.write("Welcome to SweatStack")
-        latest_activity = auth.client.get_latest_activity()
+        latest_activity = auth.client.activities.latest()
         st.write(f"Latest activity: {latest_activity.sport} on {latest_activity.start_local}")
 
         # Switch between accessible users (admin feature)
@@ -90,7 +90,7 @@ class StreamlitAuth:
         self,
         client_id=None,
         client_secret=None,
-        scopes: list[str | Scope] = None,
+        scopes: list[str | Scope] | None = None,
         redirect_uri=None,
     ):
         """Initialize the StreamlitAuth component.
@@ -113,20 +113,16 @@ class StreamlitAuth:
                 if scopes
                 else []
             )
-        elif os.environ.get("SWEATSTACK_SCOPES"):
-            scopes = os.environ.get("SWEATSTACK_SCOPES").split(",")
-            self.scopes = [
-                Scope(scope.strip().lower()) if isinstance(scope, str) else scope
-                for scope in scopes
-            ]
+        elif env_scopes := os.environ.get("SWEATSTACK_SCOPES"):
+            self.scopes = [Scope(scope.strip().lower()) for scope in env_scopes.split(",")]
         else:
             self.scopes = [Scope.data_read, Scope.profile]
 
         self.redirect_uri = redirect_uri or os.environ.get("SWEATSTACK_REDIRECT_URI")
 
         self._proxy_mode = False
-        self._logout_uri = None
-        self._login_uri = None
+        self._logout_uri = "/logout"
+        self._login_uri = "/login"
 
         self.api_key = st.session_state.get("sweatstack_api_key")
         self.refresh_token = st.session_state.get("sweatstack_refresh_token")
@@ -172,7 +168,7 @@ class StreamlitAuth:
                 st.error("Missing authentication header")
                 st.stop()
 
-            activities = auth.client.get_activities()
+            activities = auth.client.activities.list()
         """
         instance = cls(redirect_uri=redirect_uri)
         instance._proxy_mode = True
@@ -264,7 +260,7 @@ class StreamlitAuth:
         else:
             st.link_button(login_label, url)
 
-    def get_authorization_url(self):
+    def get_authorization_url(self) -> str:
         """Generates the OAuth2 authorization URL for SweatStack.
 
         This method constructs the URL users will be redirected to for OAuth2 authorization.
@@ -301,7 +297,11 @@ class StreamlitAuth:
             st.session_state["sweatstack_refresh_token"] = refresh_token
 
         self.client = Client(
-            self.api_key, refresh_token=self.refresh_token, streamlit_compatible=True
+            self.api_key,
+            refresh_token=self.refresh_token,
+            streamlit_compatible=True,
+            client_id=self.client_id,
+            client_secret=self.client_secret,
         )
 
     def _exchange_token(self, code):
@@ -313,6 +313,11 @@ class StreamlitAuth:
         Raises:
             Exception: If the token exchange fails.
         """
+        if not self.client_id or not self.client_secret:
+            raise ValueError(
+                "StreamlitAuth needs client_id and client_secret "
+                "(or SWEATSTACK_CLIENT_ID and SWEATSTACK_CLIENT_SECRET)"
+            )
         token_data = {
             "grant_type": "authorization_code",
             "client_id": self.client_id,
@@ -394,12 +399,11 @@ class StreamlitAuth:
             self._show_sweatstack_login(login_label)
 
     def select_user(self, *, team_id: str | None = None):
-        """Displays a user selection dropdown and switches the client to the selected user.
+        """Displays a user selection dropdown; ``auth.client`` then acts as the selected user.
 
-        This method retrieves a list of users accessible to the current user and displays
-        them in a dropdown. When a user is selected, the client is switched to operate on
-        behalf of that user. The method first switches back to the principal user to ensure
-        the full list of available users is displayed.
+        Lists the users the signed-in (principal) user can access and replaces ``auth.client``
+        with a client delegated to the selected one. The session keeps that user's access and
+        refresh tokens together, so a token refresh never falls back to the principal.
 
         Args:
             team_id: Optional team ID. When provided, delegates via team membership
@@ -412,15 +416,14 @@ class StreamlitAuth:
             This method requires the user to have appropriate permissions to access other users.
             For regular users, this typically only shows their own user information.
         """
-        self.switch_to_principal_user()
-        other_users = self.client.get_users()
+        principal = self.client.principal_client()
         selected_user = st.selectbox(
             "Select a user",
-            other_users,
+            principal.users.list(),
             format_func=lambda user: user.display_name,
         )
-        self.client.switch_user(selected_user, team_id=team_id)
-        self._set_api_key(self.client.api_key)
+        delegated = principal.delegated_client(selected_user, team_id=team_id)
+        self._set_api_key(delegated.api_key, refresh_token=delegated.refresh_token)
 
         return selected_user
 
@@ -435,19 +438,19 @@ class StreamlitAuth:
             None
 
         Raises:
-            HTTPStatusError: If the principal token request fails.
+            SweatStackAPIError: If the principal token request fails.
         """
-        self.client.switch_back()
-        self._set_api_key(self.client.api_key)
+        principal = self.client.principal_client()
+        self._set_api_key(principal.api_key, refresh_token=principal.refresh_token)
 
     def select_activity(
         self,
         *,
         start: date | None = None,
         end: date | None = None,
-        sports: list[Sport] | None = None,
-        tags: list[str] | None = None,
-        limit: int | None = 100,
+        sport: Sport | str | list[Sport | str] | None = None,
+        tags: str | list[str] | None = None,
+        limit: int = 100,
     ):
         """Select an activity from the user's activities.
 
@@ -457,8 +460,8 @@ class StreamlitAuth:
         Args:
             start: Optional start date to filter activities.
             end: Optional end date to filter activities.
-            sports: Optional list of sports to filter activities by.
-            tags: Optional list of tags to filter activities by.
+            sport: One sport or a list; an activity matches any of them.
+            tags: One tag or a list; an activity must have all of them.
             limit: Maximum number of activities to retrieve. Defaults to 100.
 
         Returns:
@@ -468,10 +471,10 @@ class StreamlitAuth:
             Activities are displayed in the format "YYYY-MM-DD sport_name".
         """
 
-        activities = self.client.get_activities(
+        activities = self.client.activities.list(
             start=start,
             end=end,
-            sports=sports,
+            sport=sport,
             tags=tags,
             limit=limit,
             output="models",  # the selector iterates models whatever the client's default output
@@ -505,7 +508,7 @@ class StreamlitAuth:
             Sports are displayed in a human-readable format using each sport's ``label``.
         """
         if only_available:
-            sports = self.client.get_sports(only_root)
+            sports = self.client.profile.sports(only_root=only_root)
         else:
             if only_root:
                 sports = [s for s in Sport.all() if "." not in s.code and not s.modifiers]
@@ -540,7 +543,7 @@ class StreamlitAuth:
         Note:
             Empty tags are displayed as "-" in the dropdown.
         """
-        tags = self.client.get_tags()
+        tags = self.client.profile.tags()
         if allow_multiple:
             selected_tag = st.multiselect(
                 "Select tags",

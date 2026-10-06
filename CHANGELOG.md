@@ -6,6 +6,163 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.91.0] - Unreleased
+
+One namespace per API resource: `client.activities.list()` instead of `client.get_activities()`.
+Every name now follows from the URL (`/api/v1/activities/...` is `client.activities`), so the
+REST API reference doubles as the SDK's map. This is a breaking release with a mechanical
+upgrade; see **Upgrading** below, or hand the migration prompt to your coding agent. Calling a
+removed name raises an `AttributeError` that names its replacement.
+
+### Changed
+
+- **BREAKING: methods moved to resource namespaces**: `activities`, `traces`, `tests`, `dailies`,
+  `profile`, `users`, `teams`, `portal` and `oauth`, on `Client` and at module level
+  (`sweatstack.activities.list()`). The full table is under **Upgrading**.
+- **BREAKING: `traces.replace()` and `tests.replace()`** are the old `update_trace()` and
+  `update_test()`. The new name says what they do: every field you leave out is cleared,
+  including a trace's `test_id`.
+- **BREAKING: `sport=` replaces `sports=`** on every filter, as on the server (which deprecated
+  `sports`). It takes one sport or a list: `sport="cycling"` or `sport=["cycling", "running"]`.
+  `tags=` and `metrics=` also take a single value now.
+- **BREAKING: `activities.latest()`** calls the API's `/activities/latest`: it takes only
+  `sport=`, and returns `None` when there is no activity (it raised `StopIteration`).
+- **BREAKING: keyword-only arguments** where they were positional: `metric=` on
+  `activities.mean_max()`, `segmentation_on=` and `metrics=` on `activities.data()`,
+  `first_name=` on `users.create()`, and everything after the first argument of
+  `oauth.authorization_url()` and `oauth.exchange_code()`.
+- **BREAKING: longitudinal date parameters take `date` objects** (`start=date(2026, 1, 1)`), and
+  `date=` / `window_days=` (deprecated since 0.70) are gone; use `start=` and `end=`.
+  `sport=` is a required argument of all three longitudinal methods; the API rejected a
+  request without one.
+- **BREAKING: `activities.upload()`** returns the processing status of each file
+  (`list[SourceResponse]`) instead of a raw dict.
+- **BREAKING: `users.retrieve(user_id)`** is the server's `GET /users/{id}`, which only finds
+  users you manage. Find anyone else with `users.list(name=...)`, which returns every user whose
+  name contains the text, ignoring case.
+- **BREAKING: `switch_user()` and `switch_back()` are removed.** They changed which user a shared
+  client acted as, invisibly to everything else holding it. `client.delegated_client(user)` does
+  the same job and returns a new client.
+- `StreamlitAuth.select_activity()` takes `sport=` instead of `sports=`.
+- Clients from `delegated_client()` and `principal_client()` keep the app's `client_id` and
+  `client_secret`, so `portal.sessions.create()` works on them.
+
+### Added
+
+- `users.retrieve()`, `users.update()` (changes only the fields you pass) and `users.delete()`
+  for managed users.
+- `users.list(include_managed=, include_shared=, name=)` and `teams.users(team_id, name=)`.
+- `SourceResponse` and `SourceError`, the upload status models.
+
+### Fixed
+
+- `activities.watch_backfill_status(auto_reconnect=True)` reconnects after a dropped
+  connection; it raised instead.
+- `activities.backfill_status()` and `watch_backfill_status()` return the server's updates. Its
+  timestamps carry no UTC offset, which failed validation, and every update was skipped
+  silently. A line the client cannot parse is now logged as a warning.
+- `StreamlitAuth.select_user()` stores the selected user's own refresh token. It kept the
+  signed-in user's, so after the first token refresh the app silently showed the signed-in
+  user's data under the selected user's name.
+- `StreamlitAuth` keeps the app's `client_id` and `client_secret` after switching users.
+- Searching users by name ignores case; `get_user("Carla")` found nobody where `"carla"` worked.
+
+### Removed
+
+- **BREAKING:** the `sweatlab` and `sweatshell` commands, their example notebook, and the
+  `[jupyter]` extra. In any notebook: `uv add "sweatstack[pandas]" jupyterlab`, then
+  `sweatstack.authenticate()` in the first cell.
+- **BREAKING:** `client.jwt`; use `client.api_key`.
+
+### Upgrading
+
+Removed names raise an `AttributeError` naming the replacement, so running your code points at
+each change. The module-level functions moved the same way: `sweatstack.get_activities()` is
+`sweatstack.activities.list()`.
+
+| 0.90 | 0.91 |
+|---|---|
+| `get_activities` | `client.activities.list()` |
+| `get_activity` | `client.activities.retrieve(activity_id)` |
+| `get_latest_activity` | `client.activities.latest()` |
+| `get_activity_data` | `client.activities.data(activity_id)` |
+| `get_activity_mean_max` | `client.activities.mean_max(activity_id, metric=...)` |
+| `get_activity_awd` | `client.activities.awd(activity_id)` |
+| `get_latest_activity_data` | `client.activities.data(client.activities.latest().id)` |
+| `get_latest_activity_mean_max` | `client.activities.mean_max(client.activities.latest().id, metric=...)` |
+| `get_longitudinal_data` | `client.activities.longitudinal.data(...)` |
+| `get_longitudinal_mean_max` | `client.activities.longitudinal.mean_max(...)` |
+| `get_longitudinal_awd` | `client.activities.longitudinal.awd(...)` |
+| `upload` | `client.activities.upload(files)` |
+| `get_backfill_status` | `client.activities.backfill_status()` |
+| `watch_backfill_status` | `client.activities.watch_backfill_status()` |
+| `set_activity_app_metadata` | `client.activities.app_metadata.set(activity_id, data=...)` |
+| `delete_activity_app_metadata` | `client.activities.app_metadata.delete(activity_id)` |
+| `get_traces` | `client.traces.list()` |
+| `create_trace` | `client.traces.create(...)` |
+| `update_trace` | `client.traces.replace(trace_id, ...)` |
+| `delete_trace` | `client.traces.delete(trace_id)` |
+| `set_trace_app_metadata` | `client.traces.app_metadata.set(trace_id, data=...)` |
+| `delete_trace_app_metadata` | `client.traces.app_metadata.delete(trace_id)` |
+| `get_tests` | `client.tests.list()` |
+| `get_test` | `client.tests.retrieve(test_id)` |
+| `create_test` | `client.tests.create(...)` |
+| `update_test` | `client.tests.replace(test_id, ...)` |
+| `delete_test` | `client.tests.delete(test_id)` |
+| `set_test_app_metadata` | `client.tests.app_metadata.set(test_id, data=...)` |
+| `delete_test_app_metadata` | `client.tests.app_metadata.delete(test_id)` |
+| `get_dailies` | `client.dailies.list(measure, start=..., end=...)` |
+| `set_daily` | `client.dailies.set(measure, date=..., value=...)` |
+| `delete_daily` | `client.dailies.delete(measure, date=...)` |
+| `get_profile_status` | `client.profile.status()` |
+| `get_sports` | `client.profile.sports()` |
+| `get_tags` | `client.profile.tags()` |
+| `set_user_app_metadata` | `client.profile.app_metadata.set(data=...)` |
+| `delete_user_app_metadata` | `client.profile.app_metadata.delete()` |
+| `get_users` | `client.users.list()` |
+| `get_user` | `client.users.list(name=...)`: every match, so check the length |
+| `create_user` | `client.users.create(first_name=...)` |
+| `get_teams` | `client.teams.list()` |
+| `get_team_users` | `client.teams.users(team_id)` |
+| `get_team_user` | `client.teams.users(team_id, name=...)`: every match |
+| `get_authorized_teams` | `client.teams.authorized()` |
+| `authorize_team` | `client.teams.authorize(team_id)` |
+| `create_portal_session` | `client.portal.sessions.create(destination)` |
+| `get_userinfo` | `client.oauth.userinfo()` |
+| `get_authorization_url` | `client.oauth.authorization_url(...)` |
+| `exchange_code_for_token` | `client.oauth.exchange_code(...)` |
+| `generate_pkce_params` | `client.oauth.generate_pkce_params()` |
+| `switch_user` | `client.delegated_client(user)`: a new client; this one is left unchanged |
+| `switch_back` | keep the original client, or `client.principal_client()` |
+| `client.jwt` | `client.api_key` |
+
+Parameters that changed: `sports=` → `sport=` everywhere; `get_activity_mean_max(id, "power")`
+→ `activities.mean_max(id, metric="power")`; `get_latest_activity(start=, end=, tag=)` →
+`activities.latest(sport=)` (filter `activities.list()` for the rest).
+
+**Migration prompt.** Paste this into your coding agent:
+
+```text
+Upgrade this codebase to sweatstack 0.91, which moved every method to a resource namespace.
+Find every use of the sweatstack client (a Client instance or the sweatstack module) and:
+
+1. Rename calls per the table in the sweatstack 0.91.0 CHANGELOG entry, e.g.
+   get_activities() -> activities.list(), get_activity_data(id) -> activities.data(id),
+   get_longitudinal_mean_max(...) -> activities.longitudinal.mean_max(...),
+   update_trace(id, ...) -> traces.replace(id, ...), get_users() -> users.list().
+2. Rename the keyword sports= to sport= (it takes one value or a list).
+3. Pass metric= by keyword to activities.mean_max(); pass dates as datetime.date objects to the
+   longitudinal methods.
+4. Replace get_latest_activity_data(...) with
+   activities.data(activities.latest().id, ...), and handle activities.latest() returning None.
+5. Replace switch_user(user) with a new client: athlete = client.delegated_client(user), and use
+   that client for the athlete's calls.
+6. Replace get_user(name) with users.list(name=...), which returns every match.
+
+Run the code and fix any AttributeError: its message names the replacement. Do not add
+compatibility shims.
+```
+
 ## [0.90.0] - 2026-09-28
 
 ### Changed

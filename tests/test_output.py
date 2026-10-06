@@ -80,7 +80,7 @@ def _get_activity_mean_max(client, content: bytes, **kwargs):
         patch.object(client, "_raise_for_status"),
         patch.object(client, "_cache_enabled", return_value=False),
     ):
-        return client.get_activity_mean_max("a", "power", **kwargs)
+        return client.activities.mean_max("a", metric="power", **kwargs)
 
 
 def _activity(i: int) -> ActivitySummary:
@@ -101,8 +101,8 @@ def _activity(i: int) -> ActivitySummary:
 
 
 def _get_activities(client, activities, **kwargs):
-    with patch.object(client, "_get_activities_generator", return_value=iter(activities)):
-        return client.get_activities(**kwargs)
+    with patch.object(client.activities, "_paginate", return_value=iter(activities)):
+        return client.activities.list(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -260,22 +260,6 @@ class TestParquetBackends:
             _get_activity_mean_max(client, _mean_max_with_index(), output="polars")
             assert compat.call_count == 1
 
-    def test_latest_activity_data_forwards_output(self, client):
-        with (
-            patch.object(client, "get_latest_activity", return_value=MagicMock(id="a")),
-            patch.object(client, "get_activity_data", return_value="frame") as get_data,
-        ):
-            assert client.get_latest_activity_data(output="polars") == "frame"
-        assert get_data.call_args.kwargs["output"] == "polars"
-
-    def test_latest_activity_mean_max_forwards_output(self, client):
-        with (
-            patch.object(client, "get_latest_activity", return_value=MagicMock(id="a")),
-            patch.object(client, "get_activity_mean_max", return_value="frame") as get_mm,
-        ):
-            assert client.get_latest_activity_mean_max("power", output="arrow") == "frame"
-        assert get_mm.call_args.kwargs["output"] == "arrow"
-
 
 # ---------------------------------------------------------------------------
 # List endpoints
@@ -316,10 +300,10 @@ class TestListBackends:
             http.return_value.get.return_value.json.return_value = [
                 d.model_dump(mode="json") for d in dailies
             ]
-            df = client.get_dailies(
+            df = client.dailies.list(
                 "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="pandas"
             )
-            pf = client.get_dailies(
+            pf = client.dailies.list(
                 "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars"
             )
         assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == [
@@ -341,24 +325,27 @@ class TestListBackends:
 
 
 class TestPropagation:
-    def test_delegated_and_principal_clients_inherit_output(self):
-        client = Client(api_key="x", output="polars")
-        token = {"access_token": "a", "refresh_token": "r"}
-        with (
-            patch.object(Client, "_get_delegated_token", return_value=token),
-            patch.object(Client, "_get_principal_token", return_value=token),
-        ):
-            assert client.delegated_client("someone").output == "polars"
-            assert client.principal_client().output == "polars"
+    def test_delegated_and_principal_clients_inherit_settings(self):
+        client = Client(
+            api_key="x", output="polars", client_id="app_123", client_secret="app_secret"
+        )
+        tokens = MagicMock()
+        tokens.json.return_value = {"access_token": "a", "refresh_token": "r"}
+        with patch.object(Client, "_request", return_value=tokens):
+            for derived in (client.delegated_client("someone"), client.principal_client()):
+                assert derived.output == "polars"
+                # The app credentials travel along, so Portal sessions work on derived clients.
+                assert derived.client_id == "app_123"
+                assert derived.client_secret.get_secret_value() == "app_secret"
 
     def test_streamlit_selector_always_receives_models(self):
         streamlit = pytest.importorskip("sweatstack.streamlit")
         auth = streamlit.StreamlitAuth.__new__(streamlit.StreamlitAuth)
         auth.client = MagicMock()
-        auth.client.get_activities.return_value = [_activity(1)]
+        auth.client.activities.list.return_value = [_activity(1)]
         with patch.object(
             streamlit.st, "selectbox", side_effect=lambda label, options, **kw: options[0]
         ):
             selected = auth.select_activity()
         assert selected.id == "a1"
-        assert auth.client.get_activities.call_args.kwargs["output"] == "models"
+        assert auth.client.activities.list.call_args.kwargs["output"] == "models"

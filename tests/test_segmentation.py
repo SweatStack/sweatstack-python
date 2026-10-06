@@ -4,6 +4,7 @@ Guards the `segmentation_on` / `segmentation` query-param contract (renamed from
 in 0.87.0) and the clean break — the old names must no longer be accepted.
 """
 
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -40,36 +41,36 @@ def _params_sent(client, call):
     return http.get.call_args.kwargs["params"]
 
 
-def test_get_activity_data_sends_segmentation_on(client):
-    params = _params_sent(client, lambda: client.get_activity_data("a", segmentation_on="power"))
+def test_activity_data_sends_segmentation_on(client):
+    params = _params_sent(client, lambda: client.activities.data("a", segmentation_on="power"))
     assert params["segmentation_on"] == "power"
 
 
-def test_get_activity_data_omits_segmentation_when_unset(client):
-    params = _params_sent(client, lambda: client.get_activity_data("a"))
+def test_activity_data_omits_segmentation_when_unset(client):
+    params = _params_sent(client, lambda: client.activities.data("a"))
     assert "segmentation_on" not in params
 
 
-def test_get_longitudinal_data_sends_segmentation_on(client):
+def test_longitudinal_data_sends_segmentation_on(client):
     params = _params_sent(
         client,
-        lambda: client.get_longitudinal_data(
-            sports=["running"], start="2024-01-01", segmentation_on="power"
+        lambda: client.activities.longitudinal.data(
+            sport="running", start=date(2024, 1, 1), segmentation_on="power"
         ),
     )
     assert params["segmentation_on"] == "power"
 
 
-def test_get_activity_mean_max_sends_durations(client):
+def test_activity_mean_max_sends_durations(client):
     assert "durations" not in _params_sent(
-        client, lambda: client.get_activity_mean_max("a", "power")
+        client, lambda: client.activities.mean_max("a", metric="power")
     )
     params = _params_sent(
-        client, lambda: client.get_activity_mean_max("a", "power", durations=[300, 5])
+        client, lambda: client.activities.mean_max("a", metric="power", durations=[300, 5])
     )
     assert params["durations"] == "300,5"
     params = _params_sent(
-        client, lambda: client.get_activity_mean_max("a", "power", durations="all")
+        client, lambda: client.activities.mean_max("a", metric="power", durations="all")
     )
     assert params["durations"] == "all"
 
@@ -78,14 +79,14 @@ def test_mean_max_segmentation_is_removed(client):
     # `segmentation` never reduced the payload and is gone. A positional True
     # in its old slot must fail loudly, not be read as durations.
     with pytest.raises(TypeError):
-        client.get_activity_mean_max("a", "power", True)
+        client.activities.mean_max("a", "power", True)
     with pytest.raises(TypeError):
-        client.get_activity_mean_max("a", "power", segmentation=True)
+        client.activities.mean_max("a", metric="power", segmentation=True)
 
 
 def test_old_nlec_kwargs_are_rejected(client):
     # Clean break: the pre-0.87.0 names must raise, not silently no-op.
     with pytest.raises(TypeError):
-        client.get_activity_data("a", nlec_on="power")
+        client.activities.data("a", nlec_on="power")
     with pytest.raises(TypeError):
-        client.get_activity_mean_max("a", "power", nlec=True)
+        client.activities.mean_max("a", metric="power", nlec=True)

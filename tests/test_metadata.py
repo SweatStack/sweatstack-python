@@ -3,6 +3,7 @@
 Verifies correct API path construction for each entity type.
 """
 
+from operator import attrgetter
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,38 +29,43 @@ class TestAppMetadataPathConstruction:
         "method,args,kwargs,expected_path",
         [
             (
-                "set_activity_app_metadata",
+                "activities.app_metadata.set",
                 ("act_123",),
                 {"data": {"key": "val"}},
                 "/api/v1/activities/act_123/app-metadata",
             ),
             (
-                "delete_activity_app_metadata",
+                "activities.app_metadata.delete",
                 ("act_123",),
                 {},
                 "/api/v1/activities/act_123/app-metadata",
             ),
             (
-                "set_trace_app_metadata",
+                "traces.app_metadata.set",
                 ("trace_123",),
                 {"data": {"key": "val"}},
                 "/api/v1/traces/trace_123/app-metadata",
             ),
             (
-                "delete_trace_app_metadata",
+                "traces.app_metadata.delete",
                 ("trace_123",),
                 {},
                 "/api/v1/traces/trace_123/app-metadata",
             ),
             (
-                "set_test_app_metadata",
+                "tests.app_metadata.set",
                 ("test_123",),
                 {"data": {"key": "val"}},
                 "/api/v1/tests/test_123/app-metadata",
             ),
-            ("delete_test_app_metadata", ("test_123",), {}, "/api/v1/tests/test_123/app-metadata"),
-            ("set_user_app_metadata", (), {"data": {"key": "val"}}, "/api/v1/profile/app-metadata"),
-            ("delete_user_app_metadata", (), {}, "/api/v1/profile/app-metadata"),
+            ("tests.app_metadata.delete", ("test_123",), {}, "/api/v1/tests/test_123/app-metadata"),
+            (
+                "profile.app_metadata.set",
+                (),
+                {"data": {"key": "val"}},
+                "/api/v1/profile/app-metadata",
+            ),
+            ("profile.app_metadata.delete", (), {}, "/api/v1/profile/app-metadata"),
         ],
     )
     def test_path(self, client, method, args, kwargs, expected_path):
@@ -75,9 +81,9 @@ class TestAppMetadataPathConstruction:
 
         with patch.object(client, "_http_client", return_value=mock_http_client):
             with patch.object(client, "_raise_for_status"):
-                getattr(client, method)(*args, **kwargs)
+                attrgetter(method)(client)(*args, **kwargs)
 
-        if "set_" in method:
+        if method.endswith(".set"):
             mock_http_client.put.assert_called_once()
             call_kwargs = mock_http_client.put.call_args
             assert call_kwargs.kwargs["url"] == expected_path

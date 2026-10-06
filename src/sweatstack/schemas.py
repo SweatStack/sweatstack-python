@@ -35,6 +35,8 @@ from .openapi_schemas import (
     PortalDestination,
     PortalSessionResponse,
     Scope,
+    SourceError,
+    SourceResponse,
     StatusIssueCode,
     StatusIssueResponse,
     TeamResponse,

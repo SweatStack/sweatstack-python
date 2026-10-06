@@ -55,7 +55,7 @@ def home(user: OptionalUser):
         <p><a href="{urls.login()}">Login with SweatStack</a></p>
         """
 
-    activities = user.client.get_activities(limit=5)
+    activities = user.client.activities.list(limit=5)
     activity_ids = [a.id for a in activities]
 
     return f"""
@@ -77,7 +77,7 @@ async def handle_webhook(payload: WebhookPayload, user: AuthenticatedUser):
         payload.resource_id,
     )
 
-    activity = user.client.get_activity(payload.resource_id)
+    activity = user.client.activities.retrieve(payload.resource_id)
     logger.info(f"{activity=}")
 
     return {"status": "received", "event_type": payload.event_type}

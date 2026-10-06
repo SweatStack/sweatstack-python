@@ -10,7 +10,7 @@ mechanism regresses.
 from inspect import getmembers, isfunction
 
 import sweatstack
-from sweatstack.client import Client
+from sweatstack.client import RESOURCES, Client, _default_client
 
 
 def _public_client_methods() -> set[str]:
@@ -32,10 +32,39 @@ class TestSingletonCoverage:
         missing = sorted(_public_client_methods() - set(sweatstack.__all__))
         assert not missing, f"Public Client methods missing from sweatstack.__all__: {missing}"
 
-    def test_known_previously_missing_methods_now_exposed(self):
-        """Regression guard for the 0.77.x bug — these were never registered."""
-        assert callable(sweatstack.update_trace)
-        assert callable(sweatstack.delete_trace)
+
+class TestResources:
+    EXPECTED = {
+        "activities",
+        "dailies",
+        "oauth",
+        "portal",
+        "profile",
+        "teams",
+        "tests",
+        "traces",
+        "users",
+    }
+
+    def test_resources_are_the_url_segments(self):
+        """R1: the top-level namespaces are exactly the server's URL segments."""
+        assert set(RESOURCES) == self.EXPECTED
+
+    def test_every_resource_is_mirrored_at_module_level(self):
+        for name in RESOURCES:
+            assert getattr(sweatstack, name) is getattr(_default_client, name), name
+            assert name in sweatstack.__all__, name
+
+    def test_resources_exist_on_a_client_built_without_init(self):
+        client = Client.__new__(Client)
+        for name in RESOURCES:
+            assert getattr(client, name)._client is client
+
+    def test_each_client_gets_its_own_resources(self):
+        a, b = Client(api_key="a"), Client(api_key="b")
+        assert a.activities is a.activities
+        assert a.activities is not b.activities
+        assert a.activities.longitudinal._client is a
 
 
 class TestDunderAll:
@@ -59,5 +88,6 @@ class TestDunderAll:
             "SweatStackNotFoundError",
             "SweatStackAPIError",
             "enable_cache",
+            "activities",
         ):
             assert name in sweatstack.__all__, f"missing {name}"

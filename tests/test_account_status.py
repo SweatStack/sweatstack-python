@@ -172,7 +172,7 @@ class TestGetProfileStatus:
             200, {**DOCS_PAYLOADS["nothing_connected"], "capabilities": CAPABILITIES}
         )
         with patch.object(client, "_http_client", return_value=http):
-            status = client.get_profile_status()
+            status = client.profile.status()
         assert http.get.call_args.kwargs["url"] == "/api/v1/profile/status"
         assert isinstance(status, AccountStatusResponse)
         assert status.issue.code == StatusIssueCode.no_source_connected
@@ -183,13 +183,13 @@ class TestGetProfileStatus:
             patch.object(client, "_http_client", return_value=http),
             pytest.raises(SweatStackAuthError),
         ):
-            client.get_profile_status()
+            client.profile.status()
 
     def test_has_no_output_parameter(self, client):
         # Control-plane methods return models whatever the configured output.
         client.output = "polars"
         http = _http_returning(200, {"issue": None, "capabilities": CAPABILITIES})
         with patch.object(client, "_http_client", return_value=http):
-            assert isinstance(client.get_profile_status(), AccountStatusResponse)
+            assert isinstance(client.profile.status(), AccountStatusResponse)
         with pytest.raises(TypeError):
-            client.get_profile_status(output="polars")
+            client.profile.status(output="polars")

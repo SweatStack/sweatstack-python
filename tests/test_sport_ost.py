@@ -65,7 +65,7 @@ def test_enums_to_strings_leaves_other_enums_and_strings_untouched():
     assert client._enums_to_strings([Metric.power, "running"]) == ["power", "running"]
 
 
-def test_get_sports_parses_payload_to_ost_sports():
+def test_profile_sports_parses_payload_to_ost_sports():
     from unittest.mock import MagicMock, patch
 
     client = Client.__new__(Client)
@@ -84,7 +84,7 @@ def test_get_sports_parses_payload_to_ost_sports():
         patch.object(client, "_http_client", return_value=mock_http),
         patch.object(client, "_raise_for_status"),
     ):
-        sports = client.get_sports()
+        sports = client.profile.sports()
 
     assert sports == [
         Sport("cycling.road"),

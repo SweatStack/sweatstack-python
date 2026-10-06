@@ -514,7 +514,7 @@ AuthenticatedUser = Annotated[SweatStackUser, Depends(_require_authenticated_use
 Example:
     @app.get("/my-athletes")
     def get_athletes(user: AuthenticatedUser):
-        return user.client.get_users()
+        return user.client.users.list()
 """
 
 SelectedUser = Annotated[SweatStackUser, Depends(_require_selected_user)]
@@ -525,7 +525,7 @@ Returns the delegated user if one is selected, otherwise the principal user.
 Example:
     @app.get("/activities")
     def get_activities(user: SelectedUser):
-        return user.client.get_activities()
+        return user.client.activities.list()
 """
 
 OptionalUser = Annotated[SweatStackUser | None, Depends(_optional_authenticated_user)]
@@ -546,6 +546,6 @@ Example:
     @app.get("/public-profile")
     def profile(user: OptionalSelectedUser):
         if user:
-            return user.client.get_user()
+            return user.client.whoami()
         return {"message": "Not logged in"}
 """

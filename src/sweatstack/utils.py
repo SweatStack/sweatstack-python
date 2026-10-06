@@ -44,7 +44,7 @@ def convert_to_standard_dtypes(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with standard dtypes (float64, datetime64[ns], timedelta64[ns])
 
     Example:
-        >>> df = client.get_activity_data("abc123")
+        >>> df = client.activities.data("abc123")
         >>> df["power"].dtype  # Already converted
         dtype('float64')
         >>> df["power"].cumsum()  # No overflow issues

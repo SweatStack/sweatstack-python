@@ -36,7 +36,7 @@ instrument(app)  # Registers auth routes
 
 @app.get("/activities")
 def list_activities(user: AuthenticatedUser):
-    return user.client.get_activities(limit=10)
+    return user.client.activities.list(limit=10)
 ```
 
 `instrument()` registers routes at `{auth_route_prefix}/login`, `/callback`, `/logout`, `/select-user/{user_id}`, `/select-self`. Default prefix: `/auth/sweatstack`.
@@ -72,19 +72,19 @@ from sweatstack.fastapi import AuthenticatedUser, SelectedUser, OptionalUser, Op
 @app.get("/me")
 def get_me(user: AuthenticatedUser):
     # Always the principal (logged-in) user. Returns 401 if not authenticated.
-    return user.client.get_userinfo()
+    return user.client.oauth.userinfo()
 
 @app.get("/dashboard")
 def dashboard(user: SelectedUser):
     # Delegated user if one is selected, otherwise principal.
     # Returns 401 if not authenticated.
-    return user.client.get_activities()
+    return user.client.activities.list()
 
 @app.get("/public")
 def public(user: OptionalUser):
     # Principal user or None. Never raises 401.
     if user:
-        return user.client.get_activities()
+        return user.client.activities.list()
     return {"message": "Log in to see activities"}
 
 @app.get("/feed")
@@ -121,7 +121,7 @@ Switch the session to operate as another user:
 @app.get("/users")
 def list_users(user: AuthenticatedUser):
     # List users accessible to the principal
-    users = user.client.get_users()
+    users = user.client.users.list()
     # Generate switch links
     return [
         {"name": u.display_name, "switch_url": urls.select_user(u.id, next="/dashboard")}
@@ -147,7 +147,7 @@ configure(
 def handle_webhook(payload: WebhookPayload, user: AuthenticatedUser):
     # payload.user_id, payload.event_type, payload.resource_id, payload.timestamp
     # user.client is authenticated as the webhook's user (loaded from token store)
-    activity = user.client.get_activity(payload.resource_id)
+    activity = user.client.activities.retrieve(payload.resource_id)
     process(activity)
 ```
 
@@ -289,11 +289,11 @@ One refresh, four cache hits.
 ## Portal Sessions
 
 `user.client` carries the app's `client_id` / `client_secret` from `configure()`, so it can mint a Portal link
-without further setup. See [client.md](client.md#account-status-and-the-portal).
+without further setup. See [api.md](api.md#portal-and-oauth) and [data-models.md](data-models.md).
 
 ```python
 @app.get("/fix-my-data")
 def fix_my_data(user: AuthenticatedUser):
-    session = user.client.create_portal_session("manage-integrations", return_url="https://example.com/app/")
+    session = user.client.portal.sessions.create("manage-integrations", return_url="https://example.com/app/")
     return RedirectResponse(session.url)
 ```

@@ -1,4 +1,4 @@
-"""Tests for the `after` (fatigue-state) param on get_longitudinal_mean_max.
+"""Tests for the `after` (fatigue-state) param on activities.longitudinal.mean_max.
 
 Shapes are asserted on the pandas output; the backend choice itself is covered in test_output.py."""
 
@@ -49,8 +49,8 @@ def _call(client, **kwargs):
         patch.object(client, "_raise_for_status"),
         patch.object(client, "_cache_enabled", return_value=False),
     ):
-        result = client.get_longitudinal_mean_max(
-            sports=["cycling"], metric="power", output="pandas", **kwargs
+        result = client.activities.longitudinal.mean_max(
+            sport="cycling", metric="power", output="pandas", **kwargs
         )
     return result, http.get.call_args.kwargs["params"]
 
@@ -89,8 +89,8 @@ def test_no_after_is_unchanged(client):
         patch.object(client, "_raise_for_status"),
         patch.object(client, "_cache_enabled", return_value=False),
     ):
-        result = client.get_longitudinal_mean_max(
-            sports=["cycling"], metric="power", output="pandas"
+        result = client.activities.longitudinal.mean_max(
+            sport="cycling", metric="power", output="pandas"
         )
     assert "after" not in http.get.call_args.kwargs["params"]
     assert isinstance(result.index, pd.RangeIndex)
@@ -139,8 +139,8 @@ def test_after_response_is_duration_rows_with_columns_only(client):
         patch.object(client, "_raise_for_status"),
         patch.object(client, "_cache_enabled", return_value=False),
     ):
-        result = client.get_longitudinal_mean_max(
-            sports=["cycling"], metric="power", after=[0, 50], output="pandas"
+        result = client.activities.longitudinal.mean_max(
+            sport="cycling", metric="power", after=[0, 50], output="pandas"
         )
     assert isinstance(result.index, pd.RangeIndex)
     assert {"duration", "power", "after"} <= set(result.columns)
