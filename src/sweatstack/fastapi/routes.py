@@ -65,7 +65,7 @@ def _get_redirect_url(request: Request, next_param: str | None) -> str:
     # Then try the Referer header if same-origin
     config = get_config()
     referer = request.headers.get("referer")
-    if _is_same_origin(referer, config.app_url):
+    if referer and _is_same_origin(referer, config.app_url):
         # Extract just the path from referer
         parsed = urlparse(referer)
         path = parsed.path
@@ -370,7 +370,7 @@ def _warn_if_webhook_misconfigured(app: FastAPI) -> None:
 
         if _uses_dependency(route.dependant, _require_webhook_payload):
             raise RuntimeError(
-                f"Route '{route.path}' uses WebhookPayload but webhook_secret is not configured. "
+                f"Route '{getattr(route, 'path', route)}' uses WebhookPayload but webhook_secret is not configured. "
                 "Webhook signature verification will fail at runtime. "
                 "Configure with the SWEATSTACK_WEBHOOK_SECRET env variable or configure(webhook_secret='whsec_...')"
             )
@@ -399,7 +399,9 @@ def instrument(app: FastAPI) -> None:
     router = create_router()
     app.include_router(router, prefix=config.auth_route_prefix)
 
-    # Validate webhook configuration at startup (after all routes are registered)
-    @app.on_event("startup")
+    # Validate webhook configuration at startup (after all routes are registered).
+    # on_event is deprecated in favour of lifespan, but the lifespan belongs to the
+    # user's app; a startup hook is the only way to run after their routes exist.
+    @app.on_event("startup")  # ty: ignore[deprecated]
     def _check_webhook_config():
         _warn_if_webhook_misconfigured(app)

@@ -25,7 +25,7 @@ def _bind_sport_to_ost(path: Path) -> None:
     # Drop a leftover generated `Sport` schema (the server may still emit an unused one) ...
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == "Sport":
-            drop.update(range(node.lineno - 1, node.end_lineno))
+            drop.update(range(node.lineno - 1, node.end_lineno or node.lineno))
     # ... and any SportField import from a previous run (re-injected cleanly below).
     for i, line in enumerate(lines):
         if line.startswith("from open_sport_taxonomy.pydantic import SportField"):
@@ -39,6 +39,8 @@ def _bind_sport_to_ost(path: Path) -> None:
             and node.target.id in ("sport", "sports")
         ):
             annotation = ast.get_source_segment(src, node.annotation)
+            if annotation is None:
+                continue
             retyped = re.sub(r"\bstr\b", "SportField", annotation)
             if retyped != annotation:
                 i = node.lineno - 1
@@ -75,6 +77,8 @@ def _restore_naive_local_datetimes(path: Path) -> None:
             continue
         name = node.target.id
         annotation = ast.get_source_segment(src, node.annotation)
+        if annotation is None:
+            continue
         if name.endswith("_local") and "AwareDatetime" in annotation:
             retyped = annotation.replace("AwareDatetime", "NaiveDatetime")
         elif name == "registered_at" and annotation == "AwareDatetime":

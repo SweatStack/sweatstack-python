@@ -79,7 +79,10 @@ class SweatStackUser:
     @property
     def user_id(self) -> str:
         """The user ID this client acts as."""
-        return extract_user_id(self.client.api_key)
+        api_key = self.client.api_key
+        if api_key is None:
+            raise RuntimeError("This client has no access token")
+        return extract_user_id(api_key)
 
 
 # ---------------------------------------------------------------------------

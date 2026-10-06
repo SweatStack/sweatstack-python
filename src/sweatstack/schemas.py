@@ -70,7 +70,7 @@ def _open_enum(enum_cls: type[Enum]) -> None:
         cls._value2member_map_[value] = pseudo_member  # cache for future lookups
         return pseudo_member
 
-    enum_cls._missing_ = _missing_
+    enum_cls._missing_ = _missing_  # ty: ignore[invalid-assignment]  # patched onto a generated enum
 
 
 for _open in (Metric, Scope, DailyMeasure, StatusIssueCode, Capability):
@@ -85,8 +85,7 @@ def _metric_display_name(metric: Metric) -> str:
     return metric.value.replace("_", " ")
 
 
-Metric.display_name = _metric_display_name
-Metric.display_name.__doc__ = _metric_display_name.__doc__
+Metric.display_name = _metric_display_name  # ty: ignore[unresolved-attribute]  # patched onto a generated enum
 
 
 def _daily_measure_display_name(measure: DailyMeasure) -> str:
@@ -97,5 +96,4 @@ def _daily_measure_display_name(measure: DailyMeasure) -> str:
     return measure.value.replace("_", " ")
 
 
-DailyMeasure.display_name = _daily_measure_display_name
-DailyMeasure.display_name.__doc__ = _daily_measure_display_name.__doc__
+DailyMeasure.display_name = _daily_measure_display_name  # ty: ignore[unresolved-attribute]  # patched onto a generated enum

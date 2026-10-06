@@ -107,6 +107,8 @@ Skipping step 3 silently breaks the public surface. Same for new enums.
 ## Hard rules
 
 - **`uv`, never `pip`.** Every command goes through `uv run` / `uv add`.
+- **`make check` before every commit.** Format, lint, types and tests; `make
+  publish` runs it too. Don't silence a finding without a comment saying why.
 - **Never hand-edit `openapi_schemas.py`.** Regenerate.
 - **`Raises:` references the typed exceptions** from
   `sweatstack.exceptions`. Don't write `HTTPStatusError` in new docstrings.

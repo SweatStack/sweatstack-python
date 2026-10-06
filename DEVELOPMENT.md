@@ -10,13 +10,14 @@ This project uses [`uv`](https://docs.astral.sh/uv/) for everything.
 **Never use `pip` directly.**
 
 ```bash
-uv sync                     # install/update dependencies
-uv run pytest               # run tests
+uv sync --all-extras        # install/update dependencies
+make check                  # format, lint, types, tests: run before every commit
+uv run pytest               # run tests only
 uv run python -c "..."      # ad-hoc scripts
 uv run generate-response-models   # regenerate OpenAPI schemas (see below)
 ```
 
-Python ≥ 3.9 is supported; develop against the version pinned in
+Python ≥ 3.10 is supported; develop against the version pinned in
 `.python-version`.
 
 
@@ -25,11 +26,34 @@ Python ≥ 3.9 is supported; develop against the version pinned in
 For interactive exploration (Jupyter):
 
 ```bash
-uvx --with-editable "path/to/sweatstack-python[jupyterlab]" jupyter lab
+uvx --from jupyterlab --with-editable "path/to/sweatstack-python[pandas]" jupyter-lab
 ```
 
 Run from a scratch directory so JupyterLab does not litter the repo with
 `Untitled` notebooks.
+
+
+## Checks
+
+`make check` runs, in order: `ruff format --check`, `ruff check`, `ty check`
+and `pytest`. It is the gate for every commit, and `make publish` runs it
+first. Fix formatting and most lint findings with:
+
+```bash
+uv run ruff format src tests examples
+uv run ruff check --fix src tests examples
+```
+
+- **ruff** and **ty** are pinned to exact versions in the `dev` group.
+  Upgrading either is a deliberate change: fix or explicitly ignore new
+  findings in the same commit.
+- `ty` checks `src/` and `tests/typing/`. `tests/typing/output_types.py` pins
+  what a type checker infers for each `output=` value with `assert_type`; ty
+  checks it, pytest never runs it. `[tool.ty.src]` in `pyproject.toml` lists
+  what is excluded and why.
+- Formatting-only commits are listed in `.git-blame-ignore-revs`. Run
+  `git config blame.ignoreRevsFile .git-blame-ignore-revs` once so
+  `git blame` skips them.
 
 
 ## Running tests
@@ -91,8 +115,8 @@ minimal feature delta. Commit, then handle the remainder separately.
 
 1. Bump `version` in `pyproject.toml` (SemVer).
 2. Add a CHANGELOG entry — see [AGENTS.md → CHANGELOG](AGENTS.md#changelog).
-3. `make build` and `make publish` (twine to PyPI). The `Makefile` has
-   the canonical commands.
+3. `make publish`: runs `make check`, builds, and uploads with twine.
+   The `Makefile` has the canonical commands.
 
 
 ## Docs
