@@ -11,18 +11,22 @@ from datetime import date, datetime, timedelta, timezone
 from inspect import isclass
 
 import polars as pl
+import pyarrow as pa
 import pytest
 from pydantic import BaseModel
 
 import sweatstack.schemas as schemas
 from sweatstack import _frames
-import pyarrow as pa
-
 from sweatstack._frames import (
-    FrameSchemaWarning, arrow_schema, field_types, models_to_arrow, models_to_pandas, models_to_polars, polars_schema,
+    FrameSchemaWarning,
+    arrow_schema,
+    field_types,
+    models_to_arrow,
+    models_to_pandas,
+    models_to_polars,
+    polars_schema,
 )
 from sweatstack.openapi_schemas import ActivitySummary, DailyResponse, TraceDetails
-
 
 PUBLIC_MODELS = sorted(
     (obj for obj in vars(schemas).values() if isclass(obj) and issubclass(obj, BaseModel) and obj is not BaseModel),
@@ -175,7 +179,7 @@ class TestModelsToPolars:
 
     def test_wrong_type_never_coerces_silently(self):
         schema = polars_schema(DailyResponse)
-        with pytest.raises(Exception):
+        with pytest.raises(pl.exceptions.ComputeError):
             pl.from_dicts([{"date": "not-a-date", "value": 1.0, "status": "stored", "source": None}], schema=schema)
 
     def test_dailies_values(self):

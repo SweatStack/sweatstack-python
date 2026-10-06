@@ -86,10 +86,27 @@ dev = [
     "polars>=1.30",
     "pyarrow>=20.0.0",
     "pytest>=9.0.3",
+    "ruff==0.16.10",
     "sphinx>=8.2.3",
     "sphinx-markdown-builder>=0.6.8",
     "streamlit>=1.42.0",
+    "ty==0.0.84",
 ]
 
 [tool.uv.workspace]
 members = ["playground"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["src/sweatstack/openapi_schemas.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]  # the formatter owns line length; long strings and URLs stay intact
+
+[tool.ruff.lint.per-file-ignores]
+# These modules build the public surface: their imports are re-exports.
+"src/sweatstack/__init__.py" = ["F401"]
+"src/sweatstack/schemas.py" = ["F401"]
+"src/sweatstack/client.py" = ["F401"]

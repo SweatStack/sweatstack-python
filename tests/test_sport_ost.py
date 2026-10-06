@@ -7,12 +7,13 @@ parses inbound values. These tests pin that wiring (not the OST library itself).
 
 import open_sport_taxonomy as ost
 import pandas as pd
-import pytest
 
 import sweatstack
 from sweatstack import Modifier, Sport
 from sweatstack.client import Client
-from sweatstack.openapi_schemas import TestCreate as SportCreateModel  # aliased: avoid pytest "Test*" collection
+from sweatstack.openapi_schemas import (
+    TestCreate as SportCreateModel,  # aliased: avoid pytest "Test*" collection
+)
 
 
 def test_public_sport_types_are_ost():

@@ -22,8 +22,6 @@ from sweatstack.fastapi import (
     instrument,
     verify_signature,
 )
-from sweatstack.fastapi.config import _config
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

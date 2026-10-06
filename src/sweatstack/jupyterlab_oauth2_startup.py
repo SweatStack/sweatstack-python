@@ -1,10 +1,10 @@
 import argparse
-import os
 import shutil
 from pathlib import Path
 
-import sweatstack
 from jupyterlab.labapp import LabApp
+
+import sweatstack
 
 
 def start_jupyterlab_with_oauth():

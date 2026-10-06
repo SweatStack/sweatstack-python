@@ -16,6 +16,7 @@ Covers three layers:
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
 import threading
 import time
@@ -30,7 +31,6 @@ from sweatstack.fastapi import (
     configure,
 )
 from sweatstack.fastapi import dependencies as deps
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -103,7 +103,7 @@ class TestCachedAccessToken:
 
     def test_is_immutable(self):
         token = CachedAccessToken("at", "rt", time.time() + 100)
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             token.access_token = "other"  # type: ignore[misc]
 
 

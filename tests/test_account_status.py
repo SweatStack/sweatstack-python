@@ -10,14 +10,19 @@ from unittest.mock import MagicMock, patch
 import httpx
 import polars as pl
 import pytest
+from pydantic import ValidationError
 
 from sweatstack import (
-    AccountStatusResponse, Capability, CapabilityStatus, StatusIssueCode, StatusIssueResponse, UserInfoResponse,
+    AccountStatusResponse,
+    Capability,
+    CapabilityStatus,
+    StatusIssueCode,
+    StatusIssueResponse,
+    UserInfoResponse,
 )
 from sweatstack._frames import polars_schema
 from sweatstack.client import Client
 from sweatstack.exceptions import SweatStackAuthError
-
 
 DOCS_PAYLOADS = {
     "nothing_connected": {"issue": {
@@ -116,7 +121,7 @@ class TestOpenSets:
         assert status.capabilities[Capability.activities] == CapabilityStatus.ready
 
     def test_unknown_status_is_rejected(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             StatusIssueResponse.model_validate({"code": "sync_pending", "status": "fifth_value", "message": "x"})
 
     def test_capabilities_map_is_json_text_in_a_frame(self):

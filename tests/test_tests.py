@@ -9,10 +9,8 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from sweatstack import Marker, Sport, TestResults, TestSummary
-from sweatstack import _frames
+from sweatstack import Marker, Sport, TestResults, TestSummary, _frames
 from sweatstack.client import Client
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -55,7 +55,7 @@ except ImportError:
     raise ImportError(
         "FastAPI is required for sweatstack.fastapi. "
         "Install it with: pip install 'sweatstack[fastapi]'"
-    )
+    ) from None
 
 from .access_token_cache import (
     AccessTokenCache,

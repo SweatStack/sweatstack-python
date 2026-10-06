@@ -3,9 +3,7 @@ import re
 from pathlib import Path
 
 import httpx
-
-from datamodel_code_generator import InputFileType, generate
-from datamodel_code_generator import DataModelType
+from datamodel_code_generator import DataModelType, InputFileType, generate
 
 
 def _bind_sport_to_ost(path: Path) -> None:

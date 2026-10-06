@@ -178,7 +178,7 @@ Examples:
             print(f"✗ Connection failed - is the server running at {args.url}?")
             sys.exit(1)
         except httpx.TimeoutException:
-            print(f"✗ Request timed out")
+            print("✗ Request timed out")
             sys.exit(1)
         except Exception as e:
             print(f"✗ Error: {e}")

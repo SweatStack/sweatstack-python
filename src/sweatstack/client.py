@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import json
-import random
 import hashlib
+import json
 import logging
 import os
+import random
 import secrets
 import shutil
 import time
 import urllib
 import warnings
 import webbrowser
+from collections.abc import Generator, Sequence
 from datetime import date, datetime
 from enum import Enum
 from functools import wraps
@@ -20,20 +21,20 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version
 from inspect import getmembers, isfunction
 from pathlib import Path
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Dict, Generator, Literal, overload
-
-from pydantic import SecretStr
+from typing import TYPE_CHECKING, Any, Literal, overload
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 from platformdirs import user_cache_dir, user_data_dir
+from pydantic import SecretStr
 
 if TYPE_CHECKING:  # frame libraries are optional extras; only annotations need them here
     import pandas as pd
     import polars as pl
     import pyarrow as pa
 
+from . import _frames
+from ._frames import FrameOutput, ListOutput, set_output
 from .constants import DEFAULT_URL
 from .exceptions import (
     SweatStackAPIError,
@@ -46,15 +47,36 @@ from .exceptions import (
     SweatStackTokenRefreshError,
 )
 from .schemas import (
-    AccountStatusResponse, ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
-    BackfillStatus, Capability, CapabilityStatus, DailyMeasure, DailyResponse,
-    Marker, Metric, Modifier, PortalDestination, PortalSessionResponse, Scope, Sport,
-    StatusIssueCode, StatusIssueResponse,
-    TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
-    TraceResolution, UserInfoResponse, UserResponse, UserSummary
+    AccountStatusResponse,
+    ActivityDetails,
+    ActivitySummary,
+    ApplicationMemberRole,
+    AuthorizedTeamResponse,
+    BackfillStatus,
+    Capability,
+    CapabilityStatus,
+    DailyMeasure,
+    DailyResponse,
+    Marker,
+    Metric,
+    Modifier,
+    PortalDestination,
+    PortalSessionResponse,
+    Scope,
+    Sport,
+    StatusIssueCode,
+    StatusIssueResponse,
+    TeamResponse,
+    TestDetails,
+    TestResults,
+    TestSummary,
+    TokenResponse,
+    TraceDetails,
+    TraceResolution,
+    UserInfoResponse,
+    UserResponse,
+    UserSummary,
 )
-from . import _frames
-from ._frames import FrameOutput, ListOutput, set_output
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
 logger = logging.getLogger(__name__)
@@ -132,7 +154,7 @@ class _LocalCacheMixin:
                 raise ValueError("Unable to extract user ID from token")
             return user_id
         except Exception as e:
-            raise ValueError(f"Invalid authentication token: {e}")
+            raise ValueError(f"Invalid authentication token: {e}") from e
 
     def _get_cache_dir(self) -> Path:
         """Get cache directory for current user."""
@@ -231,7 +253,7 @@ class _TokenStorageMixin:
             return None, None
 
         try:
-            with open(token_file, "r") as f:
+            with open(token_file) as f:
                 token_data = json.load(f)
             return token_data.get("access_token"), token_data.get("refresh_token")
         except (json.JSONDecodeError, FileNotFoundError, KeyError):
@@ -428,7 +450,7 @@ class _OAuth2Mixin:
         try:
             server.handle_request()
         except TimeoutError:
-            raise Exception("SweatStack Python login timed out after 30 seconds. Please try again.")
+            raise Exception("SweatStack Python login timed out after 30 seconds. Please try again.") from None
 
         if hasattr(server, "code"):
             try:
@@ -716,7 +738,7 @@ class _DelegationMixin:
         )
 
 
-def _with_durations(params: dict, durations: "Sequence[int] | str | None") -> dict:
+def _with_durations(params: dict, durations: Sequence[int] | str | None) -> dict:
     """Add the mean-max ``durations`` query value: omitted, ``"all"``, or comma-separated seconds."""
     if durations is None:
         return params
@@ -3461,7 +3483,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             if not user_id:
                 raise ValueError("Unable to extract user ID from token")
         except Exception as e:
-            raise ValueError(f"Invalid authentication token: {e}")
+            raise ValueError(f"Invalid authentication token: {e}") from e
 
         return self.get_user(user_id, search_mode="id")
 

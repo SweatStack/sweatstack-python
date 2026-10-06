@@ -21,13 +21,14 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
-from functools import lru_cache
+from functools import cache
 from importlib import import_module
 from importlib.util import find_spec
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 from pydantic.json_schema import GenerateJsonSchema
@@ -340,7 +341,7 @@ class _JsonSchemaGenerator(GenerateJsonSchema):
         return json_schema
 
 
-@lru_cache(maxsize=None)
+@cache
 def field_types(model: type[BaseModel]) -> dict[str, FieldType]:
     """Type tree per top-level field of ``model``, derived from its JSON Schema."""
     json_schema = model.model_json_schema(schema_generator=_JsonSchemaGenerator)

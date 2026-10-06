@@ -16,9 +16,8 @@ from pathlib import Path
 #   SWEATSTACK_WEBHOOK_SECRET
 #   SWEATSTACK_ENCRYPTION_KEY  (for EncryptedSQLiteTokenStore)
 #   APP_URL (e.g. http://localhost:8001)
-
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 
 from sweatstack.fastapi import (
     AuthenticatedUser,

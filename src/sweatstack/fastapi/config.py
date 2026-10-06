@@ -25,9 +25,9 @@ def _validate_fernet_key(key: str) -> None:
         Fernet(key.encode() if isinstance(key, str) else key)
     except Exception:
         raise ValueError(
-            f"Invalid session_secret. Fernet keys must be 32 url-safe base64-encoded bytes. "
-            f"Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
-        )
+            "Invalid session_secret. Fernet keys must be 32 url-safe base64-encoded bytes. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        ) from None
 
 
 @dataclass

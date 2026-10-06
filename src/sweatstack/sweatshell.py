@@ -8,7 +8,7 @@ def run_ipython():
     startup_script = os.path.join(script_dir, 'ipython_init.py')
     
     ipython_args = [
-        '--InteractiveShellApp.exec_files={}'.format(startup_script)
+        f'--InteractiveShellApp.exec_files={startup_script}'
     ]
     
     start_ipython(argv=ipython_args)

@@ -8,7 +8,6 @@ import pytest
 
 from sweatstack import ApplicationMemberRole, AuthorizedTeamResponse, Scope, TeamResponse
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

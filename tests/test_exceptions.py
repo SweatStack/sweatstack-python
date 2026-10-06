@@ -8,9 +8,9 @@ Covers:
 - Transport error wrapping
 """
 
+
 import httpx
 import pytest
-from unittest.mock import patch
 
 from sweatstack import Client
 from sweatstack.exceptions import (
@@ -24,7 +24,6 @@ from sweatstack.exceptions import (
     SweatStackServerError,
     SweatStackTokenRefreshError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Hierarchy and inheritance
@@ -281,7 +280,7 @@ class TestTransportErrors:
         client.streamlit_compatible = False
 
         with pytest.raises(SweatStackConnectionError) as exc_info:
-            with client._http_client(skip_token_check=True) as http:
+            with client._http_client(skip_token_check=True):
                 raise httpx.ConnectError("Connection refused")
 
         assert "Connection refused" in str(exc_info.value)
@@ -294,7 +293,7 @@ class TestTransportErrors:
         client.streamlit_compatible = False
 
         with pytest.raises(SweatStackConnectionError):
-            with client._http_client(skip_token_check=True) as http:
+            with client._http_client(skip_token_check=True):
                 raise httpx.ReadTimeout("Read timed out")
 
     def test_connection_error_preserves_cause(self):
@@ -306,7 +305,7 @@ class TestTransportErrors:
 
         original = httpx.ConnectError("DNS resolution failed")
         with pytest.raises(SweatStackConnectionError) as exc_info:
-            with client._http_client(skip_token_check=True) as http:
+            with client._http_client(skip_token_check=True):
                 raise original
 
         assert exc_info.value.__cause__ is original

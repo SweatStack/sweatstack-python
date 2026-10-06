@@ -27,7 +27,7 @@ Example:
 import os
 import urllib.parse
 from datetime import date
-from typing import List, Union
+
 try:
     import streamlit as st
 except ImportError:
@@ -35,7 +35,7 @@ except ImportError:
         "Streamlit features require streamlit to be installed. "
         "You can install it with:\n\n"
         "pip install 'sweatstack[streamlit]'\n\n"
-    )
+    ) from None
 import httpx
 
 from .client import Client
@@ -89,7 +89,7 @@ class StreamlitAuth:
         self,
         client_id=None,
         client_secret=None,
-        scopes: List[Union[str, Scope]]=None,
+        scopes: list[str | Scope]=None,
         redirect_uri=None,
     ):
         """Initialize the StreamlitAuth component.

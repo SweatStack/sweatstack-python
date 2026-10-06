@@ -17,7 +17,6 @@ import pytest
 from sweatstack import Sport
 from sweatstack.client import Client
 
-
 NAIVE = datetime(2026, 3, 15, 9, 0)
 AWARE_UTC = datetime(2026, 3, 15, 9, 0, tzinfo=timezone.utc)
 AWARE_ZONE = datetime(2026, 3, 15, 9, 0, tzinfo=ZoneInfo("Europe/Amsterdam"))

@@ -10,9 +10,7 @@ import pandas as pd
 import pytest
 
 from sweatstack import DailyMeasure, DailyResponse, _frames
-from sweatstack.client import Client
 from sweatstack.openapi_schemas import DailySource, DailyStatus
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -19,12 +19,33 @@ from enum import Enum
 from open_sport_taxonomy import Modifier, Sport
 
 from .openapi_schemas import (
-    AccountStatusResponse, ActivityDetails, ActivitySummary, ApplicationMemberRole, AuthorizedTeamResponse,
-    BackfillStatus, Capability, CapabilityStatus, DailyMeasure, DailyResponse,
-    Marker, Metric, PortalDestination, PortalSessionResponse, Scope,
-    StatusIssueCode, StatusIssueResponse,
-    TeamResponse, TestDetails, TestResults, TestSummary, TokenResponse, TraceDetails,
-    TraceResolution, UserInfoResponse, UserResponse, UserSummary
+    AccountStatusResponse,
+    ActivityDetails,
+    ActivitySummary,
+    ApplicationMemberRole,
+    AuthorizedTeamResponse,
+    BackfillStatus,
+    Capability,
+    CapabilityStatus,
+    DailyMeasure,
+    DailyResponse,
+    Marker,
+    Metric,
+    PortalDestination,
+    PortalSessionResponse,
+    Scope,
+    StatusIssueCode,
+    StatusIssueResponse,
+    TeamResponse,
+    TestDetails,
+    TestResults,
+    TestSummary,
+    TokenResponse,
+    TraceDetails,
+    TraceResolution,
+    UserInfoResponse,
+    UserResponse,
+    UserSummary,
 )
 
 

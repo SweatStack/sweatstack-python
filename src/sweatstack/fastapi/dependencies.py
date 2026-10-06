@@ -414,7 +414,7 @@ def _create_user(
     except Exception:
         logger.exception("Token refresh failed for user %s", tokens.user_id)
         clear_session_cookie(response)
-        raise HTTPException(status_code=401, detail="Session expired")
+        raise HTTPException(status_code=401, detail="Session expired") from None
 
     if refreshed:
         # Update session with refreshed tokens

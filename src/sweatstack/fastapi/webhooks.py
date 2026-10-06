@@ -14,7 +14,6 @@ from fastapi import Depends, HTTPException, Request
 
 from .config import get_config
 
-
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------

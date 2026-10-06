@@ -96,8 +96,6 @@ def _fetch_delegated_token(
     principal_tokens: TokenSet, target_user_id: str, *, team_id: str | None = None,
 ) -> TokenSet:
     """Fetch a delegated token for the target user using principal credentials."""
-    config = get_config()
-
     body = {"sub": target_user_id}
     if team_id is not None:
         body["team_id"] = team_id
@@ -312,7 +310,7 @@ def create_router() -> APIRouter:
             delegated_tokens = _fetch_delegated_token(session.principal, user_id, team_id=team_id)
         except SweatStackAPIError as e:
             logger.warning("Failed to fetch delegated token for user %s: %s", user_id, e)
-            raise HTTPException(status_code=403, detail="You don't have access to this user")
+            raise HTTPException(status_code=403, detail="You don't have access to this user") from e
 
         # Update session with delegated tokens
         updated_session = SessionData(

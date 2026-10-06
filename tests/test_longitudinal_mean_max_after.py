@@ -69,9 +69,12 @@ def test_no_after_is_unchanged(client):
     # without `after`, no after param is sent; the server's metric index becomes a leading column
     response = MagicMock(status_code=200)
     df = pd.DataFrame({"duration": pd.to_timedelta([60], unit="s")}, index=pd.Index([200.0], name="power"))
-    buf = BytesIO(); df.to_parquet(buf); response.content = buf.getvalue()
+    buf = BytesIO()
+    df.to_parquet(buf)
+    response.content = buf.getvalue()
     http = MagicMock()
-    http.__enter__ = MagicMock(return_value=http); http.__exit__ = MagicMock(return_value=False)
+    http.__enter__ = MagicMock(return_value=http)
+    http.__exit__ = MagicMock(return_value=False)
     http.get.return_value = response
     with patch.object(client, "_http_client", return_value=http), \
          patch.object(client, "_raise_for_status"), \

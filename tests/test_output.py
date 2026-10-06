@@ -6,7 +6,7 @@ validation, every backend on parquet and list endpoints, columns-everywhere
 internal callers that must keep receiving models.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
@@ -19,7 +19,6 @@ import sweatstack
 from sweatstack import _frames
 from sweatstack.client import Client
 from sweatstack.openapi_schemas import ActivitySummary, DailyResponse
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
