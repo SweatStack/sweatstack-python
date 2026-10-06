@@ -162,7 +162,7 @@ def _choices(allowed: frozenset[str]) -> str:
 # Parquet responses
 #
 # The server may write a pandas index (timestamp for time series, the metric
-# value for mean-max curves, see server plan 020d). In parquet that is a normal
+# value for mean-max curves). In parquet that is a normal
 # column plus a metadata blob. Every backend here returns it as a leading
 # column, so the shape is identical whether or not the server still writes the
 # blob.

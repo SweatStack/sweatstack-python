@@ -65,7 +65,7 @@ def test_get_activity_mean_max_sends_durations(client):
 
 
 def test_mean_max_segmentation_is_removed(client):
-    # Server plan 063: `segmentation` never reduced the payload and is gone. A positional True
+    # `segmentation` never reduced the payload and is gone. A positional True
     # in its old slot must fail loudly, not be read as durations.
     with pytest.raises(TypeError):
         client.get_activity_mean_max("a", "power", True)

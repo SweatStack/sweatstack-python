@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING: mean-max curves are one row per duration** (server plan 063).
+- **BREAKING: mean-max curves are one row per duration**.
   `get_activity_mean_max`, `get_latest_activity_mean_max` and `get_longitudinal_mean_max` return
   `duration`, the metric (W or m/s) and `start` (UTC timestamp of the best effort), plus
   `activity_id`, `sport` and `after` on the longitudinal curve. By default 19 durations from 1 s to
@@ -112,7 +112,7 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 
 - **Breaking:** `create_trace`, `update_trace`, `create_test`, and `update_test` now require timezone-aware datetimes for `timestamp`, `start`, and `end`. A naive datetime raises `ValueError` before the request is sent. Attach a zone, e.g. `datetime(..., tzinfo=ZoneInfo("Europe/Amsterdam"))` or `datetime.now(timezone.utc)`; the offset is stored alongside the instant.
 - `start`, `end`, and `timestamp` on responses are absolute UTC instants (ISO 8601 with a `Z` suffix), no longer a fixed per-record local offset. For wall-clock display use the companion `start_local` / `end_local` / `timestamp_local` fields, which are always present. The Streamlit activity selector now labels activities by their local date.
-- Requires a SweatStack server with offset-based timezone handling (plan 033). Against an older server the aware-datetime writes still work, but responses keep the previous fixed-offset `start`/`end`/`timestamp`.
+- Requires a SweatStack server with offset-based timezone handling. Against an older server the aware-datetime writes still work, but responses keep the previous fixed-offset `start`/`end`/`timestamp`.
 
 ### Removed
 

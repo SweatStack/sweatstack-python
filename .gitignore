@@ -40,6 +40,5 @@ dump/
 # Playground
 playground/
 
-# Claude skills (except our own)
-.claude/skills/*
-!.claude/skills/sweatstack-python/
+# Agent tooling (local only; the published skill lives in skills/)
+.claude/

@@ -18,7 +18,7 @@ def app():
     c._api_key = None
     c._refresh_token = None
     c._client_secret = None
-    c.client_id = "01JMYRA"
+    c.client_id = "app_123"
     c.streamlit_compatible = False
     c.skip_token_expiry_check = True
     return c
@@ -35,7 +35,7 @@ def _http_returning(status_code: int, payload) -> MagicMock:
 
 
 def _mint(app, **kwargs):
-    http = _http_returning(200, {"url": "https://app.sweatstack.no/portal/integrations?app=01JMYRA"})
+    http = _http_returning(200, {"url": "https://app.sweatstack.no/portal/integrations?app=app_123"})
     with patch.object(app, "_http_client", return_value=http) as http_client:
         session = app.create_portal_session(**kwargs)
     return session, http.post.call_args.kwargs, http_client.call_args.kwargs
@@ -45,7 +45,7 @@ class TestRequestBody:
     def test_public_client_sends_id_and_destination_only(self, app):
         session, call, _ = _mint(app, destination="manage-integrations")
         assert call["url"] == "/api/v1/portal/sessions"
-        assert call["json"] == {"client_id": "01JMYRA", "destination": "manage-integrations"}
+        assert call["json"] == {"client_id": "app_123", "destination": "manage-integrations"}
         assert isinstance(session, PortalSessionResponse)
         assert session.url.startswith("https://app.sweatstack.no/portal/")
 

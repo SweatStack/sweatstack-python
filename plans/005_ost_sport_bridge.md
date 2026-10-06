@@ -40,9 +40,8 @@ The expand → migrate → contract rollout:
    `open_sport_taxonomy.Sport`. Both inbound surfaces — pydantic response models **and** the
    parquet-backed DataFrames — decode legacy **and** OST values to OST; requests encode OST → legacy
    so a pre-migration server still understands them. The SDK works against **both** the current
-   (legacy) and future (OST) server. Ask Molab Run, Myra Studio, and direct users to upgrade and port
-   their code to OST.
-2. **Server migration** (SweatStack `plans/027`). The API flips to OST. Apps on this release notice
+   (legacy) and future (OST) server. Ask SDK users to upgrade and port their code to OST.
+2. **Server migration.** The API flips to OST. Apps on this release notice
    nothing — they already speak OST.
 3. **Contract release — NON-breaking, patch bump in `0.x`.** Once the server is OST-only, delete the
    legacy-tolerance shim (the maps + the custom validator/encoder). The public API does not change,
@@ -50,9 +49,7 @@ The expand → migrate → contract rollout:
 
 Note the version-bump structure is the inverse of a decode-down shim: the **breaking** work happens
 **now** (step 1, `0.80.0`), and the cleanup (step 3) is a quiet non-breaking patch. The gate between 1 and 2 is
-social: every known consumer must be on this release before the server flips. Because the consumers
-barely touch sport (SweatStack `plans/027` Appendix B: the only filter anyone sends is `running`,
-identical in both vocabularies), the coordination cost of the breaking change is low.
+social: SDK users should be on this release before the server flips.
 
 ## The bridge module (the legacy-tolerance shim — the deletable part)
 
@@ -298,8 +295,7 @@ native API. The CHANGELOG/migration guide must spell this out:
 | `sport.is_root_sport()` | **no direct equivalent** — `"." not in sport.code` |
 
 The two `root` helpers are the only genuine capability gap (OST exposes `.parent`/`.disciplines` but
-no root). The repo does not use them internally, and it is confirmed that **no consumer uses them** —
-so they are dropped with no replacement helper; the one-line derivations in the table above are
+no root). The repo does not use them internally, so they are dropped with no replacement helper; the one-line derivations in the table above are
 documented in the migration guide for anyone who needs them later.
 
 ## Migration prompt (ship this to consumers)
@@ -378,9 +374,7 @@ this plan relies on); no upper bound.
 Decode-up is **faithful** — inbound OST modifiers are preserved, nothing is flattened. The only lossy
 edge is the **encode** path *during the bridge window*: an OST sport carrying a modifier with no legacy
 equivalent (e.g. filtering on `cycling.road+virtual`) cannot be expressed to a pre-migration server;
-`encode_sport` sends `str(sport)` and the old server may not recognize it. Per the traffic audit no
-app filters on a changed or modified sport (only `running`, identical in both), so this never bites in
-practice. It disappears entirely at the contract release, when the server speaks OST. The old
+`encode_sport` sends `str(sport)` and the old server may not recognize it. It disappears entirely at the contract release, when the server speaks OST. The old
 `unknown`/`generic` fold is also resolved server-side (it folds to `generic`), so the SDK never sees
 `unknown` post-migration.
 
@@ -463,9 +457,8 @@ In `tests/`:
 - **Version: `0.80.0`.** The project stays in `0.x`, so this breaking release bumps the minor (from
   0.79.0). The CHANGELOG carries the migration prompt above and the value-rename table, clearly
   flagging the breaking sport-type change.
-- **Primary risk — breaking change coordination.** Every known consumer must port to OST and adopt
-  this release before the server flips. Mitigated by the small, controllable consumer set and the
-  Appendix-B finding that they barely touch sport.
+- **Primary risk — breaking change coordination.** SDK users must port to OST and adopt this release
+  before the server flips. Mitigated by the copy-pastable migration prompt.
 - **Codegen substitution.** The post-generation replacement of the `Sport` enum must be reliable
   across regenerations; pin it with a test that imports a response model and checks `sport` decodes an
   OST value.
@@ -475,22 +468,16 @@ In `tests/`:
 - **`is_subsport_of` signature change** (single vs. the old list form) — called out in the migration
   guide.
 - **Request path / external dependency.** The server does **not** accept OST input, so requests
-  encode OST→legacy (seam 3) and rely on the server accepting legacy input through the bridge window
-  (SweatStack `plans/027`). At the atomic input+output flip this is backstopped by observed traffic:
-  the only filtered sport is `running`, identical in both vocabularies, so no real request breaks even
-  for the changed sports. Removable at contract.
+  encode OST→legacy (seam 3) and rely on the server accepting legacy input through the bridge window. Removable at contract.
 
 ## Confirmed decisions
 
 - **The server does NOT accept OST sport input; the migration flips input and output together.** So
   the SDK cannot send OST early — **seam 3 (`encode_sport`, OST→legacy) is required** and stays. The
-  request path relies on the server accepting legacy input through the bridge window (the documented
-  `plans/027` dependency); and at the atomic flip it is backstopped by observed traffic — the only
-  sport any app filters on is `running`, byte-identical in both vocabularies, so no real request breaks
-  even for the changed sports.
+  request path relies on the server accepting legacy input through the bridge window.
 - **The longitudinal parquet column is named `sport`** — `normalize_sport_column`'s default key is
   correct; no override needed.
-- **No consumer uses `root_sport()`/`is_root_sport()`** — they are dropped with no replacement helper;
+- **`root_sport()`/`is_root_sport()` are dropped** with no replacement helper;
   the migration guide documents the one-line derivations for anyone who needs them later.
 - **Version: `0.80.0`** — the project stays in `0.x`, so this breaking release bumps the minor (from
   0.79.0); the contract release is a later non-breaking patch within `0.x`.
@@ -511,5 +498,4 @@ In `tests/`:
 - Using OST's platform translators (`open_sport_taxonomy.platforms.*`, e.g. strava/garmin) — the SDK
   speaks SweatStack's own wire format; there is no `sweatstack` translator, which is why the migration
   map is hand-authored here.
-- Helping non-SDK consumers (the Node.js apps, the KeeperCircle iOS app). They do not use this library
-  and are coordinated separately; per SweatStack `plans/027` Appendix B they do not filter on sport.
+- Helping consumers that call the API without this library. They are coordinated separately.

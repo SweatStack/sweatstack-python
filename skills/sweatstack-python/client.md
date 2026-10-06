@@ -351,7 +351,7 @@ return models and ignore `output=`.
 `client_secret`, never a user token. `user.client` in FastAPI and `auth.client` in Streamlit already carry them.
 
 ```python
-app = Client(client_id="01JMYRA...", client_secret="...")      # secret only if the app has one
+app = Client(client_id="YOUR_CLIENT_ID", client_secret="...")      # secret only if the app has one
 session = app.create_portal_session("manage-integrations", return_url="https://example.com/app/")
 redirect(session.url)                                           # opaque URL; never build one by hand
 ```

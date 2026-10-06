@@ -56,7 +56,7 @@ def _mean_max_with_index() -> bytes:
 
 
 def _mean_max_without_index() -> bytes:
-    """The same response after server plan 020d: plain columns."""
+    """The same response once the server drops the index: plain columns."""
     df = pd.read_parquet(BytesIO(_mean_max_with_index())).reset_index()
     buf = BytesIO()
     df.to_parquet(buf, index=False)

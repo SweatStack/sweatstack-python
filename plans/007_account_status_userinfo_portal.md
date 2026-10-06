@@ -10,10 +10,8 @@ Mirror three server surfaces that the SDK does not expose yet:
 
 Plus one bug found on the way: `whoami()` calls a helper that does not exist.
 
-Proposed 2026-09-28. **Implemented 2026-09-28** on branch `output-backends` (regen chore, feature, docs), suite green. Sources: server `app/routers/api.py`,
-`app/schemas.py`, `app/constants.py`, `app/logic/__init__.py`
-(`create_portal_session`, `get_account_status_response`); server plans 016,
-021, 045, 052; docs `learn/data/no-data.md`, `learn/portal/index.md`,
+Proposed 2026-09-28. **Implemented 2026-09-28** on branch `output-backends` (regen chore, feature, docs), suite green. Sources: the server's OpenAPI schema
+and endpoint behaviour; docs `learn/data/no-data.md`, `learn/portal/index.md`,
 `learn/authentication/oauth2.md` §6. All three surfaces are marked **beta**
 in the public docs; the SDK docstrings and CHANGELOG say so too.
 
@@ -143,7 +141,7 @@ if status.issue and status.issue.status == CapabilityStatus.action_required and 
     show_button(status.issue.action_url)
 
 # Mint a Portal link with the app's own credentials (no user token involved)
-app = Client(client_id="01JMYRA...", client_secret="...")      # secret only if the app has one
+app = Client(client_id="YOUR_CLIENT_ID", client_secret="...")      # secret only if the app has one
 session = app.create_portal_session("manage-integrations", return_url="https://example.com/app/")
 redirect(session.url)
 

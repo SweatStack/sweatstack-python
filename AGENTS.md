@@ -5,6 +5,40 @@ to end before your first change. Mechanics — install, test, regen, release —
 live in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 
+## Public repository
+
+This repository is public, and so is everything in its history. Treat every
+change as published the moment it is committed: code, comments, docstrings,
+tests and fixtures, `plans/`, `skills/`, examples, notebooks, the CHANGELOG,
+commit messages and PR descriptions. Removing something later does not
+unpublish it.
+
+Never commit:
+
+- **Secrets and credentials**: API keys, tokens, client secrets, session
+  keys, `.env` contents. Not even expired or test-account ones.
+- **Real identifiers**: user, app, activity or team IDs, emails, client
+  IDs, or truncated prefixes of them. Fixtures and examples use obvious
+  fakes: `app_123`, `user_123`, `YOUR_CLIENT_ID`.
+- **Customers and their behaviour**: names of apps, companies or people
+  using SweatStack, how many there are, what they call or filter on, or
+  anything learned from server logs, traffic or support conversations.
+  Write "SDK users" or "downstream apps".
+- **The private server codebase**: its file paths, function names, commit
+  hashes, branch names and plan numbers. Describe the server by its public
+  contract: the OpenAPI schema and docs.sweatstack.no. "The server now
+  returns X" is fine; "see server plan N" is not.
+- **Local environments**: home directories, machine paths, names of
+  private sibling repos, personal data in notebook outputs or test data.
+  Commit notebooks with outputs cleared.
+
+When unsure, leave it out and ask. `tests/test_public_hygiene.py` catches
+the patterns a regex can (real-looking IDs, JWTs, keys, home paths, server
+references, notebook outputs). Names and behaviour of customers need you
+to notice them; there is no list to check against, because the list itself
+would be the leak.
+
+
 ## Guiding principle: mirror the REST API
 
 This client is a thin Python projection of the SweatStack REST API. When
@@ -54,7 +88,12 @@ src/sweatstack/
 ├── streamlit.py         # Streamlit integration (optional extra).
 ├── fastapi/             # FastAPI integration (optional extra).
 └── cli.py               # Entry points.
+
+skills/sweatstack-python/  # The published agent skill (npx skills add). Update with the public surface.
+plans/                     # Design plans, numbered. Public: see "Public repository".
 ```
+
+`.claude/` is git-ignored: it is local agent tooling only.
 
 Adding a new Pydantic model from the server takes three steps:
 

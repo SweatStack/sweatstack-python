@@ -235,8 +235,7 @@ Unit tests covering each status branch (401, 403, 404, 429, 400, 422, 500,
 
 ## Backwards incompatibilities
 
-Since no external consumers exist yet, these are listed for completeness and
-to inform the changelog for the first stable release.
+Listed for completeness and to inform the changelog.
 
 | What changed | Before | After |
 |---|---|---|

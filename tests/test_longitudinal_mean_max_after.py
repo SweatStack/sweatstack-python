@@ -83,7 +83,7 @@ def test_no_after_is_unchanged(client):
 
 
 def _index_free_by_duration_response() -> bytes:
-    """An `after` response as the server returns it (plan 063): one row per duration, columns only."""
+    """An `after` response as the server returns it: one row per duration, columns only."""
     df = pd.DataFrame({
         "duration": pd.to_timedelta([5, 60, 300, 5, 60], unit="s"),
         "power": [400.0, 300.0, 250.0, 380.0, 290.0],
@@ -106,7 +106,7 @@ def test_durations_are_omitted_by_default_and_sent_when_given(client):
 
 
 def test_by_is_removed(client):
-    # Server plan 063: every mean-max response is duration-oriented; `by` is gone.
+    # Every mean-max response is duration-oriented; `by` is gone.
     with pytest.raises(TypeError):
         _call(client, after=[0, 50], by="duration")
 

@@ -11,9 +11,8 @@ Readiness-reviewed the same day.
 
 **Status (2026-09-28):** Track A steps 1–7 implemented on branch
 `output-backends` as one commit per step, suite green, bare-install check
-verified locally. Open: step 8 (release candidate against the Streamlit
-apps and two sibling repos), the sibling repos' copies of the skill
-reference, and Track B on the server.
+verified locally. Open: step 8 (release candidate against real downstream
+apps) and Track B on the server.
 
 
 ## Summary
@@ -41,14 +40,13 @@ Breaking. Ships as the next release (version to be decided; explicitly
   blob. Polars and DuckDB ignore the blob and already see columns. Only
   the pandas contract is index-shaped, and it is inconsistent: activity
   data, longitudinal data, both mean-max curves and activity AWD carry an
-  index; `after` mean-max and longitudinal AWD are index-free. Server plan
-  020d proposes dropping it for longitudinal outputs (proposed, not
-  started as of 2026-06-15).
+  index; `after` mean-max and longitudinal AWD are index-free. A proposed
+  server change drops it for longitudinal outputs.
 - A user saving a pandas frame with `to_parquet` gets 52 MB for what was
   35 MB on the wire (float64 upcast). Same query results in DuckDB. That
   size gap is the entire benefit of "keep the compact dtypes".
-- Sibling projects (cassure, power-duration-studio, pyroparse) already use
-  DuckDB and Polars against the raw bytes. The SDK is the laggard.
+- Downstream analysis projects already use DuckDB and Polars against the
+  raw bytes. The SDK is the laggard.
 
 
 ## Readiness review (2026-09-25)
@@ -92,11 +90,9 @@ it; they are listed here so the reasoning is in one place.
 - **R6. Update the guidance that would fight the change (Track A step 7).** AGENTS.md
   codifies `as_dataframe` (deliberate deviations) and
   `_create_empty_dataframe_from_model` (method shape); rewrite both
-  sections for `output=` and the schema-derived empty frames. The skill
-  reference `.claude/skills/sweatstack-python/*.md` is replicated in ~10
-  sibling repos (`.agents/skills/sweatstack-python/`); find the sync
-  mechanism (`~/.claude/skills/synced`?) and update the source, not a
-  copy.
+  sections for `output=` and the schema-derived empty frames. Update the skill
+  reference `.claude/skills/sweatstack-python/*.md` at the source, not
+  in installed copies.
 
 
 ## Decisions
@@ -119,7 +115,7 @@ it; they are listed here so the reasoning is in one place.
    module-level `set_output` > method default.
 4. **Columns everywhere.** No backend returns an index. The SDK resets any
    pandas index the server sends (`reset_index()`), so this holds against
-   today's server and against a post-020d server. `_shape_mean_max` and
+   today's server and against one that no longer writes an index. `_shape_mean_max` and
    the dailies `set_index("date")` go away. Users who want an index add
    `.set_index(...)` themselves.
 5. **Dtype policy per backend (parquet endpoints).**
@@ -307,23 +303,22 @@ each step is green on its own; R2–R6 land inside the steps that cite them:
    reference (install lines, `output=`, no-index shapes, DuckDB example),
    CHANGELOG `### Changed` with the three migrations spelled out:
    `as_dataframe` -> `output`, index -> column, install extra.
-8. **Release candidate.** Tag a pre-release, run the two Streamlit apps and
-   two of the sibling analysis repos against it before releasing.
-   **Done 2026-09-28** for `paperplayground-hr-power` (Streamlit, locked at
-   0.64.0), branch `sdk-output-backends-rc` there: migrated, run headless
-   with real cached data, then run live by Aart; all checks passed. The
+8. **Release candidate.** Tag a pre-release, run real downstream apps
+   (Streamlit and analysis projects) against it before releasing.
+   **Done 2026-09-28** for one Streamlit app: migrated, run headless
+   with real cached data, then run live; all checks passed. The
    migration found one silent failure (a bare `except` around index access)
    that only a live-shaped run would have caught.
 
-### Track B: server (../sweatstack, independent)
+### Track B: server (independent)
 
 Not blocked on Track A for correctness, but Track A must be released
 first so SDK users never notice. Then:
 
-1. Finish plan 020d and extend it to every parquet endpoint: activity
-   data, activity mean-max, longitudinal mean-max (no `after`), activity
-   AWD stop writing pandas index metadata. Polars-native writer.
-2. Drop float16 for float32 in `app/parquet.py`.
+1. Every parquet endpoint (activity data, activity mean-max,
+   longitudinal mean-max without `after`, activity AWD) stops writing
+   pandas index metadata. Polars-native writer.
+2. Drop float16 for float32 in the parquet writer.
 3. Announce for non-SDK pandas consumers. DuckDB-WASM consumers are
    unaffected (they never saw the index).
 
@@ -338,7 +333,7 @@ harmless and protects against older servers.
 ## Tests (offline)
 
 - `_read_frame`: a small parquet fixture written *with* a pandas
-  timestamp index and one *without* (post-020d shape). Both must produce
+  timestamp index and one *without* (index-free shape). Both must produce
   identical columns on every backend. Same for a metric-indexed mean-max
   fixture and a metric-indexed AWD fixture.
 - Dtype policy: pandas float64 upcast still applied; polars Float16 ->

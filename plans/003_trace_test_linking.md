@@ -2,8 +2,7 @@
 
 ## Summary
 
-Mirror upstream `sweatstack@93cd588` ("Adds trace to test optional foreign key
-relationship") in the Python client:
+Mirror the server's new optional trace → test link in the Python client:
 
 - Traces gain an optional `test_id` FK that *explicitly* links them to a test
   (independent of timestamp).
@@ -57,11 +56,10 @@ Expected diff in `src/sweatstack/openapi_schemas.py`:
       linked = 'linked'
   ```
 
-**Caveat — regen pulls more than this feature.** Two intervening upstream
-commits since `openapi_schemas.py` was last regenerated also touch the
-schema/API surface: `feebe56` ("Adds security.txt …") and `3f29c1f`
-("Better handling of tags=null"). The regenerated diff will not be
-confined to this plan's scope.
+**Caveat — regen pulls more than this feature.** Other server changes
+since `openapi_schemas.py` was last regenerated also touch the
+schema/API surface. The regenerated diff will not be confined to this
+plan's scope.
 
 Action: review the full diff. If unrelated changes appear, **split them
 into a separate commit** ahead of the trace-linking commit so the
@@ -197,8 +195,8 @@ Notes:
 - Keep `test_id` positional (existing call sites pass it positionally);
   only `trace_resolution` is keyword-only. Strictly additive.
 - Docstring: explain `auto` vs `linked` in user terms. Copy the
-  server-side wording verbatim from `app/routers/api.py` — it is the
-  canonical description and survives doc drift.
+  server's endpoint description from the OpenAPI schema verbatim — it is
+  the canonical description and survives doc drift.
 
 ### 3d. No other method changes
 
