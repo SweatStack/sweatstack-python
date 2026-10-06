@@ -121,9 +121,5 @@ minimal feature delta. Commit, then handle the remainder separately.
 
 ## Docs
 
-```bash
-make docs
-```
-
-Renders Sphinx to `docs/_build/markdown/`. Most public classes are
-documented automatically via `autoclass` directives in `docs/everything.rst`.
+The docs live at https://docs.sweatstack.no, built from the `sweatstack.no` repository. The
+Python reference there is generated from this package's docstrings.

@@ -1,4 +1,4 @@
-.PHONY: check build publish docs
+.PHONY: check build publish
 
 # Run before every commit. `publish` runs it too, so nothing ships without passing.
 check:
@@ -13,6 +13,3 @@ build:
 
 publish: check build
 	uvx twine upload dist/*
-
-docs:
-	uv run sphinx-build -b markdown docs docs/_build/markdown
