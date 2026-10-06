@@ -43,6 +43,7 @@ def list_activities(user: AuthenticatedUser):
 
 ## Configuration
 
+<!-- docs: skip -->
 ```python
 configure(
     client_id: str = None,                    # SWEATSTACK_CLIENT_ID
