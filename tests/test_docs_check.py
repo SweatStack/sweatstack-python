@@ -72,6 +72,17 @@ client.url, client.output, client.api_key
 """
         assert _messages(code) == []
 
+    def test_missing_required_arguments_are_findings(self):
+        assert _messages("client.activities.longitudinal.data(start=None)") == [
+            "Longitudinal.data() is missing the required argument 'sport'"
+        ]
+        assert _messages("client.activities.longitudinal.data(**options)") == []
+
+    def test_sweatstack_needs_no_import_in_a_continued_block(self):
+        assert _messages("sweatstack.activities.list(sports=['cycling'])") == [
+            "Activities.list() has no keyword argument 'sports'"
+        ]
+
     def test_unresolvable_code_is_left_alone(self):
         assert (
             _messages("result = something_else.get_activities(sports=1)\nresult.whatever()") == []

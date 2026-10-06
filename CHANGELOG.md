@@ -87,6 +87,7 @@ removed name raises an `AttributeError` that names its replacement.
   `sweatstack.authenticate()` in the first cell.
 - **BREAKING:** `client.jwt`; use `client.api_key`.
 
+<!-- --8<-- [start:upgrading-0-91] -->
 ### Upgrading
 
 Removed names raise an `AttributeError` naming the replacement, so running your code points at
@@ -175,6 +176,7 @@ Find every use of the sweatstack client (a Client instance or the sweatstack mod
 Run the code and fix any AttributeError: its message names the replacement. Do not add
 compatibility shims.
 ```
+<!-- --8<-- [end:upgrading-0-91] -->
 
 ## [0.90.0] - 2026-09-28
 

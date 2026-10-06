@@ -42,7 +42,7 @@ import httpx
 from .client import Client
 from .constants import DEFAULT_URL
 from .exceptions import SweatStackAuthError
-from .schemas import Metric, Scope, Sport
+from .schemas import ActivitySummary, Metric, Scope, Sport, UserSummary
 
 
 class StreamlitAuth:
@@ -88,11 +88,11 @@ class StreamlitAuth:
 
     def __init__(
         self,
-        client_id=None,
-        client_secret=None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         scopes: list[str | Scope] | None = None,
-        redirect_uri=None,
-    ):
+        redirect_uri: str | None = None,
+    ) -> None:
         """Initialize the StreamlitAuth component.
 
         Args:
@@ -222,7 +222,7 @@ class StreamlitAuth:
             unsafe_allow_html=True,
         )
 
-    def logout_button(self):
+    def logout_button(self) -> None:
         """Displays a logout button and handles user logout.
 
         In standard mode, clears the stored API key from session state,
@@ -345,7 +345,7 @@ class StreamlitAuth:
 
         return
 
-    def is_authenticated(self):
+    def is_authenticated(self) -> bool:
         """Checks if the user is currently authenticated with SweatStack.
 
         This method determines if the user has a valid API key stored in the session state
@@ -356,7 +356,7 @@ class StreamlitAuth:
         """
         return self.api_key is not None
 
-    def authenticate(self, login_label: str | None = None, show_logout: bool = True):
+    def authenticate(self, login_label: str | None = None, show_logout: bool = True) -> None:
         """Authenticates the user with SweatStack.
 
         This method handles the authentication flow for SweatStack in a Streamlit app.
@@ -374,8 +374,6 @@ class StreamlitAuth:
         Args:
             login_label: The label to display on the login button. Defaults to "Login with SweatStack".
 
-        Returns:
-            None
         """
         if self._proxy_mode:
             if self.is_authenticated():
@@ -398,7 +396,7 @@ class StreamlitAuth:
         else:
             self._show_sweatstack_login(login_label)
 
-    def select_user(self, *, team_id: str | None = None):
+    def select_user(self, *, team_id: str | None = None) -> UserSummary:
         """Displays a user selection dropdown; ``auth.client`` then acts as the selected user.
 
         Lists the users the signed-in (principal) user can access and replaces ``auth.client``
@@ -427,15 +425,13 @@ class StreamlitAuth:
 
         return selected_user
 
-    def switch_to_principal_user(self):
+    def switch_to_principal_user(self) -> None:
         """Switches the client back to the principal user.
 
         This method reverts the client's authentication from a delegated user back to the principal user.
         The client will use the principal token for all subsequent API calls and updates the session state
         with the new API key.
 
-        Returns:
-            None
 
         Raises:
             SweatStackAPIError: If the principal token request fails.
@@ -451,7 +447,7 @@ class StreamlitAuth:
         sport: Sport | str | list[Sport | str] | None = None,
         tags: str | list[str] | None = None,
         limit: int = 100,
-    ):
+    ) -> ActivitySummary:
         """Select an activity from the user's activities.
 
         This method retrieves activities based on specified filters and displays them in a
@@ -465,7 +461,7 @@ class StreamlitAuth:
             limit: Maximum number of activities to retrieve. Defaults to 100.
 
         Returns:
-            The selected activity object.
+            ActivitySummary: The selected activity.
 
         Note:
             Activities are displayed in the format "YYYY-MM-DD sport_name".
@@ -490,7 +486,7 @@ class StreamlitAuth:
 
     def select_sport(
         self, only_root: bool = False, allow_multiple: bool = False, only_available: bool = True
-    ):
+    ) -> Sport | list[Sport]:
         """Select a sport from the available sports.
 
         This method retrieves sports and displays them in a dropdown or multiselect for selection.
@@ -502,7 +498,7 @@ class StreamlitAuth:
                 standard OpenSportTaxonomy sports. Defaults to True.
 
         Returns:
-            Sport or list[Sport]: The selected sport or list of sports, depending on allow_multiple.
+            Sport | list[Sport]: The selected sport, or sports if ``allow_multiple``.
 
         Note:
             Sports are displayed in a human-readable format using each sport's ``label``.
@@ -529,7 +525,7 @@ class StreamlitAuth:
             )
         return selected_sport
 
-    def select_tag(self, allow_multiple: bool = False):
+    def select_tag(self, allow_multiple: bool = False) -> str | list[str]:
         """Select a tag from the available tags.
 
         This method retrieves tags and displays them in a dropdown or multiselect for selection.
@@ -538,7 +534,7 @@ class StreamlitAuth:
             allow_multiple: If True, allows selecting multiple tags. Defaults to False.
 
         Returns:
-            str or list[str]: The selected tag or list of tags, depending on allow_multiple.
+            str | list[str]: The selected tag, or tags if ``allow_multiple``.
 
         Note:
             Empty tags are displayed as "-" in the dropdown.
@@ -557,7 +553,7 @@ class StreamlitAuth:
             )
         return selected_tag
 
-    def select_metric(self, allow_multiple: bool = False):
+    def select_metric(self, allow_multiple: bool = False) -> Metric | list[Metric]:
         """Select a metric from the available metrics.
 
         This method displays metrics in a dropdown or multiselect for selection.
@@ -566,7 +562,7 @@ class StreamlitAuth:
             allow_multiple: If True, allows selecting multiple metrics. Defaults to False.
 
         Returns:
-            Metric or list[Metric]: The selected metric or list of metrics, depending on allow_multiple.
+            Metric | list[Metric]: The selected metric, or metrics if ``allow_multiple``.
         """
         if allow_multiple:
             selected_metric = st.multiselect(

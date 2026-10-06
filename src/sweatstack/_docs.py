@@ -8,8 +8,8 @@ the installed version doesn't support: a method or attribute that doesn't exist 
 replacement, for removed names), a keyword the method doesn't take, too many positional
 arguments, or code that doesn't parse.
 
-Calls are resolved statically, without running anything: from ``sweatstack`` (or what it was
-imported as), from any name ending in ``client`` (``client``, ``auth.client``, ``athlete_client``),
+Calls are resolved statically, without running anything: from ``sweatstack`` (also without an
+import, since docs split scripts over blocks, or what it was imported as), from any name ending in ``client`` (``client``, ``auth.client``, ``athlete_client``),
 and from names bound to a ``Client`` (``coach = Client()``, ``athlete = coach.delegated_client(u)``),
 through the typed resource attributes (``client.activities.longitudinal.data``). Anything it
 can't resolve, it leaves alone.
@@ -115,7 +115,9 @@ class _Scope:
 
     def __init__(self) -> None:
         self.sweatstack, self.client_class = _sdk()
-        self.modules: set[str] = set()  # names bound to the sweatstack module
+        # Names bound to the sweatstack module. `sweatstack` itself counts without an import:
+        # docs often split one script over several blocks.
+        self.modules: set[str] = {"sweatstack"}
         self.bound: dict[str, Any] = {}  # names bound to an SDK class, instance or function
 
     def resolve(self, node: ast.expr) -> Any:
@@ -299,6 +301,16 @@ class _Checker(ast.NodeVisitor):
                     node,
                     f"{name} takes {len(positional)} positional argument(s), got {len(node.args)}",
                 )
+        if not elided and not any(keyword.arg is None for keyword in node.keywords):
+            given = {p.name for p in parameters[: len(node.args)]}
+            given |= {keyword.arg for keyword in node.keywords if keyword.arg is not None}
+            for parameter in parameters:
+                required = parameter.default is parameter.empty and parameter.kind not in (
+                    parameter.VAR_POSITIONAL,
+                    parameter.VAR_KEYWORD,
+                )
+                if required and parameter.name not in given:
+                    self.report(node, f"{name} is missing the required argument {parameter.name!r}")
 
     def _missing(self, owner: str, name: str) -> str:
         from sweatstack._renames import REMOVED_IN
