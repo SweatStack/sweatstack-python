@@ -105,4 +105,5 @@ Everything derives from `SweatStackError`; never import `httpx`. `SweatStackAPIE
 - [data-models.md](data-models.md): sports (OpenSportTaxonomy), enums and model fields.
 - [streamlit.md](streamlit.md): `StreamlitAuth`, selectors, proxy mode.
 - [fastapi.md](fastapi.md): `configure`, `instrument`, user dependencies, webhooks, token stores.
-- Docs: https://docs.sweatstack.no. REST schema: https://app.sweatstack.no/openapi.json.
+- Docs: https://docs.sweatstack.no; every page as Markdown via https://docs.sweatstack.no/llms.txt.
+  REST schema: https://app.sweatstack.no/openapi.json.

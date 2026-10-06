@@ -40,8 +40,8 @@ and `pytest`. It is the gate for every commit, and `make publish` runs it
 first. Fix formatting and most lint findings with:
 
 ```bash
-uv run ruff format src tests examples
-uv run ruff check --fix src tests examples
+uv run ruff format src tests examples evals
+uv run ruff check --fix src tests examples evals
 ```
 
 - **ruff** and **ty** are pinned to exact versions in the `dev` group.
@@ -69,6 +69,35 @@ you have not installed it, ignore that file or `uv sync --extra fastapi`.
 
 All tests are offline — no test should make a network call. See
 [AGENTS.md → Testing](AGENTS.md#testing) for how to write new ones.
+
+
+## Agent test
+
+Does an AI agent with the `sweatstack-python` skill write working code? The
+agent test answers that. It hands a pydantic-ai agent six tasks: a script per
+common workflow, a Streamlit app, coaching and a writing task. Each one runs in a
+fresh uv project with the skill installed. Then it scores the result with
+pydantic-evals: whether the program runs, whether the code uses only names the
+SDK has (the snippet checker), how many commands failed on the way, the tool
+budget, whether the agent read the skill or the docs, and an LLM judge per case.
+
+```bash
+make agent-test                                                  # all cases
+uv run --group evals python -m evals.agent.run --case mean_max_90d
+uv run --group evals python -m evals.agent.run --without-skill   # what does the skill add?
+uv run --group evals python -m evals.agent.run --dry-run         # wiring only, offline
+```
+
+A real run needs `ANTHROPIC_API_KEY` and a saved SweatStack sign-in, and it
+runs the agent's programs against your account. Only the `lactate_test` case
+writes data. It writes to a managed user named "SDK eval", and it deletes the
+tests and traces it created afterwards. Workspaces of cases that failed stay in
+the git-ignored `evals/agent/runs/` so you can inspect them. They contain your
+data: never commit or paste them.
+
+Run it after changing the skill, the public API or the docs, and before a
+release. Expect some variance between runs. Use `--repeat 3` before
+concluding that something got worse.
 
 
 ## Regenerating `openapi_schemas.py`

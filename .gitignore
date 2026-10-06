@@ -42,3 +42,6 @@ playground/
 
 # Agent tooling (local only; the published skill lives in skills/)
 .claude/
+
+# Agent test workspaces and program output: real user data
+evals/agent/runs/
