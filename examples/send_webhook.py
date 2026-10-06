@@ -70,13 +70,13 @@ def send_webhook(
     signature = create_signature(payload_bytes, secret, timestamp)
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("Webhook Request")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"URL: {url}")
         print(f"Signature: {signature}")
         print(f"Payload: {json.dumps(payload, indent=2)}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     # Send request
     response = httpx.post(
@@ -131,12 +131,14 @@ Examples:
         help="Webhook secret (default: whsec_development_secret_key)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed request/response info",
     )
     parser.add_argument(
-        "-n", "--count",
+        "-n",
+        "--count",
         type=int,
         default=1,
         help="Number of webhooks to send (default: 1)",
@@ -154,7 +156,7 @@ Examples:
     for i in range(args.count):
         if args.count > 1:
             # Generate unique resource ID for each webhook
-            current_resource_id = f"{resource_id}_{i+1}"
+            current_resource_id = f"{resource_id}_{i + 1}"
         else:
             current_resource_id = resource_id
 

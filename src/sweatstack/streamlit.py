@@ -24,6 +24,7 @@ Example:
     latest = auth.client.get_latest_activity()
     st.write(f"Latest: {latest.sport}")
 """
+
 import os
 import urllib.parse
 from datetime import date
@@ -89,7 +90,7 @@ class StreamlitAuth:
         self,
         client_id=None,
         client_secret=None,
-        scopes: list[str | Scope]=None,
+        scopes: list[str | Scope] = None,
         redirect_uri=None,
     ):
         """Initialize the StreamlitAuth component.
@@ -104,12 +105,20 @@ class StreamlitAuth:
         self.client_secret = client_secret or os.environ.get("SWEATSTACK_CLIENT_SECRET")
 
         if scopes is not None:
-            self.scopes = [Scope(scope.strip().lower()) if isinstance(scope, str) else scope
-                          for scope in scopes] if scopes else []
+            self.scopes = (
+                [
+                    Scope(scope.strip().lower()) if isinstance(scope, str) else scope
+                    for scope in scopes
+                ]
+                if scopes
+                else []
+            )
         elif os.environ.get("SWEATSTACK_SCOPES"):
             scopes = os.environ.get("SWEATSTACK_SCOPES").split(",")
-            self.scopes = [Scope(scope.strip().lower()) if isinstance(scope, str) else scope
-                          for scope in scopes]
+            self.scopes = [
+                Scope(scope.strip().lower()) if isinstance(scope, str) else scope
+                for scope in scopes
+            ]
         else:
             self.scopes = [Scope.data_read, Scope.profile]
 
@@ -271,7 +280,9 @@ class StreamlitAuth:
             "prompt": "none",
         }
         path = "/oauth/authorize"
-        authorization_url = urllib.parse.urljoin(DEFAULT_URL, path + "?" + urllib.parse.urlencode(params))
+        authorization_url = urllib.parse.urljoin(
+            DEFAULT_URL, path + "?" + urllib.parse.urlencode(params)
+        )
 
         return authorization_url
 
@@ -289,7 +300,9 @@ class StreamlitAuth:
             self.refresh_token = refresh_token
             st.session_state["sweatstack_refresh_token"] = refresh_token
 
-        self.client = Client(self.api_key, refresh_token=self.refresh_token, streamlit_compatible=True)
+        self.client = Client(
+            self.api_key, refresh_token=self.refresh_token, streamlit_compatible=True
+        )
 
     def _exchange_token(self, code):
         """Exchanges an authorization code for an access token.
@@ -322,8 +335,7 @@ class StreamlitAuth:
         token_response = response.json()
 
         self._set_api_key(
-            token_response.get("access_token"),
-            refresh_token=token_response.get("refresh_token")
+            token_response.get("access_token"), refresh_token=token_response.get("refresh_token")
         )
 
         return
@@ -467,11 +479,15 @@ class StreamlitAuth:
         selected_activity = st.selectbox(
             "Select an activity",
             activities,
-            format_func=lambda activity: f"{activity.start_local.date().isoformat()} {activity.sport.label}",
+            format_func=lambda activity: (
+                f"{activity.start_local.date().isoformat()} {activity.sport.label}"
+            ),
         )
         return selected_activity
 
-    def select_sport(self, only_root: bool = False, allow_multiple: bool = False, only_available: bool = True):
+    def select_sport(
+        self, only_root: bool = False, allow_multiple: bool = False, only_available: bool = True
+    ):
         """Select a sport from the available sports.
 
         This method retrieves sports and displays them in a dropdown or multiselect for selection.

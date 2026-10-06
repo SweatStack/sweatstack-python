@@ -139,9 +139,7 @@ def _refresh_access_token(
     return payload["access_token"], rotated
 
 
-def _resolve_access_token(
-    access_token: str, refresh_token: str
-) -> CachedAccessToken:
+def _resolve_access_token(access_token: str, refresh_token: str) -> CachedAccessToken:
     """Return a fresh access token (plus its refresh token) for a session.
 
     Hits the access-token cache first. On a miss, serialises concurrent
@@ -191,9 +189,7 @@ def _resolve_access_token(
                 REFRESH_LOCK_TIMEOUT,
                 fp,
             )
-            raise RefreshLockTimeout(
-                f"Timed out waiting {REFRESH_LOCK_TIMEOUT}s for peer refresh"
-            )
+            raise RefreshLockTimeout(f"Timed out waiting {REFRESH_LOCK_TIMEOUT}s for peer refresh")
 
         # Re-check: a peer may have refreshed while we waited.
         cached = cache.get(refresh_token)
@@ -213,9 +209,7 @@ def _resolve_access_token(
         except Exception:
             # Don't let a failed refresh strand a stale token in the cache.
             cache.invalidate(refresh_token)
-            logger.debug(
-                "access-token refresh failed; cache invalidated (session=%s)", fp
-            )
+            logger.debug("access-token refresh failed; cache invalidated (session=%s)", fp)
             raise
 
         effective_refresh_token = rotated_refresh_token or refresh_token
@@ -242,9 +236,7 @@ def _resolve_access_token(
             )
         else:
             cache.set(refresh_token, value)
-            logger.debug(
-                "access-token refresh completed (session=%s)", fp
-            )
+            logger.debug("access-token refresh completed (session=%s)", fp)
         return value
 
 
@@ -360,9 +352,7 @@ def _load_user_from_store(user_id: str) -> SweatStackUser:
             refresh_token=tokens.refresh_token,
         )
     except Exception as e:
-        raise WebhookTokenRefreshError(
-            f"Failed to refresh tokens for user {user_id}: {e}"
-        ) from e
+        raise WebhookTokenRefreshError(f"Failed to refresh tokens for user {user_id}: {e}") from e
 
     if (
         resolved.access_token != tokens.access_token

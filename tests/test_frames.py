@@ -29,7 +29,11 @@ from sweatstack._frames import (
 from sweatstack.openapi_schemas import ActivitySummary, DailyResponse, TraceDetails
 
 PUBLIC_MODELS = sorted(
-    (obj for obj in vars(schemas).values() if isclass(obj) and issubclass(obj, BaseModel) and obj is not BaseModel),
+    (
+        obj
+        for obj in vars(schemas).values()
+        if isclass(obj) and issubclass(obj, BaseModel) and obj is not BaseModel
+    ),
     key=lambda model: model.__name__,
 )
 
@@ -86,7 +90,10 @@ class TestRegenGuard:
         with pytest.warns(FrameSchemaWarning, match="Odd.mixed"):
             schema = polars_schema(Odd)
         assert schema["mixed"] == pl.String
-        assert models_to_polars([Odd(mixed=3), Odd(mixed="x")], Odd)["mixed"].to_list() == ["3", "x"]
+        assert models_to_polars([Odd(mixed=3), Odd(mixed="x")], Odd)["mixed"].to_list() == [
+            "3",
+            "x",
+        ]
 
 
 class TestPolarsSchema:
@@ -118,9 +125,17 @@ class TestPolarsSchema:
         from sweatstack.openapi_schemas import UserResponse
 
         assert polars_schema(UserResponse)["registered_at"] == pl.Datetime("us", "UTC")
+
         def user(registered_at):
-            return UserResponse(id="u", first_name="a", last_name=None, admin=False, display_name="a",
-                                is_managed=False, registered_at=registered_at)
+            return UserResponse(
+                id="u",
+                first_name="a",
+                last_name=None,
+                admin=False,
+                display_name="a",
+                is_managed=False,
+                registered_at=registered_at,
+            )
 
         naive = user(datetime(2025, 1, 1, 12))
         aware = user(datetime(2025, 1, 1, 12, tzinfo=timezone.utc))
@@ -137,7 +152,9 @@ class TestPolarsSchema:
 class TestModelsToPolars:
     def test_round_trip_values(self):
         a1 = _activity()
-        a2 = _activity(id="a2", summary=None, metrics=["speed"], laps=[LAP], tags=None, app_metadata=None)
+        a2 = _activity(
+            id="a2", summary=None, metrics=["speed"], laps=[LAP], tags=None, app_metadata=None
+        )
         df = models_to_polars([a1, a2], ActivitySummary)
 
         assert df.shape == (2, len(ActivitySummary.model_fields))
@@ -152,7 +169,9 @@ class TestModelsToPolars:
         power = df.unnest("summary").unnest("power")
         assert power["mean"].to_list() == [210.0, None]
         assert df.select(pl.col("laps").list.len()).to_series().to_list() == [0, 1]
-        lap_mean = df.select(pl.col("laps").list.eval(pl.element().struct.field("power").struct.field("mean")))
+        lap_mean = df.select(
+            pl.col("laps").list.eval(pl.element().struct.field("power").struct.field("mean"))
+        )
         assert lap_mean.to_series().to_list() == [[], [250.0]]
 
     def test_empty_list_gives_typed_empty_frame(self):
@@ -161,13 +180,15 @@ class TestModelsToPolars:
         assert df.schema == pl.Schema(polars_schema(ActivitySummary))
 
     def test_recursive_field_is_serialised_as_json_text(self):
-        trace = TraceDetails.model_validate({
-            "id": "t1",
-            "timestamp": "2025-06-01T09:00:00Z",
-            "timestamp_local": "2025-06-01T11:00:00",
-            "sport": "cycling",
-            "activity": _activity().model_dump(),
-        })
+        trace = TraceDetails.model_validate(
+            {
+                "id": "t1",
+                "timestamp": "2025-06-01T09:00:00Z",
+                "timestamp_local": "2025-06-01T11:00:00",
+                "sport": "cycling",
+                "activity": _activity().model_dump(),
+            }
+        )
         df = models_to_polars([trace], TraceDetails)
         nested = df["activity"][0]
         assert nested["id"] == "a1"
@@ -180,7 +201,10 @@ class TestModelsToPolars:
     def test_wrong_type_never_coerces_silently(self):
         schema = polars_schema(DailyResponse)
         with pytest.raises(pl.exceptions.ComputeError):
-            pl.from_dicts([{"date": "not-a-date", "value": 1.0, "status": "stored", "source": None}], schema=schema)
+            pl.from_dicts(
+                [{"date": "not-a-date", "value": 1.0, "status": "stored", "source": None}],
+                schema=schema,
+            )
 
     def test_dailies_values(self):
         dailies = [
@@ -196,7 +220,9 @@ class TestModelsToPolars:
 class TestModelsToArrow:
     def test_arrow_and_polars_agree(self):
         a1 = _activity()
-        a2 = _activity(id="a2", summary=None, metrics=["speed"], laps=[LAP], tags=None, app_metadata=None)
+        a2 = _activity(
+            id="a2", summary=None, metrics=["speed"], laps=[LAP], tags=None, app_metadata=None
+        )
         table = models_to_arrow([a1, a2], ActivitySummary)
         assert isinstance(table, pa.Table)
         assert table.schema.field("start").type == pa.timestamp("us", tz="UTC")

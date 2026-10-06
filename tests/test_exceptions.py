@@ -8,7 +8,6 @@ Covers:
 - Transport error wrapping
 """
 
-
 import httpx
 import pytest
 

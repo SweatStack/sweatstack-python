@@ -30,10 +30,12 @@ def _params_sent(client, call):
     http.__exit__ = MagicMock(return_value=False)
     http.get.return_value = response
 
-    with patch.object(client, "_http_client", return_value=http), \
-         patch.object(client, "_raise_for_status"), \
-         patch.object(client, "_cache_enabled", return_value=False), \
-         patch.object(client, "_read_frame", return_value=pd.DataFrame()):
+    with (
+        patch.object(client, "_http_client", return_value=http),
+        patch.object(client, "_raise_for_status"),
+        patch.object(client, "_cache_enabled", return_value=False),
+        patch.object(client, "_read_frame", return_value=pd.DataFrame()),
+    ):
         call()
     return http.get.call_args.kwargs["params"]
 
@@ -51,16 +53,24 @@ def test_get_activity_data_omits_segmentation_when_unset(client):
 def test_get_longitudinal_data_sends_segmentation_on(client):
     params = _params_sent(
         client,
-        lambda: client.get_longitudinal_data(sports=["running"], start="2024-01-01", segmentation_on="power"),
+        lambda: client.get_longitudinal_data(
+            sports=["running"], start="2024-01-01", segmentation_on="power"
+        ),
     )
     assert params["segmentation_on"] == "power"
 
 
 def test_get_activity_mean_max_sends_durations(client):
-    assert "durations" not in _params_sent(client, lambda: client.get_activity_mean_max("a", "power"))
-    params = _params_sent(client, lambda: client.get_activity_mean_max("a", "power", durations=[300, 5]))
+    assert "durations" not in _params_sent(
+        client, lambda: client.get_activity_mean_max("a", "power")
+    )
+    params = _params_sent(
+        client, lambda: client.get_activity_mean_max("a", "power", durations=[300, 5])
+    )
     assert params["durations"] == "300,5"
-    params = _params_sent(client, lambda: client.get_activity_mean_max("a", "power", durations="all"))
+    params = _params_sent(
+        client, lambda: client.get_activity_mean_max("a", "power", durations="all")
+    )
     assert params["durations"] == "all"
 
 

@@ -20,16 +20,17 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 
 FORBIDDEN = {
-    "real-looking SweatStack ID (ULID); use an obvious fake like app_123":
-        re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b"),
-    "JWT; use an obvious fake like 'access_token_value'":
-        re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}"),
-    "private key":
-        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY"),
-    "local machine path":
-        re.compile(r"/Users/[a-z]|/home/[a-z]"),
-    "private server reference; describe the public contract instead":
-        re.compile(r"[Ss]erver plans? \d{3}|\bapp/(routers|logic)/|\.\./sweatstack/"),
+    "real-looking SweatStack ID (ULID); use an obvious fake like app_123": re.compile(
+        r"\b01[0-9A-HJKMNP-TV-Z]{24}\b"
+    ),
+    "JWT; use an obvious fake like 'access_token_value'": re.compile(
+        r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}"
+    ),
+    "private key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY"),
+    "local machine path": re.compile(r"/Users/[a-z]|/home/[a-z]"),
+    "private server reference; describe the public contract instead": re.compile(
+        r"[Ss]erver plans? \d{3}|\bapp/(routers|logic)/|\.\./sweatstack/"
+    ),
 }
 
 SKIPPED_SUFFIXES = {".lock", ".png", ".jpg", ".ico", ".whl", ".gz"}
@@ -39,7 +40,10 @@ def _repo_files() -> list[Path]:
     try:
         out = subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-            cwd=REPO, capture_output=True, text=True, check=True,
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
     except (FileNotFoundError, subprocess.CalledProcessError):
         pytest.skip("not a git checkout")

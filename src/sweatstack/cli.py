@@ -19,7 +19,7 @@ def _bind_sport_to_ost(path: Path) -> None:
     tree = ast.parse(src)
     lines = src.splitlines(keepends=True)
 
-    drop: set[int] = set()        # 0-indexed lines to remove
+    drop: set[int] = set()  # 0-indexed lines to remove
     replace: dict[int, str] = {}  # 0-indexed line -> new text
 
     # Drop a leftover generated `Sport` schema (the server may still emit an unused one) ...
@@ -33,8 +33,11 @@ def _bind_sport_to_ost(path: Path) -> None:
 
     # Retype every `sport` / `sports` field annotation: str -> SportField (str | None, list[str], ...).
     for node in ast.walk(tree):
-        if (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
-                and node.target.id in ("sport", "sports")):
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id in ("sport", "sports")
+        ):
             annotation = ast.get_source_segment(src, node.annotation)
             retyped = re.sub(r"\bstr\b", "SportField", annotation)
             if retyped != annotation:
@@ -47,7 +50,9 @@ def _bind_sport_to_ost(path: Path) -> None:
             continue
         out.append(replace.get(i, line))
         if line.startswith("from __future__ import annotations"):
-            out.append("from open_sport_taxonomy.pydantic import SportField  # OST sport type (see schemas.py)\n")
+            out.append(
+                "from open_sport_taxonomy.pydantic import SportField  # OST sport type (see schemas.py)\n"
+            )
     path.write_text("".join(out))
 
 

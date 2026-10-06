@@ -458,7 +458,9 @@ class TestWebhookConfiguration:
         monkeypatch.setenv("SWEATSTACK_CLIENT_ID", "test_id")
         monkeypatch.setenv("SWEATSTACK_CLIENT_SECRET", "test_secret")
         monkeypatch.setenv("APP_URL", "http://localhost:8000")
-        monkeypatch.setenv("SWEATSTACK_SESSION_SECRET", "dGVzdC1vbmx5LWtleS1mb3ItdW5pdC10ZXN0cy0zMmI=")
+        monkeypatch.setenv(
+            "SWEATSTACK_SESSION_SECRET", "dGVzdC1vbmx5LWtleS1mb3ItdW5pdC10ZXN0cy0zMmI="
+        )
         monkeypatch.setenv("SWEATSTACK_WEBHOOK_SECRET", "whsec_from_env")
 
         configure()

@@ -14,6 +14,7 @@ Example:
     print(sport.parent)                             # Sport("cycling")
     print(sport.is_subsport_of(Sport("cycling")))   # True
 """
+
 from enum import Enum
 
 from open_sport_taxonomy import Modifier, Sport
@@ -60,6 +61,7 @@ def _open_enum(enum_cls: type[Enum]) -> None:
     on purpose: the server promises those never grow, or a value the client does not know
     is not something it should act on.
     """
+
     @classmethod
     def _missing_(cls, value):
         pseudo_member = object.__new__(cls)

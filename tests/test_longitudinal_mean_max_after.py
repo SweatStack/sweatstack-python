@@ -23,14 +23,16 @@ def client():
 
 def _index_free_after_response() -> bytes:
     """An index-free `after` long-format response, as the API returns it."""
-    df = pd.DataFrame({
-        "power": [100.0, 200.0, 90.0, 180.0],
-        "after": [0.0, 0.0, 500.0, 500.0],
-        "duration": pd.to_timedelta([300, 60, 200, 40], unit="s"),
-        "start": pd.to_datetime(["2024-01-01"] * 4, utc=True),
-        "activity_id": ["a", "a", "b", "b"],
-        "sport": ["cycling"] * 4,
-    })
+    df = pd.DataFrame(
+        {
+            "power": [100.0, 200.0, 90.0, 180.0],
+            "after": [0.0, 0.0, 500.0, 500.0],
+            "duration": pd.to_timedelta([300, 60, 200, 40], unit="s"),
+            "start": pd.to_datetime(["2024-01-01"] * 4, utc=True),
+            "activity_id": ["a", "a", "b", "b"],
+            "sport": ["cycling"] * 4,
+        }
+    )
     buf = BytesIO()
     df.to_parquet(buf, index=False)
     return buf.getvalue()
@@ -42,10 +44,14 @@ def _call(client, **kwargs):
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)
     http.get.return_value = response
-    with patch.object(client, "_http_client", return_value=http), \
-         patch.object(client, "_raise_for_status"), \
-         patch.object(client, "_cache_enabled", return_value=False):
-        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", output="pandas", **kwargs)
+    with (
+        patch.object(client, "_http_client", return_value=http),
+        patch.object(client, "_raise_for_status"),
+        patch.object(client, "_cache_enabled", return_value=False),
+    ):
+        result = client.get_longitudinal_mean_max(
+            sports=["cycling"], metric="power", output="pandas", **kwargs
+        )
     return result, http.get.call_args.kwargs["params"]
 
 
@@ -68,7 +74,9 @@ def test_single_after_is_normalised_to_a_list(client):
 def test_no_after_is_unchanged(client):
     # without `after`, no after param is sent; the server's metric index becomes a leading column
     response = MagicMock(status_code=200)
-    df = pd.DataFrame({"duration": pd.to_timedelta([60], unit="s")}, index=pd.Index([200.0], name="power"))
+    df = pd.DataFrame(
+        {"duration": pd.to_timedelta([60], unit="s")}, index=pd.Index([200.0], name="power")
+    )
     buf = BytesIO()
     df.to_parquet(buf)
     response.content = buf.getvalue()
@@ -76,10 +84,14 @@ def test_no_after_is_unchanged(client):
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)
     http.get.return_value = response
-    with patch.object(client, "_http_client", return_value=http), \
-         patch.object(client, "_raise_for_status"), \
-         patch.object(client, "_cache_enabled", return_value=False):
-        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", output="pandas")
+    with (
+        patch.object(client, "_http_client", return_value=http),
+        patch.object(client, "_raise_for_status"),
+        patch.object(client, "_cache_enabled", return_value=False),
+    ):
+        result = client.get_longitudinal_mean_max(
+            sports=["cycling"], metric="power", output="pandas"
+        )
     assert "after" not in http.get.call_args.kwargs["params"]
     assert isinstance(result.index, pd.RangeIndex)
     assert list(result.columns) == ["power", "duration"]
@@ -87,13 +99,15 @@ def test_no_after_is_unchanged(client):
 
 def _index_free_by_duration_response() -> bytes:
     """An `after` response as the server returns it: one row per duration, columns only."""
-    df = pd.DataFrame({
-        "duration": pd.to_timedelta([5, 60, 300, 5, 60], unit="s"),
-        "power": [400.0, 300.0, 250.0, 380.0, 290.0],
-        "activity_id": ["a", "a", "a", "b", "b"],
-        "sport": ["cycling"] * 5,
-        "after": [0.0, 0.0, 0.0, 50.0, 50.0],
-    })
+    df = pd.DataFrame(
+        {
+            "duration": pd.to_timedelta([5, 60, 300, 5, 60], unit="s"),
+            "power": [400.0, 300.0, 250.0, 380.0, 290.0],
+            "activity_id": ["a", "a", "a", "b", "b"],
+            "sport": ["cycling"] * 5,
+            "after": [0.0, 0.0, 0.0, 50.0, 50.0],
+        }
+    )
     buf = BytesIO()
     df.to_parquet(buf, index=False)
     return buf.getvalue()
@@ -120,10 +134,14 @@ def test_after_response_is_duration_rows_with_columns_only(client):
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)
     http.get.return_value = response
-    with patch.object(client, "_http_client", return_value=http), \
-         patch.object(client, "_raise_for_status"), \
-         patch.object(client, "_cache_enabled", return_value=False):
-        result = client.get_longitudinal_mean_max(sports=["cycling"], metric="power", after=[0, 50], output="pandas")
+    with (
+        patch.object(client, "_http_client", return_value=http),
+        patch.object(client, "_raise_for_status"),
+        patch.object(client, "_cache_enabled", return_value=False),
+    ):
+        result = client.get_longitudinal_mean_max(
+            sports=["cycling"], metric="power", after=[0, 50], output="pandas"
+        )
     assert isinstance(result.index, pd.RangeIndex)
     assert {"duration", "power", "after"} <= set(result.columns)
     assert set(result["after"].unique()) == {0.0, 50.0}

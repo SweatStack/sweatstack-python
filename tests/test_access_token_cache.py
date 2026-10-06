@@ -254,9 +254,11 @@ class TestLockSemantics:
         with cache.lock("rt", timeout=0) as outer:
             assert outer
             with ThreadPoolExecutor(max_workers=1) as pool:
+
                 def contended():
                     with cache.lock("rt", timeout=0) as inner:
                         return inner
+
                 assert pool.submit(contended).result(timeout=1) is False
 
 
@@ -449,9 +451,7 @@ class TestResolveAccessToken:
         with patch.object(
             deps, "_refresh_access_token", return_value=(fresh_token, "rt-new")
         ) as refresh:
-            result = deps._resolve_access_token(
-                access_token=stale_token, refresh_token="rt-old"
-            )
+            result = deps._resolve_access_token(access_token=stale_token, refresh_token="rt-old")
 
         assert result.access_token == fresh_token
         assert result.refresh_token == "rt-new"
@@ -465,9 +465,7 @@ class TestResolveAccessToken:
 
         # Subsequent request with the new key short-circuits — no second refresh.
         with patch.object(deps, "_refresh_access_token") as refresh2:
-            second = deps._resolve_access_token(
-                access_token=stale_token, refresh_token="rt-new"
-            )
+            second = deps._resolve_access_token(access_token=stale_token, refresh_token="rt-new")
         assert second.access_token == fresh_token
         refresh2.assert_not_called()
 
@@ -479,9 +477,7 @@ class TestResolveAccessToken:
         stale_token = _jwt(exp=time.time() - 60)
         fresh_token = _jwt(exp=time.time() + 900)
 
-        with patch.object(
-            deps, "_refresh_access_token", return_value=(fresh_token, "rt")
-        ):
+        with patch.object(deps, "_refresh_access_token", return_value=(fresh_token, "rt")):
             result = deps._resolve_access_token(access_token=stale_token, refresh_token="rt")
 
         assert result.refresh_token == "rt"
@@ -512,9 +508,7 @@ class TestResolveAccessToken:
             assert holder_acquired.wait(timeout=1)
             try:
                 with pytest.raises(deps.RefreshLockTimeout):
-                    deps._resolve_access_token(
-                        access_token=stale_token, refresh_token="rt"
-                    )
+                    deps._resolve_access_token(access_token=stale_token, refresh_token="rt")
             finally:
                 release_holder.set()
             holder.result(timeout=2)
@@ -547,9 +541,7 @@ class TestRefreshTokensIfNeeded:
         fresh_token = _jwt(exp=time.time() + 900)
         tokens = TokenSet(access_token=stale_token, refresh_token="rt", user_id="user_1")
 
-        with patch.object(
-            deps, "_refresh_access_token", return_value=(fresh_token, None)
-        ):
+        with patch.object(deps, "_refresh_access_token", return_value=(fresh_token, None)):
             result = deps._refresh_tokens_if_needed(tokens)
 
         assert result is not None
@@ -567,9 +559,7 @@ class TestRefreshTokensIfNeeded:
         fresh_token = _jwt(exp=time.time() + 900)
         tokens = TokenSet(access_token=stale_token, refresh_token="rt-old", user_id="u")
 
-        with patch.object(
-            deps, "_refresh_access_token", return_value=(fresh_token, "rt-new")
-        ):
+        with patch.object(deps, "_refresh_access_token", return_value=(fresh_token, "rt-new")):
             result = deps._refresh_tokens_if_needed(tokens)
 
         assert result is not None

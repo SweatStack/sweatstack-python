@@ -160,9 +160,7 @@ class AccessTokenCache(Protocol):
         """
         ...
 
-    def lock(
-        self, key: str, *, timeout: float | None = None
-    ) -> AbstractContextManager[bool]:
+    def lock(self, key: str, *, timeout: float | None = None) -> AbstractContextManager[bool]:
         """Acquire the per-session refresh lock for ``key``.
 
         Returns a context manager that yields ``True`` if the lock was
@@ -250,9 +248,7 @@ class InMemoryAccessTokenCache:
         with self._table_lock:
             self._entries.pop(key, None)
 
-    def migrate(
-        self, *, old_key: str, new_key: str, value: CachedAccessToken
-    ) -> None:
+    def migrate(self, *, old_key: str, new_key: str, value: CachedAccessToken) -> None:
         with self._table_lock:
             self._entries[new_key] = value
             self._entries.move_to_end(new_key)
@@ -268,16 +264,12 @@ class InMemoryAccessTokenCache:
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
 
-    def lock(
-        self, key: str, *, timeout: float | None = None
-    ) -> AbstractContextManager[bool]:
+    def lock(self, key: str, *, timeout: float | None = None) -> AbstractContextManager[bool]:
         return self._lock_cm(self._stripe_for(key), timeout)
 
     @staticmethod
     @contextmanager
-    def _lock_cm(
-        raw: threading.Lock, timeout: float | None
-    ) -> Iterator[bool]:
+    def _lock_cm(raw: threading.Lock, timeout: float | None) -> Iterator[bool]:
         # ``threading.Lock.acquire`` interprets ``timeout=-1`` as
         # "block indefinitely"; any non-negative value is honoured.
         acquired = raw.acquire(timeout=timeout if timeout is not None else -1)

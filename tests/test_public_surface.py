@@ -15,8 +15,7 @@ from sweatstack.client import Client
 
 def _public_client_methods() -> set[str]:
     return {
-        name for name, obj in getmembers(Client)
-        if not name.startswith("_") and isfunction(obj)
+        name for name, obj in getmembers(Client) if not name.startswith("_") and isfunction(obj)
     }
 
 
@@ -27,15 +26,11 @@ class TestSingletonCoverage:
             attr = getattr(sweatstack, name, None)
             if not callable(attr):
                 missing.append(name)
-        assert not missing, (
-            f"Public Client methods missing module-level singletons: {missing}"
-        )
+        assert not missing, f"Public Client methods missing module-level singletons: {missing}"
 
     def test_singletons_in_dunder_all(self):
         missing = sorted(_public_client_methods() - set(sweatstack.__all__))
-        assert not missing, (
-            f"Public Client methods missing from sweatstack.__all__: {missing}"
-        )
+        assert not missing, f"Public Client methods missing from sweatstack.__all__: {missing}"
 
     def test_known_previously_missing_methods_now_exposed(self):
         """Regression guard for the 0.77.x bug — these were never registered."""
@@ -53,9 +48,7 @@ class TestDunderAll:
 
     def test_every_entry_resolves(self):
         unresolved = [n for n in sweatstack.__all__ if not hasattr(sweatstack, n)]
-        assert not unresolved, (
-            f"Names in __all__ that don't resolve on the package: {unresolved}"
-        )
+        assert not unresolved, f"Names in __all__ that don't resolve on the package: {unresolved}"
 
     def test_core_surface_present(self):
         for name in (

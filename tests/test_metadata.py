@@ -24,16 +24,44 @@ def client():
 class TestAppMetadataPathConstruction:
     """Verify each method hits the correct API path."""
 
-    @pytest.mark.parametrize("method,args,kwargs,expected_path", [
-        ("set_activity_app_metadata", ("act_123",), {"data": {"key": "val"}}, "/api/v1/activities/act_123/app-metadata"),
-        ("delete_activity_app_metadata", ("act_123",), {}, "/api/v1/activities/act_123/app-metadata"),
-        ("set_trace_app_metadata", ("trace_123",), {"data": {"key": "val"}}, "/api/v1/traces/trace_123/app-metadata"),
-        ("delete_trace_app_metadata", ("trace_123",), {}, "/api/v1/traces/trace_123/app-metadata"),
-        ("set_test_app_metadata", ("test_123",), {"data": {"key": "val"}}, "/api/v1/tests/test_123/app-metadata"),
-        ("delete_test_app_metadata", ("test_123",), {}, "/api/v1/tests/test_123/app-metadata"),
-        ("set_user_app_metadata", (), {"data": {"key": "val"}}, "/api/v1/profile/app-metadata"),
-        ("delete_user_app_metadata", (), {}, "/api/v1/profile/app-metadata"),
-    ])
+    @pytest.mark.parametrize(
+        "method,args,kwargs,expected_path",
+        [
+            (
+                "set_activity_app_metadata",
+                ("act_123",),
+                {"data": {"key": "val"}},
+                "/api/v1/activities/act_123/app-metadata",
+            ),
+            (
+                "delete_activity_app_metadata",
+                ("act_123",),
+                {},
+                "/api/v1/activities/act_123/app-metadata",
+            ),
+            (
+                "set_trace_app_metadata",
+                ("trace_123",),
+                {"data": {"key": "val"}},
+                "/api/v1/traces/trace_123/app-metadata",
+            ),
+            (
+                "delete_trace_app_metadata",
+                ("trace_123",),
+                {},
+                "/api/v1/traces/trace_123/app-metadata",
+            ),
+            (
+                "set_test_app_metadata",
+                ("test_123",),
+                {"data": {"key": "val"}},
+                "/api/v1/tests/test_123/app-metadata",
+            ),
+            ("delete_test_app_metadata", ("test_123",), {}, "/api/v1/tests/test_123/app-metadata"),
+            ("set_user_app_metadata", (), {"data": {"key": "val"}}, "/api/v1/profile/app-metadata"),
+            ("delete_user_app_metadata", (), {}, "/api/v1/profile/app-metadata"),
+        ],
+    )
     def test_path(self, client, method, args, kwargs, expected_path):
         """Each metadata method should construct the correct API path."""
         mock_response = MagicMock()

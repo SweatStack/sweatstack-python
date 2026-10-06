@@ -35,7 +35,9 @@ def _http_returning(status_code: int, payload) -> MagicMock:
 
 
 def _mint(app, **kwargs):
-    http = _http_returning(200, {"url": "https://app.sweatstack.no/portal/integrations?app=app_123"})
+    http = _http_returning(
+        200, {"url": "https://app.sweatstack.no/portal/integrations?app=app_123"}
+    )
     with patch.object(app, "_http_client", return_value=http) as http_client:
         session = app.create_portal_session(**kwargs)
     return session, http.post.call_args.kwargs, http_client.call_args.kwargs
@@ -56,7 +58,9 @@ class TestRequestBody:
         assert call["json"]["destination"] == "manage-teams"
 
     def test_return_url_is_forwarded_only_when_given(self, app):
-        _, call, _ = _mint(app, destination="manage-integrations", return_url="https://example.com/app/")
+        _, call, _ = _mint(
+            app, destination="manage-integrations", return_url="https://example.com/app/"
+        )
         assert call["json"]["return_url"] == "https://example.com/app/"
         _, call, _ = _mint(app, destination="manage-integrations")
         assert "return_url" not in call["json"]  # omitting it is meaningful to the Portal
@@ -88,10 +92,16 @@ class TestNoUserToken:
 class TestErrors:
     def test_bad_credentials(self, app):
         http = _http_returning(401, {"detail": "Invalid client credentials"})
-        with patch.object(app, "_http_client", return_value=http), pytest.raises(SweatStackAuthError):
+        with (
+            patch.object(app, "_http_client", return_value=http),
+            pytest.raises(SweatStackAuthError),
+        ):
             app.create_portal_session("manage-integrations")
 
     def test_unregistered_return_url(self, app):
         http = _http_returning(400, {"detail": "return_url is not registered for this application"})
-        with patch.object(app, "_http_client", return_value=http), pytest.raises(SweatStackBadRequestError):
+        with (
+            patch.object(app, "_http_client", return_value=http),
+            pytest.raises(SweatStackBadRequestError),
+        ):
             app.create_portal_session("manage-integrations", return_url="https://evil.example/")

@@ -46,7 +46,10 @@ def client():
 def _mean_max_with_index() -> bytes:
     """A mean-max response as the server writes it today: metric value as a pandas index."""
     df = pd.DataFrame(
-        {"duration": pd.to_timedelta([1, 5, 60], unit="s"), "speed": pd.array([9.5, 9.0, 8.25], dtype="float16")},
+        {
+            "duration": pd.to_timedelta([1, 5, 60], unit="s"),
+            "speed": pd.array([9.5, 9.0, 8.25], dtype="float16"),
+        },
         index=pd.Index([400.0, 350.0, 300.0], name="power"),
     )
     buf = BytesIO()
@@ -72,25 +75,29 @@ def _http_returning(content: bytes):
 
 
 def _get_activity_mean_max(client, content: bytes, **kwargs):
-    with patch.object(client, "_http_client", return_value=_http_returning(content)), \
-         patch.object(client, "_raise_for_status"), \
-         patch.object(client, "_cache_enabled", return_value=False):
+    with (
+        patch.object(client, "_http_client", return_value=_http_returning(content)),
+        patch.object(client, "_raise_for_status"),
+        patch.object(client, "_cache_enabled", return_value=False),
+    ):
         return client.get_activity_mean_max("a", "power", **kwargs)
 
 
 def _activity(i: int) -> ActivitySummary:
-    return ActivitySummary.model_validate({
-        "id": f"a{i}",
-        "start": "2025-06-01T08:00:00Z",
-        "end": "2025-06-01T10:00:00Z",
-        "start_local": "2025-06-01T10:00:00",
-        "end_local": "2025-06-01T12:00:00",
-        "sport": "cycling.road",
-        "duration": "PT2H",
-        "metrics": ["power"],
-        "source_id": "s1",
-        "summary": {"power": {"mean": 200 + i, "max": 500}},
-    })
+    return ActivitySummary.model_validate(
+        {
+            "id": f"a{i}",
+            "start": "2025-06-01T08:00:00Z",
+            "end": "2025-06-01T10:00:00Z",
+            "start_local": "2025-06-01T10:00:00",
+            "end_local": "2025-06-01T12:00:00",
+            "sport": "cycling.road",
+            "duration": "PT2H",
+            "metrics": ["power"],
+            "source_id": "s1",
+            "summary": {"power": {"mean": 200 + i, "max": 500}},
+        }
+    )
 
 
 def _get_activities(client, activities, **kwargs):
@@ -106,7 +113,9 @@ def _get_activities(client, activities, **kwargs):
 def _installed(*modules):
     """Patch importlib so only ``modules`` look installed."""
     real = _frames.find_spec
-    return patch.object(_frames, "find_spec", side_effect=lambda name: real(name) if name in modules else None)
+    return patch.object(
+        _frames, "find_spec", side_effect=lambda name: real(name) if name in modules else None
+    )
 
 
 class TestResolution:
@@ -128,10 +137,18 @@ class TestResolution:
             assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pd.DataFrame)
 
     def test_no_frame_library_is_an_actionable_error(self, client):
-        with _installed(), pytest.raises(ImportError, match=r'sweatstack\[polars\].*sweatstack\[pandas\].*sweatstack\[arrow\].*bytes'):
+        with (
+            _installed(),
+            pytest.raises(
+                ImportError,
+                match=r"sweatstack\[polars\].*sweatstack\[pandas\].*sweatstack\[arrow\].*bytes",
+            ),
+        ):
             _get_activity_mean_max(client, _mean_max_with_index())
         with _installed():  # explicit outputs that need no library still work
-            assert isinstance(_get_activity_mean_max(client, _mean_max_with_index(), output="bytes"), bytes)
+            assert isinstance(
+                _get_activity_mean_max(client, _mean_max_with_index(), output="bytes"), bytes
+            )
             assert isinstance(_get_activities(client, [_activity(1)]), list)
 
     def test_configured_output_beats_the_installed_default(self, client):
@@ -143,7 +160,9 @@ class TestResolution:
         assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pa.Table)
         client.output = "polars"
         assert isinstance(_get_activity_mean_max(client, _mean_max_with_index()), pl.DataFrame)
-        assert isinstance(_get_activity_mean_max(client, _mean_max_with_index(), output="pandas"), pd.DataFrame)
+        assert isinstance(
+            _get_activity_mean_max(client, _mean_max_with_index(), output="pandas"), pd.DataFrame
+        )
 
     def test_client_default_applies_to_list_endpoints_too(self, client):
         client.output = "polars"
@@ -156,7 +175,9 @@ class TestResolution:
         sweatstack.set_output("polars")  # client 'bytes' does not apply, module 'polars' does
         assert isinstance(_get_activities(client, [_activity(1)]), pl.DataFrame)
 
-    def test_per_call_output_a_method_cannot_produce_is_an_error(self, client):  # bytes on lists, models on parquet
+    def test_per_call_output_a_method_cannot_produce_is_an_error(
+        self, client
+    ):  # bytes on lists, models on parquet
         with pytest.raises(ValueError, match="'arrow', 'models', 'pandas', 'polars'"):
             _get_activities(client, [_activity(1)], output="bytes")
         with pytest.raises(ValueError, match="'arrow', 'bytes', 'pandas', 'polars'"):
@@ -186,7 +207,9 @@ class TestResolution:
 
 
 class TestParquetBackends:
-    @pytest.mark.parametrize("content", [_mean_max_with_index(), _mean_max_without_index()], ids=["indexed", "columns"])
+    @pytest.mark.parametrize(
+        "content", [_mean_max_with_index(), _mean_max_without_index()], ids=["indexed", "columns"]
+    )
     def test_pandas_returns_columns_with_standard_dtypes(self, client, content):
         df = _get_activity_mean_max(client, content, output="pandas")
         assert isinstance(df.index, pd.RangeIndex)
@@ -195,7 +218,9 @@ class TestParquetBackends:
         assert df["duration"].dtype == "timedelta64[ns]"
         assert df["power"].tolist() == [400.0, 350.0, 300.0]
 
-    @pytest.mark.parametrize("content", [_mean_max_with_index(), _mean_max_without_index()], ids=["indexed", "columns"])
+    @pytest.mark.parametrize(
+        "content", [_mean_max_with_index(), _mean_max_without_index()], ids=["indexed", "columns"]
+    )
     def test_polars_keeps_wire_dtypes_except_float16(self, client, content):
         df = _get_activity_mean_max(client, content, output="polars")
         assert df.columns == ["power", "duration", "speed"]
@@ -204,7 +229,9 @@ class TestParquetBackends:
         assert isinstance(df.schema["duration"], pl.Duration)
         assert df["power"].to_list() == [400.0, 350.0, 300.0]
 
-    @pytest.mark.parametrize("content", [_mean_max_with_index(), _mean_max_without_index()], ids=["indexed", "columns"])
+    @pytest.mark.parametrize(
+        "content", [_mean_max_with_index(), _mean_max_without_index()], ids=["indexed", "columns"]
+    )
     def test_arrow_is_the_wire_table_without_pandas_index_metadata(self, client, content):
         table = _get_activity_mean_max(client, content, output="arrow")
         assert table.column_names == ["power", "duration", "speed"]
@@ -225,21 +252,27 @@ class TestParquetBackends:
 
     def test_streamlit_compatibility_applies_to_pandas_only(self, client):
         client.streamlit_compatible = True
-        with patch("sweatstack.client.make_dataframe_streamlit_compatible", side_effect=lambda df: df) as compat:
+        with patch(
+            "sweatstack.client.make_dataframe_streamlit_compatible", side_effect=lambda df: df
+        ) as compat:
             _get_activity_mean_max(client, _mean_max_with_index(), output="pandas")
             assert compat.call_count == 1
             _get_activity_mean_max(client, _mean_max_with_index(), output="polars")
             assert compat.call_count == 1
 
     def test_latest_activity_data_forwards_output(self, client):
-        with patch.object(client, "get_latest_activity", return_value=MagicMock(id="a")), \
-             patch.object(client, "get_activity_data", return_value="frame") as get_data:
+        with (
+            patch.object(client, "get_latest_activity", return_value=MagicMock(id="a")),
+            patch.object(client, "get_activity_data", return_value="frame") as get_data,
+        ):
             assert client.get_latest_activity_data(output="polars") == "frame"
         assert get_data.call_args.kwargs["output"] == "polars"
 
     def test_latest_activity_mean_max_forwards_output(self, client):
-        with patch.object(client, "get_latest_activity", return_value=MagicMock(id="a")), \
-             patch.object(client, "get_activity_mean_max", return_value="frame") as get_mm:
+        with (
+            patch.object(client, "get_latest_activity", return_value=MagicMock(id="a")),
+            patch.object(client, "get_activity_mean_max", return_value="frame") as get_mm,
+        ):
             assert client.get_latest_activity_mean_max("power", output="arrow") == "frame"
         assert get_mm.call_args.kwargs["output"] == "arrow"
 
@@ -273,13 +306,28 @@ class TestListBackends:
         assert _get_activities(client, [], output="arrow").schema.field("id").type == pa.string()
 
     def test_dailies_date_is_a_column(self, client):
-        dailies = [DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual")]
-        with patch.object(client, "_http_client", return_value=_http_returning(b"")) as http, \
-             patch.object(client, "_raise_for_status"):
-            http.return_value.get.return_value.json.return_value = [d.model_dump(mode="json") for d in dailies]
-            df = client.get_dailies("body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="pandas")
-            pf = client.get_dailies("body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars")
-        assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == ["date", "value", "status", "source"]
+        dailies = [
+            DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual")
+        ]
+        with (
+            patch.object(client, "_http_client", return_value=_http_returning(b"")) as http,
+            patch.object(client, "_raise_for_status"),
+        ):
+            http.return_value.get.return_value.json.return_value = [
+                d.model_dump(mode="json") for d in dailies
+            ]
+            df = client.get_dailies(
+                "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="pandas"
+            )
+            pf = client.get_dailies(
+                "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars"
+            )
+        assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == [
+            "date",
+            "value",
+            "status",
+            "source",
+        ]
         assert pf.columns == ["date", "value", "status", "source"]
 
     def test_as_dataframe_is_gone(self, client):
@@ -296,8 +344,10 @@ class TestPropagation:
     def test_delegated_and_principal_clients_inherit_output(self):
         client = Client(api_key="x", output="polars")
         token = {"access_token": "a", "refresh_token": "r"}
-        with patch.object(Client, "_get_delegated_token", return_value=token), \
-             patch.object(Client, "_get_principal_token", return_value=token):
+        with (
+            patch.object(Client, "_get_delegated_token", return_value=token),
+            patch.object(Client, "_get_principal_token", return_value=token),
+        ):
             assert client.delegated_client("someone").output == "polars"
             assert client.principal_client().output == "polars"
 
@@ -306,7 +356,9 @@ class TestPropagation:
         auth = streamlit.StreamlitAuth.__new__(streamlit.StreamlitAuth)
         auth.client = MagicMock()
         auth.client.get_activities.return_value = [_activity(1)]
-        with patch.object(streamlit.st, "selectbox", side_effect=lambda label, options, **kw: options[0]):
+        with patch.object(
+            streamlit.st, "selectbox", side_effect=lambda label, options, **kw: options[0]
+        ):
             selected = auth.select_activity()
         assert selected.id == "a1"
         assert auth.client.get_activities.call_args.kwargs["output"] == "models"

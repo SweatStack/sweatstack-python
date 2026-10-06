@@ -98,8 +98,6 @@ def enable_cache(path: str | None = None) -> None:
     _cache_config = {"path": path}
 
 
-
-
 AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 <html>
 <head>
@@ -137,9 +135,7 @@ class _LocalCacheMixin:
             cache_dir = "unknown"
 
         logging.warning(
-            f"Failed to {operation} cache. "
-            f"Cache directory: {cache_dir}. "
-            f"Error: {error}"
+            f"Failed to {operation} cache. Cache directory: {cache_dir}. Error: {error}"
         )
 
     def _get_user_id_from_token(self) -> str:
@@ -176,10 +172,10 @@ class _LocalCacheMixin:
             if value is None:
                 continue
             elif isinstance(value, list):
-                normalized_params[key] = sorted([
-                    v.value if hasattr(v, 'value') else str(v) for v in value
-                ])
-            elif hasattr(value, 'value'):
+                normalized_params[key] = sorted(
+                    [v.value if hasattr(v, "value") else str(v) for v in value]
+                )
+            elif hasattr(value, "value"):
                 normalized_params[key] = value.value
             elif isinstance(value, (date, datetime)):
                 normalized_params[key] = value.isoformat()
@@ -234,10 +230,7 @@ class _TokenStorageMixin:
         token_file = self._get_token_file_path()
         token_file.parent.mkdir(parents=True, exist_ok=True)
 
-        token_data = {
-            "access_token": access_token,
-            "refresh_token": refresh_token
-        }
+        token_data = {"access_token": access_token, "refresh_token": refresh_token}
 
         with open(token_file, "w") as f:
             json.dump(token_data, f, indent=2)
@@ -404,6 +397,7 @@ class _OAuth2Mixin:
         Args:
             persist: Save tokens to persistent storage after successful auth.
         """
+
         class AuthHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
                 # This override disables logging.
@@ -412,7 +406,7 @@ class _OAuth2Mixin:
             def do_GET(self):
                 query = urlparse(self.path).query
                 params = parse_qs(query)
-                
+
                 self.server.code = params.get("code", [None])[0]
                 self.send_response(200)
                 self.send_header("Content-type", "text/html")
@@ -450,7 +444,9 @@ class _OAuth2Mixin:
         try:
             server.handle_request()
         except TimeoutError:
-            raise Exception("SweatStack Python login timed out after 30 seconds. Please try again.") from None
+            raise Exception(
+                "SweatStack Python login timed out after 30 seconds. Please try again."
+            ) from None
 
         if hasattr(server, "code"):
             try:
@@ -558,7 +554,9 @@ class _DelegationMixin:
         if len(matches) == 0:
             raise ValueError(f"User with name {name} not found")
         elif len(matches) > 1:
-            raise ValueError(f"Multiple users found with name {name}: {', '.join([u.display_name for u in matches])}")
+            raise ValueError(
+                f"Multiple users found with name {name}: {', '.join([u.display_name for u in matches])}"
+            )
         return matches[0]
 
     def _find_user_by_id(self, id: str, users: list) -> UserSummary:
@@ -573,7 +571,9 @@ class _DelegationMixin:
         """
         return next((u for u in users if u.id == id), None)
 
-    def _find_user(self, user: str, users: list, search_mode: Literal["auto", "id", "name"] = "auto") -> UserSummary:
+    def _find_user(
+        self, user: str, users: list, search_mode: Literal["auto", "id", "name"] = "auto"
+    ) -> UserSummary:
         """Find a user by ID or name from a list of users.
 
         Args:
@@ -594,7 +594,9 @@ class _DelegationMixin:
         elif search_mode == "name":
             return self._find_user_by_name(user, users)
 
-    def get_user(self, user: str, *, search_mode: Literal["auto", "id", "name"] = "auto") -> UserSummary:
+    def get_user(
+        self, user: str, *, search_mode: Literal["auto", "id", "name"] = "auto"
+    ) -> UserSummary:
         """Get a user by ID or name.
         This method will always authenticate as the principal user.
 
@@ -857,7 +859,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
                     "client_id": self.client_id,
-                    "client_secret": self._client_secret.get_secret_value() if self._client_secret else None,
+                    "client_secret": self._client_secret.get_secret_value()
+                    if self._client_secret
+                    else None,
                 },
             )
 
@@ -939,7 +943,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
     @api_key.setter
     def api_key(self, value: str | SecretStr | None):
         self._api_key = _to_secret(value)
-    
+
     @property
     def refresh_token(self) -> SecretStr | None:
         """The refresh token used for automatic token renewal.
@@ -992,16 +996,16 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         """
         if self._url is not None:
             return self._url
-        
+
         if env_url := os.getenv("SWEATSTACK_URL"):
             return env_url
-            
+
         return DEFAULT_URL
-    
+
     @url.setter
     def url(self, value: str):
         self._url = value
-    
+
     @contextlib.contextmanager
     def _http_client(self, skip_token_check: bool = False, *, auth: bool = True):
         """
@@ -1079,7 +1083,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         out = []
         for value in values:
             if isinstance(value, Sport):
-                out.append(str(value))           # OST Sport -> canonical wire string
+                out.append(str(value))  # OST Sport -> canonical wire string
             elif isinstance(value, Enum):
                 out.append(value.value)
             else:
@@ -1169,10 +1173,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         return df
 
     def _frame_from_models(
-        self, models: list, model: type, output: str | None, *, flatten: tuple[str, ...] = (),
+        self,
+        models: list,
+        model: type,
+        output: str | None,
+        *,
+        flatten: tuple[str, ...] = (),
     ) -> Any:
         """Every list-of-models response becomes a frame (or stays a list) through here."""
-        output = _frames.resolve_output(output, self.output, allowed=_frames.LIST_OUTPUTS) or "models"
+        output = (
+            _frames.resolve_output(output, self.output, allowed=_frames.LIST_OUTPUTS) or "models"
+        )
         if output == "models":
             return models
         if output == "arrow":
@@ -1267,15 +1278,19 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Raises:
             SweatStackAPIError: If the API request fails.
         """
-        activities = list(self._get_activities_generator(
-            start=start,
-            end=end,
-            sports=sports,
-            tags=tags,
-            limit=limit,
-            offset=offset,
-        ))
-        return self._frame_from_models(activities, ActivitySummary, output, flatten=("summary", "laps", "traces"))
+        activities = list(
+            self._get_activities_generator(
+                start=start,
+                end=end,
+                sports=sports,
+                tags=tags,
+                limit=limit,
+                offset=offset,
+            )
+        )
+        return self._frame_from_models(
+            activities, ActivitySummary, output, flatten=("summary", "laps", "traces")
+        )
 
     def get_latest_activity(
         self,
@@ -1300,13 +1315,15 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             StopIteration: If no activities match the filters.
             SweatStackAPIError: If the API request fails.
         """
-        return next(self._get_activities_generator(
-            start=start,
-            end=end,
-            sports=[sport] if sport is not None else None,
-            tags=[tag] if tag is not None else None,
-            limit=1,
-        ))
+        return next(
+            self._get_activities_generator(
+                start=start,
+                end=end,
+                sports=[sport] if sport is not None else None,
+                tags=[tag] if tag is not None else None,
+                limit=1,
+            )
+        )
 
     def get_activity(self, activity_id: str) -> ActivityDetails:
         """Gets details for a specific activity by ID.
@@ -1768,7 +1785,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed]
+        | Literal["power", "speed"]
+        | None = None,
         output: None = None,
     ) -> pd.DataFrame | pl.DataFrame: ...
 
@@ -1781,7 +1800,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed]
+        | Literal["power", "speed"]
+        | None = None,
         output: Literal["pandas"],
     ) -> pd.DataFrame: ...
 
@@ -1794,7 +1815,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed]
+        | Literal["power", "speed"]
+        | None = None,
         output: Literal["polars"],
     ) -> pl.DataFrame: ...
 
@@ -1807,7 +1830,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed]
+        | Literal["power", "speed"]
+        | None = None,
         output: Literal["arrow"],
     ) -> pa.Table: ...
 
@@ -1820,7 +1845,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed]
+        | Literal["power", "speed"]
+        | None = None,
         output: Literal["bytes"],
     ) -> bytes: ...
 
@@ -1832,7 +1859,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         start: date | str,
         end: date | str | None = None,
         metrics: list[Metric | str] | None = None,
-        segmentation_on: Literal[Metric.power, Metric.speed] | Literal["power", "speed"] | None = None,
+        segmentation_on: Literal[Metric.power, Metric.speed]
+        | Literal["power", "speed"]
+        | None = None,
         output: FrameOutput | None = None,
     ) -> pd.DataFrame | pl.DataFrame | pa.Table | bytes:
         """Gets longitudinal data for activities within a specified date range.
@@ -1871,10 +1900,7 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             sports = [sport]
         resolved = sports if sports is not None else []
 
-        params = {
-            "sport": self._enums_to_strings(resolved),
-            "start": start
-        }
+        params = {"sport": self._enums_to_strings(resolved), "start": start}
         if end is not None:
             params["end"] = end
         if metrics is not None:
@@ -2041,10 +2067,13 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             raise ValueError("'sports' is required.")
         metric = self._enums_to_strings([metric])[0]
 
-        params = _with_durations({
-            "sport": self._enums_to_strings(sports),
-            "metric": metric,
-        }, durations)
+        params = _with_durations(
+            {
+                "sport": self._enums_to_strings(sports),
+                "metric": metric,
+            },
+            durations,
+        )
         if start is not None:
             params["start"] = start
             if end is not None:
@@ -2358,14 +2387,16 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Raises:
             SweatStackAPIError: If the API request fails.
         """
-        traces = list(self._get_traces_generator(
-            start=start,
-            end=end,
-            sports=sports,
-            tags=tags,
-            limit=limit,
-            offset=offset,
-        ))
+        traces = list(
+            self._get_traces_generator(
+                start=start,
+                end=end,
+                sports=sports,
+                tags=tags,
+                limit=limit,
+                offset=offset,
+            )
+        )
         return self._frame_from_models(traces, TraceDetails, output, flatten=("activity", "lap"))
 
     def create_trace(
@@ -2654,15 +2685,17 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
         Raises:
             SweatStackAPIError: If the API request fails.
         """
-        tests = list(self._get_tests_generator(
-            start=start,
-            end=end,
-            sports=sports,
-            tags=tags,
-            created_by=created_by,
-            limit=limit,
-            offset=offset,
-        ))
+        tests = list(
+            self._get_tests_generator(
+                start=start,
+                end=end,
+                sports=sports,
+                tags=tags,
+                created_by=created_by,
+                limit=limit,
+                offset=offset,
+            )
+        )
         return self._frame_from_models(tests, TestSummary, output, flatten=("results",))
 
     def get_test(
@@ -3495,7 +3528,9 @@ class Client(_OAuth2Mixin, _DelegationMixin, _TokenStorageMixin, _LocalCacheMixi
             pass
         return None
 
-    def watch_backfill_status(self, *, auto_reconnect: bool = False) -> Generator[BackfillStatus, None, None]:
+    def watch_backfill_status(
+        self, *, auto_reconnect: bool = False
+    ) -> Generator[BackfillStatus, None, None]:
         """Watches backfill status from the activities backfill-status endpoint.
 
         This method connects to the backfill status event stream and yields
@@ -3565,6 +3600,7 @@ def _generate_singleton_methods() -> list[str]:
     Returns:
         The sorted list of generated function names. Fed into ``__all__``.
     """
+
     def create_singleton_method(method_name: str):
         bound_method = getattr(_default_client, method_name)
 
@@ -3577,8 +3613,7 @@ def _generate_singleton_methods() -> list[str]:
         return singleton_method
 
     names = sorted(
-        name for name, obj in getmembers(Client)
-        if not name.startswith("_") and isfunction(obj)
+        name for name, obj in getmembers(Client) if not name.startswith("_") and isfunction(obj)
     )
     for name in names:
         globals()[name] = create_singleton_method(name)
@@ -3591,40 +3626,42 @@ _SINGLETON_METHODS = _generate_singleton_methods()
 # Public surface. Wildcard imports from this module are well-defined.
 # Schemas are re-exported here (instead of from .schemas directly) so that
 # `from sweatstack import TraceDetails` works alongside the singletons.
-__all__ = sorted([
-    "Client",
-    "enable_cache",
-    "set_output",
-    # Schemas / enums re-exported from .schemas — keep in sync with the
-    # `from .schemas import (...)` block at the top of this file.
-    "AccountStatusResponse",
-    "ActivityDetails",
-    "ActivitySummary",
-    "ApplicationMemberRole",
-    "AuthorizedTeamResponse",
-    "BackfillStatus",
-    "Capability",
-    "CapabilityStatus",
-    "DailyMeasure",
-    "DailyResponse",
-    "Marker",
-    "Metric",
-    "Modifier",
-    "PortalDestination",
-    "PortalSessionResponse",
-    "Scope",
-    "Sport",
-    "StatusIssueCode",
-    "StatusIssueResponse",
-    "TeamResponse",
-    "TestDetails",
-    "TestResults",
-    "TestSummary",
-    "TokenResponse",
-    "TraceDetails",
-    "TraceResolution",
-    "UserInfoResponse",
-    "UserResponse",
-    "UserSummary",
-    *_SINGLETON_METHODS,
-])
+__all__ = sorted(
+    [
+        "Client",
+        "enable_cache",
+        "set_output",
+        # Schemas / enums re-exported from .schemas — keep in sync with the
+        # `from .schemas import (...)` block at the top of this file.
+        "AccountStatusResponse",
+        "ActivityDetails",
+        "ActivitySummary",
+        "ApplicationMemberRole",
+        "AuthorizedTeamResponse",
+        "BackfillStatus",
+        "Capability",
+        "CapabilityStatus",
+        "DailyMeasure",
+        "DailyResponse",
+        "Marker",
+        "Metric",
+        "Modifier",
+        "PortalDestination",
+        "PortalSessionResponse",
+        "Scope",
+        "Sport",
+        "StatusIssueCode",
+        "StatusIssueResponse",
+        "TeamResponse",
+        "TestDetails",
+        "TestResults",
+        "TestSummary",
+        "TokenResponse",
+        "TraceDetails",
+        "TraceResolution",
+        "UserInfoResponse",
+        "UserResponse",
+        "UserSummary",
+        *_SINGLETON_METHODS,
+    ]
+)

@@ -66,6 +66,4 @@ class TestTestWritesRejectNaive:
     def test_update_test_rejects_naive_end(self):
         client = Client.__new__(Client)
         with pytest.raises(ValueError, match="end must be timezone-aware"):
-            client.update_test(
-                "test_1", sport=Sport("cycling"), start=AWARE_UTC, end=NAIVE
-            )
+            client.update_test("test_1", sport=Sport("cycling"), start=AWARE_UTC, end=NAIVE)

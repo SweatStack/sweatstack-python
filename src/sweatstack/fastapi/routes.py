@@ -48,10 +48,7 @@ def _is_same_origin(referer: str | None, app_url: str) -> bool:
     try:
         ref_parsed = urlparse(referer)
         app_parsed = urlparse(app_url)
-        return (
-            ref_parsed.scheme == app_parsed.scheme
-            and ref_parsed.netloc == app_parsed.netloc
-        )
+        return ref_parsed.scheme == app_parsed.scheme and ref_parsed.netloc == app_parsed.netloc
     except Exception:
         return False
 
@@ -93,7 +90,10 @@ def _get_session_data(request: Request) -> SessionData | None:
 
 
 def _fetch_delegated_token(
-    principal_tokens: TokenSet, target_user_id: str, *, team_id: str | None = None,
+    principal_tokens: TokenSet,
+    target_user_id: str,
+    *,
+    team_id: str | None = None,
 ) -> TokenSet:
     """Fetch a delegated token for the target user using principal credentials."""
     body = {"sub": target_user_id}
@@ -226,7 +226,9 @@ def create_router() -> APIRouter:
             return error_redirect("token_exchange_failed")
 
         if not token_response.is_success:
-            logger.error("Token exchange failed: %s - %s", token_response.status_code, token_response.text)
+            logger.error(
+                "Token exchange failed: %s - %s", token_response.status_code, token_response.text
+            )
             return error_redirect("token_exchange_failed")
 
         tokens = token_response.json()
@@ -294,7 +296,10 @@ def create_router() -> APIRouter:
 
     @router.post("/select-user/{user_id}")
     def select_user(
-        request: Request, user_id: str, next: str | None = None, team_id: str | None = None,
+        request: Request,
+        user_id: str,
+        next: str | None = None,
+        team_id: str | None = None,
     ) -> Response:
         """Switch to viewing as another user.
 

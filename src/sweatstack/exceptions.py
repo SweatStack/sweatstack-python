@@ -20,7 +20,15 @@ class SweatStackTokenRefreshError(SweatStackError):
 class SweatStackAPIError(SweatStackError):
     """HTTP response with an error status code."""
 
-    def __init__(self, *, status_code: int, url: str, method: str, request_id: str | None = None, body: dict | str | None = None):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        url: str,
+        method: str,
+        request_id: str | None = None,
+        body: dict | str | None = None,
+    ):
         self.status_code = status_code
         self.url = url
         self.method = method

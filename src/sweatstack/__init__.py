@@ -12,15 +12,17 @@ from .exceptions import (
     SweatStackTokenRefreshError,
 )
 
-__all__ = sorted([
-    *_client_all,
-    "SweatStackAPIError",
-    "SweatStackAuthError",
-    "SweatStackBadRequestError",
-    "SweatStackConnectionError",
-    "SweatStackError",
-    "SweatStackNotFoundError",
-    "SweatStackRateLimitError",
-    "SweatStackServerError",
-    "SweatStackTokenRefreshError",
-])
+__all__ = sorted(
+    [
+        *_client_all,
+        "SweatStackAPIError",
+        "SweatStackAuthError",
+        "SweatStackBadRequestError",
+        "SweatStackConnectionError",
+        "SweatStackError",
+        "SweatStackNotFoundError",
+        "SweatStackRateLimitError",
+        "SweatStackServerError",
+        "SweatStackTokenRefreshError",
+    ]
+)

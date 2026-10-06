@@ -26,7 +26,7 @@ def _validate_fernet_key(key: str) -> None:
     except Exception:
         raise ValueError(
             "Invalid session_secret. Fernet keys must be 32 url-safe base64-encoded bytes. "
-            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'Generate one with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         ) from None
 
 
@@ -136,7 +136,9 @@ def configure(
             )
 
     # Validate and convert session secret(s)
-    secret_list = [session_secret] if isinstance(session_secret, (str, SecretStr)) else session_secret
+    secret_list = (
+        [session_secret] if isinstance(session_secret, (str, SecretStr)) else session_secret
+    )
     for secret in secret_list:
         secret_value = secret.get_secret_value() if isinstance(secret, SecretStr) else secret
         _validate_fernet_key(secret_value)
@@ -180,9 +182,7 @@ def get_config() -> FastAPIConfig:
         RuntimeError: If configure() has not been called.
     """
     if _config is None:
-        raise RuntimeError(
-            "configure() must be called before instrument()"
-        )
+        raise RuntimeError("configure() must be called before instrument()")
     return _config
 
 

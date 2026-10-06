@@ -119,7 +119,9 @@ def check_frame_output(output: str | None) -> str | None:
     return output
 
 
-def resolve_output(requested: str | None, configured: str | None, *, allowed: frozenset[str]) -> str | None:
+def resolve_output(
+    requested: str | None, configured: str | None, *, allowed: frozenset[str]
+) -> str | None:
     """Pick the output for one call: per-call > client > module default.
 
     Returns ``None`` when nothing applies, so the caller supplies the method's
@@ -169,6 +171,7 @@ def _choices(allowed: frozenset[str]) -> str:
 # blob.
 # ---------------------------------------------------------------------------
 
+
 def parquet_to_pandas(content: bytes) -> pd.DataFrame:
     """Parquet bytes to a pandas DataFrame: columns only, standard dtypes."""
     pd = require("pandas")
@@ -211,7 +214,8 @@ def _index_columns_first(columns: Sequence[str], pandas_metadata: str | bytes | 
     if not pandas_metadata:
         return list(columns)
     index_columns = [
-        name for name in json.loads(pandas_metadata).get("index_columns", [])
+        name
+        for name in json.loads(pandas_metadata).get("index_columns", [])
         if isinstance(name, str) and name in columns  # RangeIndex entries are dicts
     ]
     return index_columns + [name for name in columns if name not in index_columns]
@@ -220,6 +224,7 @@ def _index_columns_first(columns: Sequence[str], pandas_metadata: str | bytes | 
 # ---------------------------------------------------------------------------
 # Lists of models
 # ---------------------------------------------------------------------------
+
 
 def models_to_pandas(
     models: Sequence[BaseModel],
@@ -268,8 +273,7 @@ def _records_for_normalize(df: pd.DataFrame, column: str) -> list:
     values = df[column].tolist()
     if column in ("laps", "traces"):
         return [
-            {i: item for i, item in enumerate(sublist)} if sublist else {}
-            for sublist in values
+            {i: item for i, item in enumerate(sublist)} if sublist else {} for sublist in values
         ]
     return values
 
@@ -315,7 +319,9 @@ def models_to_arrow(models: Sequence[BaseModel], model: type[BaseModel]) -> Any:
 
 def _rows(models: Sequence[BaseModel], model: type[BaseModel]) -> list[dict[str, Any]]:
     types = field_types(model)
-    return [{name: _plain_value(getattr(m, name), node) for name, node in types.items()} for m in models]
+    return [
+        {name: _plain_value(getattr(m, name), node) for name, node in types.items()} for m in models
+    ]
 
 
 def polars_schema(model: type[BaseModel]) -> dict[str, Any]:
@@ -358,7 +364,12 @@ def field_types(model: type[BaseModel]) -> dict[str, FieldType]:
 
 
 _DATETIME_FORMATS = frozenset({"date-time", "naive-date-time"})
-_STRING_FORMATS = {"date-time": "datetime", "naive-date-time": "naive_datetime", "date": "date", "duration": "duration"}
+_STRING_FORMATS = {
+    "date-time": "datetime",
+    "naive-date-time": "naive_datetime",
+    "date": "date",
+    "duration": "duration",
+}
 
 
 def _definition_name(ref: str) -> str:
@@ -400,10 +411,13 @@ def _field_type(node: dict, definitions: dict, path: str, stack: tuple[str, ...]
     if kind == "array":
         return ("list", _field_type(node.get("items", {}), definitions, f"{path}[]", stack))
     if kind == "object" and "properties" in node:
-        return ("struct", {
-            name: _field_type(child, definitions, f"{path}.{name}", stack)
-            for name, child in node["properties"].items()
-        })
+        return (
+            "struct",
+            {
+                name: _field_type(child, definitions, f"{path}.{name}", stack)
+                for name, child in node["properties"].items()
+            },
+        )
     if kind == "object":
         return "json"  # free-form mapping (e.g. app_metadata)
     return _fallback(path, node)
@@ -427,8 +441,14 @@ def _to_polars(node: FieldType) -> Any:
             return pl.List(_to_polars(inner))
         return pl.Struct({name: _to_polars(child) for name, child in inner.items()})
     return {
-        "string": pl.String, "json": pl.String, "int": pl.Int64, "float": pl.Float64, "bool": pl.Boolean,
-        "date": pl.Date, "datetime": pl.Datetime("us", "UTC"), "naive_datetime": pl.Datetime("us", None),
+        "string": pl.String,
+        "json": pl.String,
+        "int": pl.Int64,
+        "float": pl.Float64,
+        "bool": pl.Boolean,
+        "date": pl.Date,
+        "datetime": pl.Datetime("us", "UTC"),
+        "naive_datetime": pl.Datetime("us", None),
         "duration": pl.Duration("us"),
     }[node]
 
@@ -442,8 +462,14 @@ def _to_arrow(node: FieldType) -> Any:
             return pa.list_(_to_arrow(inner))
         return pa.struct([pa.field(name, _to_arrow(child)) for name, child in inner.items()])
     return {
-        "string": pa.string(), "json": pa.string(), "int": pa.int64(), "float": pa.float64(), "bool": pa.bool_(),
-        "date": pa.date32(), "datetime": pa.timestamp("us", tz="UTC"), "naive_datetime": pa.timestamp("us"),
+        "string": pa.string(),
+        "json": pa.string(),
+        "int": pa.int64(),
+        "float": pa.float64(),
+        "bool": pa.bool_(),
+        "date": pa.date32(),
+        "datetime": pa.timestamp("us", tz="UTC"),
+        "naive_datetime": pa.timestamp("us"),
         "duration": pa.duration("us"),
     }[node]
 
