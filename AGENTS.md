@@ -83,6 +83,7 @@ src/sweatstack/
 ├── schemas.py           # Re-exports (incl. OST Sport/Modifier) + Metric/Scope/DailyMeasure helpers.
 ├── _frames.py           # output= backends: parquet/models -> pandas/polars/arrow/bytes.
 ├── _renames.py          # Removed names -> replacement hints. Permanent; see "Breaking changes".
+├── _transport.py        # Retry policy and the per-request Session on the client's connection pool.
 ├── exceptions.py        # Public error contract. No httpx types leak.
 ├── client.py            # Client: config, auth, delegation, transport (_request), resource attributes,
 │                        #   and the module-level interface (one shared default client).
@@ -136,6 +137,9 @@ it automatically.
   set (metrics, scopes, daily measures, status codes, capabilities),
   register it with `_open_enum(...)` in `schemas.py` so unknown values
   parse as pseudo-members. Leave closed sets strict.
+- **Never retry a request the server can't safely repeat.** `_transport.RETRYABLE_METHODS`
+  is `GET`, `PUT` and `DELETE`; a `POST` is sent once (no idempotency keys). Don't add
+  per-method retry logic: everything goes through `_request`.
 - **Server-to-server calls pass `auth=False` to `_request`.** Endpoints that authenticate with
   the app's own credentials in the body (Portal sessions, the token exchange) must never
   receive a user's bearer.

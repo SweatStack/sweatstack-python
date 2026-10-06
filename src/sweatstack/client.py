@@ -7,8 +7,10 @@ import logging
 import os
 import random
 import shutil
+import threading
 import time
 import webbrowser
+from collections.abc import Iterator
 from datetime import date, datetime
 from enum import Enum
 from functools import cached_property, wraps
@@ -23,7 +25,7 @@ import httpx
 from platformdirs import user_cache_dir, user_data_dir
 from pydantic import SecretStr
 
-from . import _frames, _renames
+from . import _frames, _renames, _transport
 from ._frames import FrameOutput, set_output
 from .constants import DEFAULT_URL
 from .exceptions import (
@@ -133,6 +135,22 @@ def _to_secret(value: str | SecretStr | None) -> SecretStr | None:
     return SecretStr(value)
 
 
+def _is_expired(access_token: str) -> bool:
+    """Whether a JWT access token expires within the safety margin.
+
+    Raises:
+        SweatStackTokenRefreshError: If the token is not a JWT or has no ``exp`` claim.
+    """
+    try:
+        payload = decode_jwt_body(access_token)
+    except Exception as e:
+        raise SweatStackTokenRefreshError(f"Invalid access token: {e}") from e
+    expires_at = payload.get("exp")
+    if expires_at is None:
+        raise SweatStackTokenRefreshError("Access token missing 'exp' claim")
+    return expires_at - TOKEN_EXPIRY_MARGIN_SECONDS < time.time()
+
+
 class Client:
     """The SweatStack API client.
 
@@ -156,9 +174,11 @@ class Client:
         ```
     """
 
+    # Class-level defaults, so an instance built without ``__init__`` (as the tests do) still
+    # resolves them. See ``__init__`` for what each one means.
     output: FrameOutput | None = None
-    """Default container for collections; see ``__init__``. Class-level so an
-    instance built without ``__init__`` (as the tests do) still resolves."""
+    timeout: float = 60.0
+    max_retries: int = 2
 
     def __init__(
         self,
@@ -170,6 +190,8 @@ class Client:
         client_secret: str | SecretStr | None = None,
         skip_token_expiry_check: bool = False,
         output: FrameOutput | None = None,
+        timeout: float = 60.0,
+        max_retries: int = 2,
     ):
         """Initialize a SweatStack client.
 
@@ -192,7 +214,27 @@ class Client:
                 Only the data endpoints take ``output`` (activities, traces, tests,
                 dailies and the time series); account, team, status and Portal
                 methods always return models.
+            timeout: Seconds to wait for a connection and for each read. Streams have no read
+                timeout.
+            max_retries: How often to retry a ``GET``, ``PUT`` or ``DELETE`` after a connection
+                error, a timeout, or a 408, 429 or 5xx response, with exponential backoff and
+                the server's ``Retry-After``. ``POST`` is never retried, since the API has no
+                idempotency keys. At most 30 s of waiting per call. Use ``0`` where latency
+                matters more than resilience, such as inside a web request.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client(timeout=120.0, max_retries=4)  # a long batch job
+            with Client(api_key="...") as client:          # closes the connection pool on exit
+                client.activities.list()
+            ```
         """
+        if timeout <= 0:
+            raise ValueError(f"timeout must be positive, got {timeout}")
+        if max_retries < 0:
+            raise ValueError(f"max_retries must be 0 or more, got {max_retries}")
         self._api_key: SecretStr | None = _to_secret(api_key)
         self._refresh_token: SecretStr | None = _to_secret(refresh_token)
         self._client_secret: SecretStr | None = _to_secret(client_secret)
@@ -201,6 +243,33 @@ class Client:
         self.skip_token_expiry_check = skip_token_expiry_check
         self.output = _frames.check_frame_output(output)
         self.client_id = client_id or OAUTH2_CLIENT_ID
+        self.timeout = timeout
+        self.max_retries = max_retries
+
+    def __enter__(self) -> Client:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Closes the client's connection pool. The client opens a new one if used again.
+
+        Call this, or use the client as a context manager, to release connections at a known
+        point, for example in a worker that creates many clients.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            client.activities.list()
+            client.close()
+            ```
+        """
+        built = self.__dict__.pop("_pool_entry", None)
+        if built is not None:
+            built[1].close()
 
     def __getattr__(self, name: str) -> Any:
         # Only reached when normal lookup fails: names a removed method's replacement.
@@ -327,17 +396,7 @@ class Client:
         Raises:
             SweatStackTokenRefreshError: If the token is expired and refresh fails.
         """
-        try:
-            payload = decode_jwt_body(access_token)
-        except Exception as e:
-            raise SweatStackTokenRefreshError(f"Invalid access token: {e}") from e
-
-        expires_at = payload.get("exp")
-        if expires_at is None:
-            raise SweatStackTokenRefreshError("Access token missing 'exp' claim")
-
-        is_expired = expires_at - TOKEN_EXPIRY_MARGIN_SECONDS < time.time()
-        if not is_expired:
+        if not _is_expired(access_token):
             return access_token
 
         if refresh_token is None:
@@ -346,9 +405,15 @@ class Client:
                 "Call client.authenticate(force=True) to re-authenticate."
             )
 
-        new_access_token = self._do_token_refresh(refresh_token)
-        self._api_key = SecretStr(new_access_token)
-        self._save_tokens(new_access_token, refresh_token)
+        # One refresh at a time per client: threads sharing a client would otherwise all refresh,
+        # and with rotating refresh tokens all but the first would fail.
+        with self.__dict__.setdefault("_refresh_lock", threading.Lock()):
+            current = self._api_key.get_secret_value() if self._api_key else None
+            if current is not None and current != access_token and not _is_expired(current):
+                return current  # another thread refreshed while this one waited
+            new_access_token = self._do_token_refresh(refresh_token)
+            self._api_key = SecretStr(new_access_token)
+            self._save_tokens(new_access_token, refresh_token)
         logger.debug("Refreshed and persisted access token")
         return new_access_token
 
@@ -629,6 +694,8 @@ class Client:
             client_id=self.client_id,
             client_secret=self._client_secret,
             output=self.output,
+            timeout=self.timeout,
+            max_retries=self.max_retries,
         )
 
     def whoami(self) -> UserSummary:
@@ -760,9 +827,31 @@ class Client:
     # Transport: the internal API the resources use
     # -------------------------------------------------------------------------
 
+    def _pool(self) -> httpx.Client:
+        """The client's connection pool, created on first use and kept for its lifetime.
+
+        Rebuilt if ``url`` changes. Authorization is per request (see ``_http_client``), so the
+        pool itself holds no credentials.
+        """
+        url = self.url
+        built = self.__dict__.get("_pool_entry")
+        if built is not None and built[0] == url:
+            return built[1]
+        pool = httpx.Client(
+            base_url=url,
+            headers={"User-Agent": f"python-sweatstack/{__version__}"},
+            timeout=self.timeout,
+        )
+        self.__dict__["_pool_entry"] = (url, pool)
+        if built is not None:
+            built[1].close()
+        return pool
+
     @contextlib.contextmanager
-    def _http_client(self, skip_token_check: bool = False, *, auth: bool = True):
-        """An httpx client with the base URL and authentication headers set.
+    def _http_client(
+        self, skip_token_check: bool = False, *, auth: bool = True
+    ) -> Iterator[_transport.Session]:
+        """A request scope on the client's connection pool, with the right Authorization header.
 
         Transport-level errors (DNS, timeouts, connection refused) are re-raised as
         SweatStackConnectionError so consumers never see raw httpx types.
@@ -775,7 +864,7 @@ class Client:
                 (Portal sessions, the token exchange), so a user's bearer is never sent where
                 it is not needed.
         """
-        headers = {"User-Agent": f"python-sweatstack/{__version__}"}
+        headers = httpx.Headers({"User-Agent": f"python-sweatstack/{__version__}"})
         if not auth:
             token = None
         elif skip_token_check:
@@ -787,8 +876,7 @@ class Client:
             headers["Authorization"] = f"Bearer {token.get_secret_value()}"
 
         try:
-            with httpx.Client(base_url=self.url, headers=headers, timeout=60) as client:
-                yield client
+            yield _transport.Session(self._pool(), headers, self.timeout)
         except httpx.HTTPError as exc:
             raise SweatStackConnectionError(str(exc)) from exc
 
@@ -800,14 +888,51 @@ class Client:
         auth: bool = True,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Send one request and raise the typed exception for an error status.
+        """Send one request, retrying when safe, and raise the typed exception for an error status.
 
-        Every resource method that makes a single request goes through here.
+        Every resource method that makes a single request goes through here. Retries follow
+        ``_transport.wait_before_retry``: ``GET``, ``PUT`` and ``DELETE`` only, at most
+        ``max_retries`` times and 30 s of waiting in total.
         """
-        with self._http_client(auth=auth) as http:
-            response = getattr(http, method)(url=path, **kwargs)
-        self._raise_for_status(response)
-        return response
+        attempt = 0
+        waited = 0.0
+        while True:
+            try:
+                with self._http_client(auth=auth) as http:
+                    response = getattr(http, method)(url=path, **kwargs)
+            except SweatStackConnectionError as error:
+                wait = _transport.wait_before_retry(method, attempt, self.max_retries, waited)
+                if wait is None:
+                    raise
+                logger.debug(
+                    "Retrying %s %s in %.1fs after %s (retry %d)",
+                    method.upper(),
+                    path,
+                    wait,
+                    error,
+                    attempt + 1,
+                )
+            else:
+                if method == "delete" and attempt > 0 and response.status_code == 404:
+                    return response  # an earlier attempt deleted it; the response was lost
+                wait = _transport.wait_before_retry(
+                    method, attempt, self.max_retries, waited, response
+                )
+                if response.is_success or wait is None:
+                    self._raise_for_status(response)
+                    return response
+                logger.debug(
+                    "Retrying %s %s in %.1fs after HTTP %d, request ID %s (retry %d)",
+                    method.upper(),
+                    path,
+                    wait,
+                    response.status_code,
+                    response.headers.get("x-request-id"),
+                    attempt + 1,
+                )
+            time.sleep(wait)
+            waited += wait
+            attempt += 1
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         if response.is_success:

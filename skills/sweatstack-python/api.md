@@ -114,7 +114,11 @@ client.oauth.exchange_code("code", client_id="YOUR_CLIENT_ID", code_verifier=ver
 ## Client
 
 ```python
-Client(api_key=None, refresh_token=None, url=None, client_id=None, client_secret=None, output=None)
+Client(api_key=None, refresh_token=None, url=None, client_id=None, client_secret=None, output=None, timeout=60.0, max_retries=2)
 client.authenticate(force=False)
 client.clear_cache()
+client.close()  # or: with Client() as client: ...
 ```
+
+GET, PUT and DELETE are retried (connection errors, timeouts, 408, 429, 5xx) up to
+`max_retries` times; POST never is. Use `max_retries=0` inside web requests.

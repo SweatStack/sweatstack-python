@@ -47,8 +47,17 @@ removed name raises an `AttributeError` that names its replacement.
 - Clients from `delegated_client()` and `principal_client()` keep the app's `client_id` and
   `client_secret`, so `portal.sessions.create()` works on them.
 
+- **Automatic retries**: `GET`, `PUT` and `DELETE` requests are retried up to twice after a
+  connection error, a timeout, or a 408, 429 or 5xx response, with exponential backoff and the
+  server's `Retry-After` (at most 30 s of waiting per call). `POST` is never retried, so a create
+  can't happen twice. `Client(max_retries=0)` turns retries off, e.g. inside a web request.
+
 ### Added
 
+- `Client(timeout=60.0, max_retries=2)`: the timeout in seconds, and how often to retry.
+  Clients from `delegated_client()` and `principal_client()` keep both.
+- One connection pool per client, reused across requests (each request opened a new
+  connection). `client.close()` releases it; `with Client() as client:` closes on exit.
 - `users.retrieve()`, `users.update()` (changes only the fields you pass) and `users.delete()`
   for managed users.
 - `users.list(include_managed=, include_shared=, name=)` and `teams.users(team_id, name=)`.
@@ -65,6 +74,10 @@ removed name raises an `AttributeError` that names its replacement.
   signed-in user's, so after the first token refresh the app silently showed the signed-in
   user's data under the selected user's name.
 - `StreamlitAuth` keeps the app's `client_id` and `client_secret` after switching users.
+- Threads sharing a client refresh an expired token once; they all refreshed, which fails with
+  rotating refresh tokens.
+- `activities.watch_backfill_status()` no longer times out on a quiet stream: streams have no
+  read timeout.
 - Searching users by name ignores case; `get_user("Carla")` found nobody where `"carla"` worked.
 
 ### Removed
