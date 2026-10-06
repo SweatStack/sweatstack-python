@@ -88,6 +88,6 @@ def attribute_error(owner: str, name: str, *, prefix: str) -> AttributeError:
         return AttributeError(
             f"{owner} has no attribute {name!r}: it was removed in {release}. "
             f"Use {hint.format(c=prefix)} instead. "
-            f"The CHANGELOG entry for {release} lists every change."
+            f"The CHANGELOG entry for {release} lists every change"
         )
     return AttributeError(f"{owner} has no attribute {name!r}")
