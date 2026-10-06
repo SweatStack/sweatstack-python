@@ -21,17 +21,17 @@ From 1.0 the stability policy (M8) applies instead.
 
 ## Roadmap
 
-| # | Milestone | Release | Status |
+| # | Milestone | Release | Status (2026-10-06) |
 |---|---|---|---|
-| M0 | Commit the preparation done on 2026-10-05 | — | ready |
-| M1 | Docs hotfix: the live docs call APIs that don't exist | — | ready |
-| M2 | Local checks: ruff, ty, `make check` gating `make publish` | — | ready |
-| M3 | Namespaced API, `Client()` first, users and sport cleanup, `sweatlab` removed, skill rewritten | **0.91** | after M2 |
-| M4 | Transport: connection reuse, timeouts, retries | **0.92** | after M3 |
-| M5 | Snippet check shipped in the package; docs build runs it | 0.92.x | after M3 |
-| M6 | Docs written once, against the new API | — | after M5 |
-| M7 | Agent test (E1, then E2) | — | after M6 |
-| M8 | 1.0: stability policy, going public, `llms.txt` | **1.0** | after M7 |
+| M0 | Commit the preparation done on 2026-10-05 | — | done |
+| M1 | Docs hotfix: the live docs call APIs that don't exist | — | staged in `sweatstack.no`; commit and deploy by hand |
+| M2 | Local checks: ruff, ty, `make check` gating `make publish` | — | done |
+| M3 | Namespaced API, `Client()` first, users and sport cleanup, `sweatlab` removed, skill rewritten | **0.91** | done; release by hand |
+| M4 | Transport: connection reuse, timeouts, retries | ~~0.92~~ **0.91** | done |
+| M5 | Snippet check shipped in the package; docs build runs it | ~~0.92.x~~ **0.91** | done |
+| M6 | Docs written once, against the new API | — | written in `sweatstack.no`, uncommitted; deploy after 0.91 is on PyPI |
+| M7 | Agent test (E1, then E2) | — | E1 built and dry-run; first real run needs `ANTHROPIC_API_KEY` |
+| M8 | 1.0: stability policy, going public, `llms.txt` | **1.0** | `llms.txt` done (M6); rest open |
 
 Why this order: the API changes first so the docs, the skill, the docstring
 examples and the agent test are all written once. The snippet check is
@@ -42,11 +42,42 @@ Each milestone has a goal, a checklist, and a definition of done. Design
 detail follows the checklist where it's needed; docs design is in plan 008.
 
 
+### Deviations from this plan, as built (2026-10-06)
+
+- **M4 and M5 shipped in 0.91**, not 0.92: one upgrade for the external
+  user instead of two, and the docs build needs only one release. Read
+  "0.92" below as "0.91".
+- **Resources are `cached_property` attributes**, not class-level
+  annotations assigned in `__init__`. Type checkers and the snippet check
+  read their return annotations, and they work on `Client.__new__(Client)`.
+- **Changelog and Upgrading pages** include `CHANGELOG.md` with
+  `pymdownx.snippets` (section markers in the CHANGELOG), not a custom
+  hook. Same sibling-checkout dependency, so the M8 switch still applies.
+- **`llms.txt`** shipped with M6 through `mkdocs-llmstxt` (plan 008, D8).
+- **`[project.urls]`** `Changelog` and `Issues` already existed.
+- **Agent test**: tool calls are read from the agent's message history
+  (`AgentRun.failed_commands`, `.consulted`), not from Logfire spans, so
+  `HasMatchingSpan` and the "confirm first" item about it are moot.
+  `WebFetch(allowed_domains=...)` and the saved sign-in in the program's
+  subprocess (`HOME` passes through) are confirmed. `--repeat`,
+  `--without-skill` and `--model` landed with E1.
+- **Guides**: two Python guides (unattended, coaching). Season analysis is
+  covered by the generic guides' Python tabs; "write data back" is the open
+  third, worth writing once the agent test shows where agents stumble.
+- **Going public goes together with the 0.91 release**, not at 1.0: the
+  skill's install command, the README's links on PyPI and the docs'
+  source links all point at the GitHub repo. Run gitleaks and flip
+  visibility before `make publish`.
+- **Environments that pin the SDK** (the Console and SweatStack.run
+  images) need 0.91 when it ships, or their snippets break against the
+  new docs.
+
+
 ## M0: Commit the preparation
 
 **Goal.** Land the work of 2026-10-05 as one commit.
 
-- [ ] Commit: cleaned plans 002–007, plans 008 and 009, AGENTS.md "Public
+- [x] Commit: cleaned plans 002–007, plans 008 and 009, AGENTS.md "Public
       repository" section, `tests/test_public_hygiene.py`, the skill moved
       to `skills/`, `.claude/` ignored, CHANGELOG and test edits. Message:
       "Prepare repository for going public".
@@ -60,12 +91,12 @@ tests on 2026-10-05).
 **Goal.** Stop the live docs from teaching APIs that don't exist. No
 tooling; find and replace in `../sweatstack.no/docs-dev`.
 
-- [ ] `sweatstack.login()` → `sweatstack.authenticate()`
+- [x] `sweatstack.login()` → `sweatstack.authenticate()`
       (`learn/libraries/python/interfaces.md`, `.../authentication.md`,
       `guides/analyze-activity-data.md`).
-- [ ] `as_dataframe=True` → `output="pandas"` (activities, dailies, tests,
+- [x] `as_dataframe=True` → `output="pandas"` (activities, dailies, tests,
       timezones, data-model, analyze guide).
-- [ ] `learn/libraries/python/index.md`: "Timeseries come back as pandas
+- [x] `learn/libraries/python/index.md`: "Timeseries come back as pandas
       DataFrames" and `uv add sweatstack` → install `sweatstack[pandas]` or
       `[polars]`; frames come back in the installed library.
 - [ ] Deploy (`make deploy-docs`, by hand).
@@ -82,18 +113,18 @@ them from the SDK and M5/M6 fix every snippet with tooling.
 before every commit, and nothing ships without it. Local only, no new CI
 job; the existing CI (pytest, bare install) stays.
 
-- [ ] `ruff` config in `pyproject.toml`: rules `E`, `F`, `I`, `B`, `UP`;
+- [x] `ruff` config in `pyproject.toml`: rules `E`, `F`, `I`, `B`, `UP`;
       exclude `openapi_schemas.py` (generated, its generator runs ruff).
-- [ ] One formatting commit; add its hash to `.git-blame-ignore-revs`.
-- [ ] `ty` pinned to an exact version in the `dev` group, default rules, on
+- [x] One formatting commit; add its hash to `.git-blame-ignore-revs`.
+- [x] `ty` pinned to an exact version in the `dev` group, default rules, on
       `src/`. Fix or explicitly ignore its findings.
-- [ ] `tests/typing/test_output_types.py`: `typing.assert_type` on the
+- [x] `tests/typing/test_output_types.py`: `typing.assert_type` on the
       `output=` overloads, checked by `ty`, not run by pytest. Confirm first
       that `ty` supports `assert_type` on overloads; if not yet, keep the
       file and enable it later.
-- [ ] `Makefile`: `check: ruff format --check, ruff check, ty check, pytest`;
+- [x] `Makefile`: `check: ruff format --check, ruff check, ty check, pytest`;
       `publish` depends on `check`.
-- [ ] AGENTS.md: run `make check` before every commit.
+- [x] AGENTS.md: run `make check` before every commit.
 
 **Done when** `make check` is green and `make publish` refuses to run
 without it.
@@ -112,36 +143,36 @@ upgrade, not four.
 
 ### Checklist (one commit each, `make check` green after every one)
 
-- [ ] **Scaffolding.** `resources/_base.py` (a `Resource` holding its
+- [x] **Scaffolding.** `resources/_base.py` (a `Resource` holding its
       client). `Client` declares every resource at class level
       (`activities: Activities`, ...) so type checkers and the snippet check
       resolve them statically, and assigns them in `__init__`.
       `_renames.py` with `Client.__getattr__` and the module-level
       `__getattr__` (see "Renames"). Tests for both.
-- [ ] **One commit per resource**, nine times: `activities` (with
+- [x] **One commit per resource**, nine times: `activities` (with
       `longitudinal` and `app_metadata`), `traces`, `tests`, `dailies`,
       `profile`, `users`, `teams`, `portal`, `oauth`. Each commit: the new
       module with methods per R1–R8, `@overload` stubs, docstrings with the
       endpoint line and an `Examples:` block; that resource's tests moved to
       the new names; the mapping entries; the old methods deleted from
       `client.py`.
-- [ ] **Removed methods** (no 1-to-1 replacement) get mapping entries with
+- [x] **Removed methods** (no 1-to-1 replacement) get mapping entries with
       a hint: `get_latest_activity_data`, `get_latest_activity_mean_max`,
       `get_team_user`, `get_user`, `switch_user`, `switch_back`.
-- [ ] **Internal callers** to the new names: `streamlit.py` (7 call sites),
+- [x] **Internal callers** to the new names: `streamlit.py` (7 call sites),
       `fastapi/` (5). `StreamlitAuth.select_user()` swaps `auth.client` for
       a delegated client instead of calling `switch_user`. The FastAPI
       docstring recommends `user.client.delegated_client(...)`.
-- [ ] **Remove `sweatlab` and `sweatshell`** (plan 008, D9): the two
+- [x] **Remove `sweatlab` and `sweatshell`** (plan 008, D9): the two
       `[project.scripts]`, `jupyterlab_oauth2_startup.py`, `sweatshell.py`,
       `ipython_init.py`, `Sweat Stack examples/`, the `[jupyter]` extra.
-- [ ] **Skill rewritten once**, short, against the new API (plan 008, D6):
+- [x] **Skill rewritten once**, short, against the new API (plan 008, D6):
       what agents get wrong (install extras, auth choice, `Client()` vs
       module level, `output=`, gotchas) and links to the docs for the rest.
       Install line pins `>=0.91`.
-- [ ] **README**: `Client()` first; install; a 10-line quickstart; links.
+- [x] **README**: `Client()` first; install; a 10-line quickstart; links.
       The long output/DuckDB/upgrade material moves to the docs in M6.
-- [ ] **CHANGELOG 0.91** with `### Upgrading`: the rename table, parameter
+- [x] **CHANGELOG 0.91** with `### Upgrading`: the rename table, parameter
       renames, behaviour changes, the removed commands, and the migration
       prompt. A test asserts every key of the rename mapping appears in the
       CHANGELOG.
@@ -371,23 +402,23 @@ on the OpenAI, Anthropic and Stripe clients.
 
 ### Checklist
 
-- [ ] `_transport.py`: **one `httpx.Client` per `Client`**, created lazily
+- [x] `_transport.py`: **one `httpx.Client` per `Client`**, created lazily
       (today every request opens a new one, verified 2026-10-06).
       `Client.close()` and context-manager support. `delegated_client()`
       gets its own.
-- [ ] **Token refresh under a lock**, so two threads can't refresh at once.
-- [ ] `Client(timeout=60.0, max_retries=2)`: a float in seconds, no `httpx`
+- [x] **Token refresh under a lock**, so two threads can't refresh at once.
+- [x] `Client(timeout=60.0, max_retries=2)`: a float in seconds, no `httpx`
       types in the public API. Both propagate through `delegated_client()`
       and `principal_client()`, as `output` does.
-- [ ] The streaming endpoint (`watch_backfill_status`) uses no read timeout;
+- [x] The streaming endpoint (`watch_backfill_status`) uses no read timeout;
       it already has `auto_reconnect`.
-- [ ] Retry policy (table below), with a total budget.
-- [ ] Each retry logged at `DEBUG` on the `sweatstack` logger: method,
+- [x] Retry policy (table below), with a total budget.
+- [x] Each retry logged at `DEBUG` on the `sweatstack` logger: method,
       path, status, attempt, request ID.
-- [ ] Tests on `httpx.MockTransport`: retry per status, no retry on POST,
+- [x] Tests on `httpx.MockTransport`: retry per status, no retry on POST,
       backoff bounds, `Retry-After`, budget, DELETE-then-404, propagation,
       refresh lock, stream timeout, `close()`.
-- [ ] CHANGELOG with the new parameters and `max_retries=0` for
+- [x] CHANGELOG with the new parameters and `max_retries=0` for
       latency-sensitive apps.
 
 **Done when** a loop of 100 `activities.retrieve` calls reuses one
@@ -418,14 +449,14 @@ drift again. Design: plan 008, "The checker".
 
 ### Checklist
 
-- [ ] `src/sweatstack/_docs.py`: `python -m sweatstack._docs check <paths>`.
+- [x] `src/sweatstack/_docs.py`: `python -m sweatstack._docs check <paths>`.
       Stdlib only, never imported by `sweatstack/__init__.py`, private.
-- [ ] Resolution follows the namespaces: `sweatstack.activities.list`,
+- [x] Resolution follows the namespaces: `sweatstack.activities.list`,
       `client.activities.longitudinal.data`, `auth.client.users.list`,
       resolved through the class-level annotations from M3.
-- [ ] This repo's tests run it on `README.md`, every docstring `Examples:`
+- [x] This repo's tests run it on `README.md`, every docstring `Examples:`
       block, `skills/`, and `examples/*.py`.
-- [ ] `../sweatstack.no`: `build-docs` runs
+- [x] `../sweatstack.no`: `build-docs` runs
       `uv lock --upgrade-package sweatstack`, then the check, then
       `mkdocs build --strict`. Removes the 0.86 pin.
 - [ ] Release 0.92.x so the docs build can install it.
@@ -442,27 +473,27 @@ each piece of content lives").
 
 ### Checklist
 
-- [ ] Fix everything M5's check reports.
-- [ ] Learn › Python SDK section: Overview, Authentication, Clients, Data
+- [x] Fix everything M5's check reports.
+- [x] Learn › Python SDK section: Overview, Authentication, Clients, Data
       output, Errors, Configuration, Streamlit, FastAPI, Guides, Upgrading,
       Changelog, Reference. Frameworks folded in; CLI moved to Tools;
       Jupyter page deleted; 301s for every moved URL.
-- [ ] Reference: one page per resource class, one `:::` line each, plus
+- [x] Reference: one page per resource class, one `:::` line each, plus
       Client, Models and enums, Exceptions.
-- [ ] Upgrading page: the 0.91 and 0.92 upgrade paths from the CHANGELOG,
+- [x] Upgrading page: the 0.91 and 0.92 upgrade paths from the CHANGELOG,
       newest first.
-- [ ] Changelog page: a build hook reads `../sweatstack-python/CHANGELOG.md`
+- [x] Changelog page: a build hook reads `../sweatstack-python/CHANGELOG.md`
       from the sibling checkout and fails loudly if it's missing. Switch to
       the GitHub raw URL once public (M8).
-- [ ] `Client()` first on every page; the module-level interface presented
+- [x] `Client()` first on every page; the module-level interface presented
       as a notebook convenience, with the reason.
-- [ ] Concept pages keep their Python tabs; nothing generic is explained
+- [x] Concept pages keep their Python tabs; nothing generic is explained
       twice (plan 008, D2).
 - [ ] Python guides, 3–5 (plan 008, M6 list): analyse a season, run
       unattended, coach workflows, write data back, errors and rate limits.
-- [ ] `pyproject.toml` `[project.urls]`: `Documentation` → Python SDK
+- [x] `pyproject.toml` `[project.urls]`: `Documentation` → Python SDK
       Overview; `Changelog` and `Issues` added at M8.
-- [ ] Docs repo AGENTS.md rules (plan 008, "Rules").
+- [x] Docs repo AGENTS.md rules (plan 008, "Rules").
 
 **Done when** `make build-docs` passes in strict mode with the check; no
 Python-only content remains outside the Python section; the AI coding
@@ -478,23 +509,23 @@ reference agent with our skill, evaluated with pydantic-evals. Only
 
 ### E1 checklist (the useful core)
 
-- [ ] `evals` dependency group: `pydantic-ai-slim[anthropic]`,
+- [x] `evals` dependency group: `pydantic-ai-slim[anthropic]`,
       `pydantic-ai-harness[skills]`, `pydantic-evals`, `logfire`, **all
       pinned to exact versions** (harness is 0.x and moves fast).
-- [ ] `evals/agent/agent.py`: the agent (below).
-- [ ] `evals/agent/cases.py`: the six cases, each with its judge rubric.
-- [ ] `evals/agent/run.py`: the task function (workspace, run, execute),
+- [x] `evals/agent/agent.py`: the agent (below).
+- [x] `evals/agent/cases.py`: the six cases, each with its judge rubric.
+- [x] `evals/agent/run.py`: the task function (workspace, run, execute),
       the lifecycle (managed user "SDK eval", cleanup, keep failed
       workspaces), the evaluators, `report.print(include_reasons=True)`.
-- [ ] Confirm the three documented-but-untested details (below) first.
+- [x] Confirm the three documented-but-untested details (below) first.
 - [ ] One run; read the reasons; file what you find as fixes.
 
-**Done when** `uv run --group evals python evals/agent/run.py` runs all six
+**Done when** `make agent-test` runs all six
 cases unattended and prints a report whose reasons name concrete friction.
 
 ### E2 checklist (only once E1 has proven useful)
 
-- [ ] `--repeat N`, `--without-skill`, `--model`.
+- [x] `--repeat N`, `--without-skill`, `--model`.
 - [ ] Redacted results in `evals/agent/results/<sdk>-<model>-<date>.json`
       (assertions, scores, metrics; no outputs or reasons). Baselines are
       per model; a model change makes old results incomparable.
@@ -598,7 +629,7 @@ as its first impression.
       GitHub, restore the AI coding page's skills claim).
 - [ ] Changelog hook switches from the sibling checkout to the GitHub raw
       URL.
-- [ ] `llms.txt` (plan 008, D8; any time after M6).
+- [x] `llms.txt` (plan 008, D8; any time after M6).
 - [ ] Release 1.0.
 
 **Done when** an outsider can `npx skills add SweatStack/sweatstack-python`,

@@ -10,6 +10,11 @@ Proposed 2026-10-05, restructured 2026-10-06. Touches three repos:
 `sweatstack-python` (this repo, made public at M8), `sweatstack.no`
 (docs.sweatstack.no) and `sweatstack-skills`.
 
+**Status 2026-10-06.** Built as designed: the M6 pages, reference, snippet
+check in the docs build and `llms.txt` (D8) are written. Differences are
+listed in plan 009 under "Deviations from this plan, as built". The repo
+goes public with the 0.91 release, not at M8.
+
 
 ## Principles
 
