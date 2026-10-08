@@ -144,7 +144,9 @@ minimal feature delta. Commit, then handle the remainder separately.
 
 1. Bump `version` in `pyproject.toml` (SemVer).
 2. Add a CHANGELOG entry — see [AGENTS.md → CHANGELOG](AGENTS.md#changelog).
-3. `make publish`: runs `make check`, builds, and uploads with twine.
+3. `gitleaks git .` reports no leaks (`brew install gitleaks`). Known false
+   positives go in `.gitleaks.toml`, each with the reason it's safe.
+4. `make publish`: runs `make check`, builds, and uploads with twine.
    The `Makefile` has the canonical commands.
 
 
