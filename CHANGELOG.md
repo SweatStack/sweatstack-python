@@ -28,11 +28,15 @@ removed name raises an `AttributeError` that names its replacement.
 - **BREAKING: `activities.latest()`** calls the API's `/activities/latest`: it takes only
   `sport=`, and returns `None` when there is no activity (it raised `StopIteration`).
 - **BREAKING: keyword-only arguments** where they were positional: `metric=` on
-  `activities.mean_max()`, `segmentation_on=` and `metrics=` on `activities.data()`,
-  `first_name=` on `users.create()`, and everything after the first argument of
+  `activities.mean_max()` and `activities.awd()`, `segmentation_on=` and `metrics=` on
+  `activities.data()`, `first_name=` and `last_name=` on `users.create()`, `only_root=` on
+  `profile.sports()`, `scopes=` on `teams.authorize()`, and every argument of
   `oauth.authorization_url()` and `oauth.exchange_code()`.
-- **BREAKING: longitudinal date parameters take `date` objects** (`start=date(2026, 1, 1)`), and
-  `date=` / `window_days=` (deprecated since 0.70) are gone; use `start=` and `end=`.
+- **BREAKING: the ID argument of `app_metadata.set()` and `app_metadata.delete()`** is
+  `record_id` on activities, traces and tests (it was `activity_id`, `trace_id`, `test_id`).
+  Calls that pass it positionally are unaffected.
+- **BREAKING: longitudinal `date=` / `window_days=`** (deprecated since 0.70) are gone; use
+  `start=` and `end=`, typed as `date` objects (`start=date(2026, 1, 1)`).
   `sport=` is a required argument of all three longitudinal methods; the API rejected a
   request without one.
 - **BREAKING: `activities.upload()`** returns the processing status of each file
@@ -42,7 +46,8 @@ removed name raises an `AttributeError` that names its replacement.
   name contains the text, ignoring case.
 - **BREAKING: `switch_user()` and `switch_back()` are removed.** They changed which user a shared
   client acted as, invisibly to everything else holding it. `client.delegated_client(user)` does
-  the same job and returns a new client.
+  the same job and returns a new client. It takes a user ID or a `UserSummary`, not a
+  name: `switch_user("Carla")` becomes a lookup with `users.list(name="Carla")` first.
 - `StreamlitAuth.select_activity()` takes `sport=` instead of `sports=`.
 - Clients from `delegated_client()` and `principal_client()` keep the app's `client_id` and
   `client_secret`, so `portal.sessions.create()` works on them.
@@ -150,31 +155,70 @@ each change. The module-level functions moved the same way: `sweatstack.get_acti
 | `switch_back` | keep the original client, or `client.principal_client()` |
 | `client.jwt` | `client.api_key` |
 
-Parameters that changed: `sports=` → `sport=` everywhere; `get_activity_mean_max(id, "power")`
-→ `activities.mean_max(id, metric="power")`; `get_latest_activity(start=, end=, tag=)` →
-`activities.latest(sport=)` (filter `activities.list()` for the rest).
+Changes that a rename alone doesn't cover. Most raise a `TypeError` naming the argument; the
+ones marked **silent** don't fail loudly, so check for them.
+
+| 0.90 | 0.91 |
+|---|---|
+| `sports=["cycling"]` (every filter, and `StreamlitAuth.select_activity`) | `sport="cycling"` or `sport=["cycling", "running"]` |
+| `get_activity_mean_max(id, "power")`, `get_activity_awd(id, "power")` | `activities.mean_max(id, metric="power")`, `activities.awd(id, metric="power")` |
+| `get_activity_data(id, "power", ["power"])` | `activities.data(id, segmentation_on="power", metrics=["power"])` |
+| `create_user("Carla", "Smith")` | `users.create(first_name="Carla", last_name="Smith")` |
+| `get_sports(True)`, `authorize_team(id, scopes)` | `profile.sports(only_root=True)`, `teams.authorize(id, scopes=scopes)` |
+| Positional arguments to `get_authorization_url()` / `exchange_code_for_token()` | Keywords: `oauth.authorization_url(client_id=..., ...)` |
+| `set_activity_app_metadata(activity_id=..., data=...)` (also traces, tests) | `activities.app_metadata.set(activity_id, data=...)`: positional, or `record_id=` |
+| `get_latest_activity(start=, end=, tag=)` | `activities.latest(sport=)`; for the rest, `activities.list(start=..., end=..., tags=..., limit=1)` |
+| `get_latest_activity()` raising `StopIteration` when there is none | **Silent:** `activities.latest()` returns `None`; check before using `.id` |
+| `get_longitudinal_*(date=..., window_days=...)` | `start=` and `end=` |
+| `get_longitudinal_*(...)` without `sport` | `sport=` is required (the API already rejected a request without one) |
+| `upload(...)` returning a dict | **Silent:** `activities.upload(...)` returns `list[SourceResponse]`; read `.status` / `.error` |
+| `get_user("Carla")` returning one `UserSummary` | **Silent:** `users.list(name="Carla")` returns a list, every match; `search_mode=` is gone |
+| `switch_user("Carla")` (a name) | `client.delegated_client(users.list(name="Carla")[0])`: a name is not accepted |
+| `client.jwt` | `client.api_key` |
+| `sweatlab`, `sweatshell`, `pip install "sweatstack[jupyter]"` | `uv add "sweatstack[pandas]" jupyterlab`; `sweatstack.authenticate()` in the first cell |
+
+New defaults that change behaviour without changing code: `GET`, `PUT` and `DELETE` requests are
+retried (`Client(max_retries=0)` restores single attempts), and requests time out after 60 s
+(`Client(timeout=...)`).
 
 **Migration prompt.** Paste this into your coding agent:
 
 ```text
 Upgrade this codebase to sweatstack 0.91, which moved every method to a resource namespace.
-Find every use of the sweatstack client (a Client instance or the sweatstack module) and:
+The full upgrade guide, with both tables, is the "Upgrading" section of the 0.91.0 entry in
+https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md
+(also at https://docs.sweatstack.no/learn/python/upgrading/). Read it first.
 
-1. Rename calls per the table in the sweatstack 0.91.0 CHANGELOG entry, e.g.
-   get_activities() -> activities.list(), get_activity_data(id) -> activities.data(id),
+Find every use of the sweatstack client (a Client instance, the sweatstack module, and
+StreamlitAuth or FastAPI user clients) and:
+
+1. Rename calls per the first table, e.g. get_activities() -> activities.list(),
+   get_activity_data(id) -> activities.data(id),
    get_longitudinal_mean_max(...) -> activities.longitudinal.mean_max(...),
    update_trace(id, ...) -> traces.replace(id, ...), get_users() -> users.list().
-2. Rename the keyword sports= to sport= (it takes one value or a list).
-3. Pass metric= by keyword to activities.mean_max(); pass dates as datetime.date objects to the
-   longitudinal methods.
-4. Replace get_latest_activity_data(...) with
-   activities.data(activities.latest().id, ...), and handle activities.latest() returning None.
-5. Replace switch_user(user) with a new client: athlete = client.delegated_client(user), and use
-   that client for the athlete's calls.
-6. Replace get_user(name) with users.list(name=...), which returns every match.
+2. Apply every row of the second table. In particular:
+   - sports= -> sport= (one value or a list).
+   - Pass by keyword: metric= (mean_max, awd), segmentation_on= and metrics= (data),
+     first_name= and last_name= (users.create), only_root= (profile.sports),
+     scopes= (teams.authorize), and all arguments of oauth.authorization_url() and
+     oauth.exchange_code().
+   - Longitudinal methods: sport= is required, and date=/window_days= become start=/end=
+     (datetime.date objects).
+   - activities.latest() takes only sport= and returns None when there is no activity:
+     handle None.
+   - activities.upload() returns list[SourceResponse], not a dict.
+   - get_user(x) -> users.list(name=x), which returns a list of every match.
+   - switch_user(user) -> athlete = client.delegated_client(user_id_or_summary); use that
+     new client for the athlete's calls. It doesn't accept a name: look the user up first.
+     switch_back() -> keep using the original client.
+   - client.jwt -> client.api_key.
+3. Replace get_latest_activity_data(...) with activities.data(activities.latest().id, ...),
+   after checking that latest() returned an activity.
+4. If the project used sweatlab, sweatshell or the [jupyter] extra, depend on
+   "sweatstack[pandas]" (or [polars]) and jupyterlab instead.
 
-Run the code and fix any AttributeError: its message names the replacement. Do not add
-compatibility shims.
+Then run the code and the tests. Fix any AttributeError (its message names the replacement)
+and TypeError (a renamed or keyword-only argument). Do not add compatibility shims.
 ```
 <!-- --8<-- [end:upgrading-0-91] -->
 
