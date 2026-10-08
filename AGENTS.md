@@ -68,6 +68,9 @@ Python.
   and `Resource._paginate` pages through the endpoint to get them.
 - A `traces=` query parameter is `trace_resolution=` on `tests.retrieve`, where the wire name
   would be ambiguous. The docstring states the mapping.
+- `name=` on `users.list` and `teams.users` filters client-side (case-insensitive substring of
+  the display name) until the server offers the filter; then it becomes the wire parameter
+  with the same name and semantics. Don't add other client-side filters.
 - `output=` is a client-side choice of container on the data endpoints. See "Output backends".
 - `activities.longitudinal` groups the three `/activities/longitudinal-*` endpoints.
 - Convenience composites that wrap several calls are a last resort. The 0.91 redesign removed

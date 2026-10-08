@@ -37,7 +37,11 @@ removed name raises an `AttributeError` that names its replacement.
   `sport=` is a required argument of all three longitudinal methods; the API rejected a
   request without one.
 - **BREAKING: `activities.upload()`** returns the processing status of each file
-  (`list[SourceResponse]`) instead of a raw dict.
+  (`list[SourceResponse]`) instead of a raw dict, and no longer takes `sport=`: the server never
+  read it. A CSV carries its sport in a `sport` column (an Open Sport Taxonomy code such as
+  `cycling.road`).
+- **BREAKING: `oauth.exchange_code()` no longer takes `redirect_uri=`**; the token endpoint never
+  read it.
 - **BREAKING: `users.retrieve(user_id)`** is the server's `GET /users/{id}`, which only finds
   users you manage. Find anyone else with `users.list(name=...)`, which returns every user whose
   name contains the text, ignoring case.
@@ -64,6 +68,7 @@ removed name raises an `AttributeError` that names its replacement.
   for managed users.
 - `users.list(include_managed=, include_shared=, name=)` and `teams.users(team_id, name=)`.
 - `SourceResponse` and `SourceError`, the upload status models.
+- `vo2=` on `traces.create()` and `traces.replace()`; the field was already on `TraceDetails`.
 
 ### Fixed
 
@@ -167,7 +172,9 @@ ones marked **silent** don't fail loudly, so check for them.
 | `get_latest_activity()` raising `StopIteration` when there is none | **Silent:** `activities.latest()` returns `None`; check before using `.id` |
 | `get_longitudinal_*(date=..., window_days=...)` | `start=` and `end=` |
 | `get_longitudinal_*(...)` without `sport` | `sport=` is required (the API already rejected a request without one) |
+| `upload(files, sport=...)` | `activities.upload(files)`: no `sport=`; a CSV needs a `sport` column |
 | `upload(...)` returning a dict | **Silent:** `activities.upload(...)` returns `list[SourceResponse]`; read `.status` / `.error` |
+| `exchange_code_for_token(..., redirect_uri=...)` | `oauth.exchange_code(...)` without `redirect_uri=` |
 | `get_user("Carla")` returning one `UserSummary` | **Silent:** `users.list(name="Carla")` returns a list, every match; `search_mode=` is gone |
 | `switch_user("Carla")` (a name) | `client.delegated_client(users.list(name="Carla")[0])`: a name is not accepted |
 | `client.jwt` | `client.api_key` |
@@ -202,7 +209,9 @@ StreamlitAuth or FastAPI user clients) and:
      (datetime.date objects).
    - activities.latest() takes only sport= and returns None when there is no activity:
      handle None.
-   - activities.upload() returns list[SourceResponse], not a dict.
+   - activities.upload() takes no sport= (a CSV needs a sport column) and returns
+     list[SourceResponse], not a dict.
+   - oauth.exchange_code() takes no redirect_uri=.
    - get_user(x) -> users.list(name=x), which returns a list of every match.
    - switch_user(user) -> athlete = client.delegated_client(user_id_or_summary); use that
      new client for the athlete's calls. It doesn't accept a name: look the user up first.

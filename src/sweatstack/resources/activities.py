@@ -506,20 +506,17 @@ class Activities(Resource):
     def upload(
         self,
         files: str | Path | Sequence[str | Path],
-        *,
-        sport: Sport | str | None = None,
     ) -> builtins.list[SourceResponse]:
         """Uploads activity files (FIT or CSV); they are processed in the background.
 
         Endpoint: ``POST /api/v1/activities/upload``
 
-        FIT files carry their sport. CSV files need ``sport``, and a ``timestamp`` column with
-        offset-aware ISO 8601 datetimes (``...+02:00`` or ``...Z``); naive timestamps are
-        rejected during processing.
+        FIT files carry their sport. CSV files need a ``sport`` column with an Open Sport
+        Taxonomy code (``cycling.road``) and a ``timestamp`` column with offset-aware ISO 8601
+        datetimes (``...+02:00`` or ``...Z``); naive timestamps are rejected during processing.
 
         Args:
             files: One path or a list of paths.
-            sport: The sport of the activities. Required for CSV files.
 
         Returns:
             list[SourceResponse]: One entry per file. ``status`` starts as ``"processing"``;
@@ -540,7 +537,6 @@ class Activities(Resource):
             ```
         """
         paths = [Path(files)] if isinstance(files, (str, Path)) else [Path(f) for f in files]
-        data = {"sport": self._client._enums_to_strings([sport])[0]} if sport else {}
         opened = []
         try:
             multipart = []
@@ -548,9 +544,7 @@ class Activities(Resource):
                 handle = path.open("rb")
                 opened.append(handle)
                 multipart.append(("files", (path.name, handle)))
-            response = self._client._request(
-                "post", "/api/v1/activities/upload", files=multipart, data=data
-            )
+            response = self._client._request("post", "/api/v1/activities/upload", files=multipart)
         finally:
             for handle in opened:
                 handle.close()

@@ -152,6 +152,7 @@ class Traces(Resource):
         power: int | None = None,
         speed: float | None = None,
         heart_rate: int | None = None,
+        vo2: float | None = None,
         tags: builtins.list[str] | None = None,
         sport: Sport | str | None = None,
         test_id: str | None = None,
@@ -169,6 +170,7 @@ class Traces(Resource):
             power: Power, W.
             speed: Speed, m/s.
             heart_rate: Heart rate, bpm.
+            vo2: Oxygen uptake (VO2).
             tags: Tags.
             sport: The sport.
             test_id: Link the trace to this test. A linked trace belongs to the test whatever
@@ -202,6 +204,7 @@ class Traces(Resource):
             power=power,
             speed=speed,
             heart_rate=heart_rate,
+            vo2=vo2,
             tags=tags,
             sport=sport,
             test_id=test_id,
@@ -220,6 +223,7 @@ class Traces(Resource):
         power: int | None = None,
         speed: float | None = None,
         heart_rate: int | None = None,
+        vo2: float | None = None,
         tags: builtins.list[str] | None = None,
         sport: Sport | str | None = None,
         test_id: str | None = None,
@@ -241,6 +245,7 @@ class Traces(Resource):
             power: Power, W.
             speed: Speed, m/s.
             heart_rate: Heart rate, bpm.
+            vo2: Oxygen uptake (VO2).
             tags: Tags.
             sport: The sport.
             test_id: The test this trace is linked to; ``None`` unlinks it.
@@ -270,6 +275,7 @@ class Traces(Resource):
             power=power,
             speed=speed,
             heart_rate=heart_rate,
+            vo2=vo2,
             tags=tags,
             sport=sport,
             test_id=test_id,

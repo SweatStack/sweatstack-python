@@ -20,7 +20,7 @@ client.activities.latest(sport=None)                     # ActivityDetails | Non
 client.activities.data("act_123", segmentation_on=None, metrics=None, output=None)  # time series
 client.activities.mean_max("act_123", metric="power", durations=None, output=None)  # best average per duration
 client.activities.awd("act_123", metric=None, output=None)  # accumulated work duration
-client.activities.upload(["ride.fit"], sport=None)       # list[SourceResponse]; sport required for CSV
+client.activities.upload(["ride.fit"])                  # list[SourceResponse]; a CSV needs a sport column
 client.activities.backfill_status()                      # BackfillStatus
 client.activities.watch_backfill_status(auto_reconnect=False)  # generator of BackfillStatus
 client.activities.app_metadata.set("act_123", data={"k": "v"})  # app token only; replaces the dict
@@ -44,7 +44,7 @@ grid; a list of seconds returns just those. `sweatstack.enable_cache()` caches `
 
 ```python
 client.traces.list(start=None, end=None, sport=None, tags=None, limit=100, offset=0, output=None)
-client.traces.create(timestamp=datetime.now(timezone.utc), lactate=2.1, heart_rate=152, tags=["lactate"], test_id=None)
+client.traces.create(timestamp=datetime.now(timezone.utc), lactate=2.1, heart_rate=152, vo2=None, tags=["lactate"], test_id=None)
 client.traces.replace("trace_123", timestamp=datetime.now(timezone.utc), lactate=2.4)  # clears every field you omit
 client.traces.delete("trace_123")
 client.traces.app_metadata.set("trace_123", data={"k": "v"})

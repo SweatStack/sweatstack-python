@@ -94,7 +94,6 @@ class OAuth(Resource):
         client_id: str,
         code_verifier: str | None = None,
         client_secret: str | None = None,
-        redirect_uri: str | None = None,
         persist: bool = True,
     ) -> TokenResponse:
         """Exchanges an authorization code for tokens, and signs this client in with them.
@@ -106,7 +105,6 @@ class OAuth(Resource):
             client_id: Your app's client ID.
             code_verifier: The PKCE verifier, if you sent a challenge.
             client_secret: Your app's secret, for confidential clients.
-            redirect_uri: The redirect URI, if the authorization request had one.
             persist: Also save the tokens to this machine's token storage.
 
         Returns:
@@ -131,8 +129,6 @@ class OAuth(Resource):
             data["code_verifier"] = code_verifier
         if client_secret:
             data["client_secret"] = client_secret
-        if redirect_uri:
-            data["redirect_uri"] = redirect_uri
         response = self._client._request("post", "/api/v1/oauth/token", data=data, auth=False)
         tokens = TokenResponse.model_validate(response.json())
         self._client.api_key = tokens.access_token

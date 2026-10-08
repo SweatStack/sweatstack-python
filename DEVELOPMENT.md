@@ -118,7 +118,20 @@ backend's OpenAPI document by `datamodel-code-generator`. Never hand-edit it.
    diff will often include **unrelated upstream changes** since the last
    regeneration (field renames, type tightening, new endpoints).
 
-4. If the diff contains changes outside the feature you are working on,
+4. Check the methods against the document, not only the models. Save it
+   and run the wire-name test, which compares every resource method's
+   parameters with its endpoint's path, query and body parameters (R8):
+
+   ```bash
+   curl -s http://localhost:8080/openapi.json -o /tmp/openapi.json
+   SWEATSTACK_OPENAPI_JSON=/tmp/openapi.json uv run pytest tests/test_wire_names.py
+   ```
+
+   A new server field shows up here as "on the wire but not in the SDK";
+   add it to the method (and to `skills/sweatstack-python/api.md`). The
+   test skips without the variable, so `make check` stays offline.
+
+5. If the diff contains changes outside the feature you are working on,
    **split them into a separate commit** (`chore: regenerate openapi
    schemas`) that lands before the feature commit. Keep the feature
    commit minimal so reviewers can read it.
