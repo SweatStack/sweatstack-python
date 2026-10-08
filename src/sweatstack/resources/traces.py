@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from .._frames import ListOutput
 from ..schemas import Sport, TraceDetails
-from ._app_metadata import AppMetadata
+from ._app_metadata import TraceAppMetadata
 from ._base import Resource, SportParam, TagParam
 
 if TYPE_CHECKING:
@@ -24,9 +24,9 @@ class Traces(Resource):
     """Traces: point measurements such as lactate, RPE or heart rate, optionally linked to a test."""
 
     @cached_property
-    def app_metadata(self) -> AppMetadata:
+    def app_metadata(self) -> TraceAppMetadata:
         """This app's metadata on traces: ``set(trace_id, data=...)`` and ``delete``."""
-        return AppMetadata(self._client, "traces")
+        return TraceAppMetadata(self._client)
 
     @overload
     def list(

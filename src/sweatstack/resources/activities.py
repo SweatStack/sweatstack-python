@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Literal, overload
 from .._frames import FrameOutput, ListOutput
 from ..exceptions import SweatStackConnectionError
 from ..schemas import ActivityDetails, ActivitySummary, BackfillStatus, SourceResponse, Sport
-from ._app_metadata import AppMetadata
+from ._app_metadata import ActivityAppMetadata
 from ._base import (
     IntensityMetric,
     MetricParam,
@@ -38,9 +38,9 @@ class Activities(Resource):
     """Activities: the summaries, their time series, and analyses over one or many."""
 
     @cached_property
-    def app_metadata(self) -> AppMetadata:
+    def app_metadata(self) -> ActivityAppMetadata:
         """This app's metadata on activities: ``set(activity_id, data=...)`` and ``delete``."""
-        return AppMetadata(self._client, "activities")
+        return ActivityAppMetadata(self._client)
 
     @cached_property
     def longitudinal(self) -> Longitudinal:

@@ -3,7 +3,12 @@
 Each attribute of the client mirrors the first URL segment after ``/api/v1/`` (plan 009, R1).
 """
 
-from ._app_metadata import AppMetadata, ProfileAppMetadata
+from ._app_metadata import (
+    ActivityAppMetadata,
+    ProfileAppMetadata,
+    TestAppMetadata,
+    TraceAppMetadata,
+)
 from .activities import Activities, Longitudinal
 from .dailies import Dailies
 from .oauth import OAuth
@@ -16,7 +21,7 @@ from .users import Users
 
 __all__ = [
     "Activities",
-    "AppMetadata",
+    "ActivityAppMetadata",
     "Dailies",
     "Longitudinal",
     "OAuth",
@@ -25,7 +30,9 @@ __all__ = [
     "Profile",
     "ProfileAppMetadata",
     "Teams",
+    "TestAppMetadata",
     "Tests",
+    "TraceAppMetadata",
     "Traces",
     "Users",
 ]

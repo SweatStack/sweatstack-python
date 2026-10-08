@@ -48,6 +48,18 @@ def test_endpoint_line(name):
 
 
 @pytest.mark.parametrize("name", sorted(RESOURCE_METHODS))
+def test_path_parameters_keep_their_wire_names(name):
+    """R8: ``{activity_id}`` in the endpoint is the method's ``activity_id`` parameter."""
+    doc = inspect.getdoc(RESOURCE_METHODS[name]) or ""
+    endpoint = ENDPOINT.search(doc)
+    if not endpoint:
+        return
+    path_params = set(re.findall(r"\{(\w+)\}", endpoint.group(0)))
+    missing = path_params - set(inspect.signature(RESOURCE_METHODS[name]).parameters)
+    assert not missing, f"{name}: name the parameter(s) {sorted(missing)} as in the endpoint"
+
+
+@pytest.mark.parametrize("name", sorted(RESOURCE_METHODS))
 def test_resource_method_has_an_example(name):
     doc = inspect.getdoc(RESOURCE_METHODS[name]) or ""
     assert "\nExamples:\n" in doc and "```python" in doc, f"{name}: needs an Examples: block"

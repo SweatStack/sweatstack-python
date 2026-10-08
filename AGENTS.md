@@ -89,7 +89,7 @@ src/sweatstack/
 │                        #   and the module-level interface (one shared default client).
 ├── resources/           # One module per URL segment: activities.py, traces.py, tests.py, ...
 │   ├── _base.py         #   Resource, _paginate, _wire, shared parameter types.
-│   └── _app_metadata.py #   AppMetadata (by ID) and ProfileAppMetadata.
+│   └── _app_metadata.py #   One app-metadata class per endpoint (Activity/Trace/Test/Profile).
 ├── utils.py             # Dataframe / JWT helpers.
 ├── streamlit.py         # Streamlit integration (optional extra).
 ├── fastapi/             # FastAPI integration (optional extra).
@@ -370,6 +370,6 @@ Bad (belongs in the commit message, not the changelog):
 - Match the nearest existing method in `resources/`. Consistency with the
   surroundings beats local cleverness.
 - Reuse the helpers: `_request`, `_paginate`, `_wire`, `_enums_to_strings`,
-  `_read_frame`, `_frame_from_models`, `AppMetadata`. Don't reinvent them.
+  `_read_frame`, `_frame_from_models`, `_RecordAppMetadata`. Don't reinvent them.
 - Don't add abstractions for hypothetical future flexibility. Three
   similar blocks is the pattern, not a smell.

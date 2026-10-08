@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from .._frames import ListOutput
 from ..schemas import Sport, TestDetails, TestResults, TestSummary, TraceResolution
-from ._app_metadata import AppMetadata
+from ._app_metadata import TestAppMetadata
 from ._base import Resource, SportParam, TagParam
 
 if TYPE_CHECKING:
@@ -26,9 +26,9 @@ class Tests(Resource):
     __test__ = False  # not a pytest test class, despite the name
 
     @cached_property
-    def app_metadata(self) -> AppMetadata:
+    def app_metadata(self) -> TestAppMetadata:
         """This app's metadata on tests: ``set(test_id, data=...)`` and ``delete``."""
-        return AppMetadata(self._client, "tests")
+        return TestAppMetadata(self._client)
 
     @overload
     def list(

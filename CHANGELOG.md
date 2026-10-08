@@ -32,9 +32,6 @@ removed name raises an `AttributeError` that names its replacement.
   `activities.data()`, `first_name=` and `last_name=` on `users.create()`, `only_root=` on
   `profile.sports()`, `scopes=` on `teams.authorize()`, and every argument of
   `oauth.authorization_url()` and `oauth.exchange_code()`.
-- **BREAKING: the ID argument of `app_metadata.set()` and `app_metadata.delete()`** is
-  `record_id` on activities, traces and tests (it was `activity_id`, `trace_id`, `test_id`).
-  Calls that pass it positionally are unaffected.
 - **BREAKING: longitudinal `date=` / `window_days=`** (deprecated since 0.70) are gone; use
   `start=` and `end=`, typed as `date` objects (`start=date(2026, 1, 1)`).
   `sport=` is a required argument of all three longitudinal methods; the API rejected a
@@ -166,7 +163,6 @@ ones marked **silent** don't fail loudly, so check for them.
 | `create_user("Carla", "Smith")` | `users.create(first_name="Carla", last_name="Smith")` |
 | `get_sports(True)`, `authorize_team(id, scopes)` | `profile.sports(only_root=True)`, `teams.authorize(id, scopes=scopes)` |
 | Positional arguments to `get_authorization_url()` / `exchange_code_for_token()` | Keywords: `oauth.authorization_url(client_id=..., ...)` |
-| `set_activity_app_metadata(activity_id=..., data=...)` (also traces, tests) | `activities.app_metadata.set(activity_id, data=...)`: positional, or `record_id=` |
 | `get_latest_activity(start=, end=, tag=)` | `activities.latest(sport=)`; for the rest, `activities.list(start=..., end=..., tags=..., limit=1)` |
 | `get_latest_activity()` raising `StopIteration` when there is none | **Silent:** `activities.latest()` returns `None`; check before using `.id` |
 | `get_longitudinal_*(date=..., window_days=...)` | `start=` and `end=` |
