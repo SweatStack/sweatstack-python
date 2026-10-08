@@ -8,7 +8,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from sweatstack import UserInfoResponse, UserSummary
+from sweatstack import PortalDestination, UserInfoResponse, UserSummary
 from sweatstack.client import Client
 
 
@@ -73,7 +73,7 @@ class TestUserinfo:
                 "code": "no_source_connected",
                 "status": "action_required",
                 "message": "No data source is connected yet.",
-                "action_url": "https://app.sweatstack.no/portal/x",
+                "destination": "manage-integrations",
             },
         }
         http = MagicMock()
@@ -83,4 +83,5 @@ class TestUserinfo:
         with patch.object(client, "_http_client", return_value=http):
             user = client.oauth.userinfo()
         assert isinstance(user, UserInfoResponse)
-        assert user.issue is not None and user.issue.action_url.endswith("/portal/x")
+        assert user.issue is not None
+        assert user.issue.destination == PortalDestination.manage_integrations

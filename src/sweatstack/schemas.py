@@ -56,12 +56,12 @@ def _open_enum(enum_cls: type[Enum]) -> None:
     """Let ``enum_cls`` accept values the bundled schema does not know yet.
 
     The server treats some enums as open sets (new metrics, scopes, daily measures, status
-    codes and capabilities appear without notice). An unknown value becomes a pseudo-member
-    with ``.value`` and ``.name`` set to the string, cached so repeated lookups return the
-    same object, instead of a validation error that would break the client until it is
-    updated. Closed enums (``CapabilityStatus``, ``PortalDestination``, ...) are left strict
-    on purpose: the server promises those never grow, or a value the client does not know
-    is not something it should act on.
+    codes, capabilities and Portal destinations appear without notice). An unknown value
+    becomes a pseudo-member with ``.value`` and ``.name`` set to the string, cached so repeated
+    lookups return the same object, instead of a validation error that would break the client
+    until it is updated. Closed enums (``CapabilityStatus``, ...) are left strict on purpose:
+    the server promises those never grow, or a value the client does not know is not something
+    it should act on.
     """
 
     @classmethod
@@ -75,7 +75,7 @@ def _open_enum(enum_cls: type[Enum]) -> None:
     enum_cls._missing_ = _missing_  # ty: ignore[invalid-assignment]  # patched onto a generated enum
 
 
-for _open in (Metric, Scope, DailyMeasure, StatusIssueCode, Capability):
+for _open in (Metric, Scope, DailyMeasure, StatusIssueCode, Capability, PortalDestination):
     _open_enum(_open)
 
 

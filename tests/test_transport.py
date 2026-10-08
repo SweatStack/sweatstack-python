@@ -9,7 +9,7 @@ import base64
 import json
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import httpx
 import pytest
@@ -152,10 +152,19 @@ class TestConnections:
     def test_authorization_is_per_request(self):
         client, seen = _client(_statuses(200))
         client._request("get", "/api/v1/traces/")
-        client._request("post", "/api/v1/portal/sessions", json={}, auth=False)
+        client._request("post", "/api/v1/oauth/token", data={}, auth=False)
         assert seen[0].headers["authorization"] == "Bearer user-token"
         assert "authorization" not in seen[1].headers
         assert all(r.headers["user-agent"].startswith("python-sweatstack/") for r in seen)
+
+    def test_auth_false_sends_no_authorization_header_and_never_loads_a_token(self):
+        """The token exchange runs before there is a token to load or refresh."""
+        client = Client(api_key="user-bearer", url=URL)
+        with patch.object(Client, "api_key", new_callable=PropertyMock) as api_key:
+            api_key.side_effect = AssertionError("token load/refresh must not run for auth=False")
+            with client._http_client(auth=False) as http:
+                assert "authorization" not in {k.lower() for k in http.headers}
+                assert http.headers["user-agent"].startswith("python-sweatstack/")
 
     def test_close_releases_the_pool_and_the_next_call_opens_one(self):
         client = Client(api_key="x", url=URL)

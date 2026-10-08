@@ -121,9 +121,13 @@ activities = auth.client.activities.list()
 user = auth.client.oauth.userinfo()
 if user.issue:
     st.warning(user.issue.message)
-    if user.issue.action_url:
-        st.link_button("Fix it", user.issue.action_url)
+    if user.issue.destination:
+        # Minted fresh on each run and never stored. return_url must equal or sit under one of
+        # your app's registered redirect URIs.
+        session = auth.client.portal.sessions.create(
+            user.issue.destination, return_url="https://your-app.streamlit.app"
+        )
+        st.link_button("Fix it", session.url)
 ```
 
-`auth.client` carries the app credentials, so `auth.client.portal.sessions.create("manage-integrations",
-return_url=...)` works too. See [api.md](api.md#portal-and-oauth) and [data-models.md](data-models.md).
+See [api.md](api.md#portal-and-oauth) and [data-models.md](data-models.md).

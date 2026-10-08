@@ -528,10 +528,8 @@ class PortalDestination(Enum):
 
 
 class PortalSessionRequest(BaseModel):
-    client_id: str = Field(..., title='Client Id')
-    client_secret: SecretStr | None = Field(None, title='Client Secret')
     destination: PortalDestination
-    return_url: str | None = Field(None, title='Return Url')
+    return_url: constr(max_length=2048) | None = Field(None, title='Return Url')
 
 
 class PortalSessionResponse(BaseModel):
@@ -634,7 +632,7 @@ class StatusIssueResponse(BaseModel):
     code: StatusIssueCode
     status: CapabilityStatus
     message: str = Field(..., title='Message')
-    action_url: str | None = Field(None, title='Action Url')
+    destination: PortalDestination | None = None
 
 
 class TTERef(BaseModel):

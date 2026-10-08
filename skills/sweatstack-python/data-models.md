@@ -59,7 +59,8 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
   `email`, `registered_at`, `issue`.
 - **AccountStatusResponse** (`profile.status()`, beta): `issue` (`StatusIssueResponse | None`:
   `code` (open set), `status` (`CapabilityStatus`: `ready`, `syncing`, `action_required`,
-  `unavailable`), `message` (display only), `action_url`) and `capabilities`
-  (`dict[Capability, CapabilityStatus]`). Branch on `status`, show `message`, show a button
-  only when `action_url` is set.
+  `unavailable`), `message` (display only), `destination` (`PortalDestination | None`)) and
+  `capabilities` (`dict[Capability, CapabilityStatus]`). Branch on `status`, show `message`,
+  show a button only when `destination` is set, and on click pass it to
+  `portal.sessions.create()`.
 - **PortalSessionResponse**: `url` (opaque; never build one by hand).

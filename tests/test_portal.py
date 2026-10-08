@@ -1,10 +1,9 @@
-"""Portal sessions: ``POST /api/v1/portal/sessions`` with the app's own credentials."""
+"""Portal sessions: ``POST /api/v1/portal/sessions`` with the user's access token."""
 
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-from pydantic import SecretStr
 
 from sweatstack import PortalDestination, PortalSessionResponse
 from sweatstack.client import Client
@@ -44,18 +43,17 @@ def _mint(app, **kwargs):
 
 
 class TestRequestBody:
-    def test_public_client_sends_id_and_destination_only(self, app):
+    def test_sends_the_destination_and_nothing_about_the_app(self, app):
+        """The app is the token's audience, so the body names no client and carries no secret."""
         session, call, _ = _mint(app, destination="manage-integrations")
         assert call["url"] == "/api/v1/portal/sessions"
-        assert call["json"] == {"client_id": "app_123", "destination": "manage-integrations"}
+        assert call["json"] == {"destination": "manage-integrations"}
         assert isinstance(session, PortalSessionResponse)
         assert session.url.startswith("https://app.sweatstack.no/portal/")
 
-    def test_confidential_client_sends_its_secret(self, app):
-        app._client_secret = SecretStr("s3cret")
+    def test_accepts_the_enum(self, app):
         _, call, _ = _mint(app, destination=PortalDestination.manage_teams)
-        assert call["json"]["client_secret"] == "s3cret"
-        assert call["json"]["destination"] == "manage-teams"
+        assert call["json"] == {"destination": "manage-teams"}
 
     def test_return_url_is_forwarded_only_when_given(self, app):
         _, call, _ = _mint(
@@ -70,36 +68,29 @@ class TestRequestBody:
         assert call["json"]["destination"] == "manage-something-new"
 
 
-class TestNoUserToken:
-    def test_minting_uses_the_unauthenticated_http_client(self, app):
+class TestUserToken:
+    def test_minting_sends_the_users_bearer(self, app):
         _, _, http_client_kwargs = _mint(app, destination="manage-integrations")
-        assert http_client_kwargs == {"auth": False}
-
-    def test_auth_false_sends_no_authorization_header_and_never_loads_a_token(self, app):
-        app._api_key = SecretStr("user-bearer")
-        with patch.object(Client, "api_key", new_callable=PropertyMock) as api_key:
-            api_key.side_effect = AssertionError("token load/refresh must not run for auth=False")
-            with app._http_client(auth=False) as http:
-                assert "authorization" not in {k.lower() for k in http.headers}
-                assert http.headers["user-agent"].startswith("python-sweatstack/")
-
-    def test_auth_true_still_sends_the_bearer(self, app):
-        app._api_key = SecretStr("user-bearer")
-        with app._http_client(skip_token_check=True) as http:
-            assert http.headers["authorization"] == "Bearer user-bearer"
+        assert http_client_kwargs == {"auth": True}
 
 
 class TestErrors:
-    def test_bad_credentials(self, app):
-        http = _http_returning(401, {"detail": "Invalid client credentials"})
+    def test_no_token_or_a_delegated_one(self, app):
+        http = _http_returning(403, {"detail": "Delegated token not allowed."})
         with (
             patch.object(app, "_http_client", return_value=http),
             pytest.raises(SweatStackAuthError),
         ):
             app.portal.sessions.create("manage-integrations")
 
-    def test_unregistered_return_url(self, app):
-        http = _http_returning(400, {"detail": "return_url is not registered for this application"})
+    def test_return_url_outside_the_redirect_uris(self, app):
+        http = _http_returning(
+            400,
+            {
+                "detail": "return_url must equal or sit under one of the application's "
+                "registered redirect URIs"
+            },
+        )
         with (
             patch.object(app, "_http_client", return_value=http),
             pytest.raises(SweatStackBadRequestError),

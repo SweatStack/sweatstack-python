@@ -860,9 +860,8 @@ class Client:
             skip_token_check: Use the raw token without the expiry check (used during
                 refresh, to avoid recursion).
             auth: If False, send no Authorization header and never load or refresh a token.
-                For endpoints that authenticate with the app's own credentials in the body
-                (Portal sessions, the token exchange), so a user's bearer is never sent where
-                it is not needed.
+                For the token exchange, which authenticates with the app's own credentials in
+                the body, so a user's bearer is never sent where it is not needed.
         """
         headers = httpx.Headers({"User-Agent": f"python-sweatstack/{__version__}"})
         if not auth:

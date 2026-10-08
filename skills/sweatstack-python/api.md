@@ -103,7 +103,7 @@ client.whoami()                                               # the user this cl
 ## portal and oauth
 
 ```python
-client.portal.sessions.create("manage-integrations", return_url=None)  # app credentials, no user token
+client.portal.sessions.create("manage-integrations", return_url=None)  # user token; mint on click, never store
 
 client.oauth.userinfo()                 # OpenID claims + issue (needs the profile scope)
 verifier, challenge = client.oauth.generate_pkce_params()

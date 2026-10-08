@@ -145,9 +145,10 @@ class OAuth(Resource):
         Requires the ``profile`` scope. Besides ``sub``, ``name``, ``given_name``,
         ``family_name``, ``email`` and ``registered_at``, the response has ``issue`` (beta):
         ``None`` when there is nothing to say, otherwise the one thing to tell the user now.
-        ``issue.action_url`` opens the Portal; it is ``None`` on delegated tokens and on
-        ``syncing`` or ``unavailable`` issues, so show a button only when it is set. Without
-        the ``profile`` scope, ``client.profile.status()`` gives the same ``issue``.
+        ``issue.destination`` says the user can fix it in the Portal: pass it to
+        ``client.portal.sessions.create()`` when they click. It is ``None`` on delegated tokens
+        and on ``syncing`` or ``unavailable`` issues, so show a button only when it is set.
+        Without the ``profile`` scope, ``client.profile.status()`` gives the same ``issue``.
 
         Returns:
             UserInfoResponse: The claims and the optional ``issue``.

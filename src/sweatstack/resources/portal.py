@@ -30,58 +30,55 @@ class PortalSessions(Resource):
         *,
         return_url: str | None = None,
     ) -> PortalSessionResponse:
-        """Creates a Portal link for this app's users.
+        """Creates a Portal link for the user this client acts for.
 
         Endpoint: ``POST /api/v1/portal/sessions``
 
         **Beta**: the server documents the Portal as beta.
 
-        Most apps don't need this: ``issue.action_url`` from ``client.oauth.userinfo()`` or
-        ``client.profile.status()`` is already such a link. Create one to choose the
-        destination or the return link.
+        The only way to get a Portal URL. Call it when the user acts, typically with
+        ``issue.destination`` from ``client.oauth.userinfo()`` or ``client.profile.status()``,
+        and send the user straight there: don't store or reuse the URL.
 
-        This is a server-to-server call. It authenticates with the client's own app
-        credentials (``client_id``, and ``client_secret`` if the app has one) in the request
-        body, never with a user token; the user is identified when they open the link. A
-        client on the default ``client_id`` creates a Portal branded as the SweatStack Python
-        client. The URL is opaque: never build one by hand.
+        Needs a client holding the user's own access token (the one from your OAuth flow).
+        The Portal is branded for the app that token was issued to. The URL is opaque: never
+        build one by hand.
 
         Args:
             destination: ``"manage-integrations"`` or ``"manage-teams"``. A string the client
                 does not know is sent as is, so a newer destination works before the SDK
                 learns it.
-            return_url: Where "Back to {app}" points; must be one of the app's registered
-                redirect URIs. Omit it to have the Portal tell the user to close the page,
-                which suits native apps.
+            return_url: Where "Back to {app}" points. It follows the same rule as an OAuth
+                redirect URI: it must equal or sit under one of the app's registered redirect
+                URIs. Omit it to have the Portal tell the user to close the page, which suits
+                native apps and installed PWAs.
 
         Returns:
             PortalSessionResponse: ``url``, to send the user to.
 
         Raises:
-            SweatStackAuthError: If the app credentials are invalid (401).
-            SweatStackBadRequestError: If ``return_url`` is not registered for the app, or
-                ``client_id`` is not an application (400).
+            SweatStackAuthError: If the client has no access token (401), or the token is
+                delegated (403): a link minted for a coach would open the coach's own account.
+            SweatStackBadRequestError: If ``return_url`` does not belong to the app, or the
+                token was not issued to an app (400).
             SweatStackAPIError: If the API request fails for any other reason.
 
         Examples:
             ```python
             from sweatstack import Client
 
-            app = Client(client_id="YOUR_CLIENT_ID", client_secret="YOUR_CLIENT_SECRET")
-            session = app.portal.sessions.create(
-                "manage-integrations", return_url="https://example.com/app/"
-            )
-            print(session.url)
+            client = Client()  # holds the user's access token
+            user = client.oauth.userinfo()
+            if user.issue and user.issue.destination:
+                session = client.portal.sessions.create(
+                    user.issue.destination, return_url="https://example.com/app/settings"
+                )
+                print(session.url)
             ```
         """
         client = self._client
-        body: dict[str, Any] = {
-            "client_id": client.client_id,
-            "destination": client._enums_to_strings([destination])[0],
-        }
-        if client.client_secret is not None:
-            body["client_secret"] = client.client_secret.get_secret_value()
+        body: dict[str, Any] = {"destination": client._enums_to_strings([destination])[0]}
         if return_url is not None:
             body["return_url"] = return_url
-        response = client._request("post", "/api/v1/portal/sessions", json=body, auth=False)
+        response = client._request("post", "/api/v1/portal/sessions", json=body)
         return PortalSessionResponse.model_validate(response.json())

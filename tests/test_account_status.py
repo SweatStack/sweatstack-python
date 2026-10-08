@@ -16,6 +16,7 @@ from sweatstack import (
     AccountStatusResponse,
     Capability,
     CapabilityStatus,
+    PortalDestination,
     StatusIssueCode,
     StatusIssueResponse,
     UserInfoResponse,
@@ -30,7 +31,7 @@ DOCS_PAYLOADS = {
             "code": "no_source_connected",
             "status": "action_required",
             "message": "No data source is connected yet.",
-            "action_url": "https://app.sweatstack.no/portal/integrations?app=x",
+            "destination": "manage-integrations",
         }
     },
     "still_syncing": {
@@ -38,7 +39,7 @@ DOCS_PAYLOADS = {
             "code": "sync_pending",
             "status": "syncing",
             "message": "Garmin Connect data is still arriving.",
-            "action_url": None,
+            "destination": None,
         }
     },
     "history_not_shared": {
@@ -46,7 +47,7 @@ DOCS_PAYLOADS = {
             "code": "activity_history_not_granted",
             "status": "action_required",
             "message": "Garmin Connect isn't sharing past activities.",
-            "action_url": "https://app.sweatstack.no/portal/integrations?app=x",
+            "destination": "manage-integrations",
         }
     },
     "permanently_limited": {
@@ -54,7 +55,7 @@ DOCS_PAYLOADS = {
             "code": "dailies_unavailable",
             "status": "unavailable",
             "message": "No connected source provides daily health data.",
-            "action_url": None,
+            "destination": None,
         }
     },
     "all_good": {"issue": None},
@@ -110,7 +111,8 @@ class TestDocumentedPayloads:
             assert user.issue.status == CapabilityStatus(payload["issue"]["status"])
             assert user.issue.code == StatusIssueCode(payload["issue"]["code"])
             assert user.issue.message == payload["issue"]["message"]
-            assert user.issue.action_url == payload["issue"]["action_url"]
+            expected = payload["issue"]["destination"]
+            assert user.issue.destination == (expected and PortalDestination(expected))
 
     @pytest.mark.parametrize("payload", DOCS_PAYLOADS.values(), ids=DOCS_PAYLOADS.keys())
     def test_profile_status_round_trip(self, payload):
@@ -124,21 +126,22 @@ class TestDocumentedPayloads:
         user = UserInfoResponse.model_validate({**USERINFO, **DOCS_PAYLOADS["history_not_shared"]})
         shown = []
         if user.issue:
-            shown.append((user.issue.message, user.issue.action_url))
+            shown.append((user.issue.message, user.issue.destination))
         assert shown == [
             (
                 "Garmin Connect isn't sharing past activities.",
-                "https://app.sweatstack.no/portal/integrations?app=x",
+                PortalDestination.manage_integrations,
             )
         ]
 
-    def test_action_url_absent_means_no_button(self):
+    def test_destination_absent_means_no_button(self):
         user = UserInfoResponse.model_validate({**USERINFO, **DOCS_PAYLOADS["still_syncing"]})
-        assert user.issue is not None and user.issue.action_url is None
+        assert user.issue is not None and user.issue.destination is None
 
 
 class TestOpenSets:
-    """Codes and capability keys are open sets by contract; the status set is closed."""
+    """Codes, capability keys and destinations are open sets by contract; the status set is
+    closed."""
 
     def test_unknown_code_parses_as_pseudo_member(self):
         issue = StatusIssueResponse.model_validate(
@@ -147,6 +150,13 @@ class TestOpenSets:
         assert issue.code.value == "something_new"
         assert StatusIssueCode("something_new") is issue.code  # cached
         assert StatusIssueResponse.model_validate(issue.model_dump()).code == issue.code
+
+    def test_unknown_destination_parses_as_pseudo_member(self):
+        """A destination added on the server must not break `userinfo()` on an older client."""
+        issue = StatusIssueResponse.model_validate(
+            {"code": "x", "status": "action_required", "message": "x", "destination": "manage-new"}
+        )
+        assert issue.destination.value == "manage-new"
 
     def test_unknown_capability_key_parses_and_known_keys_still_resolve(self):
         status = AccountStatusResponse.model_validate(

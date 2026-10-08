@@ -25,17 +25,18 @@ class Profile(Resource):
         **Beta**: the server documents this endpoint as beta.
 
         ``issue`` is ``None`` when there is nothing to tell the user, otherwise
-        ``{code, status, message, action_url}``. Branch on ``issue.status``
+        ``{code, status, message, destination}``. Branch on ``issue.status``
         (:class:`CapabilityStatus`: ``ready``, ``syncing``, ``action_required``,
         ``unavailable``), show ``issue.message``, and show a button only when
-        ``issue.action_url`` is set. Don't parse ``message`` or branch on ``code``.
+        ``issue.destination`` is set: on click, pass it to ``client.portal.sessions.create()``.
+        Don't parse ``message`` or branch on ``code``.
 
         ``capabilities`` maps each :class:`Capability` (``activities``, ``activity_history``,
         ``dailies``, ``workouts``) to a :class:`CapabilityStatus`. Codes and capability keys are
         open sets: a value the client doesn't know parses as a pseudo-member; ignore it.
 
         Accepts a token with ``data:read`` or ``profile``. Delegated tokens are allowed and
-        always get ``action_url=None``.
+        always get ``destination=None``.
 
         Returns:
             AccountStatusResponse: ``issue`` and ``capabilities``.
@@ -51,7 +52,7 @@ class Profile(Resource):
             client = Client()
             status = client.profile.status()
             if status.issue:
-                print(status.issue.message, status.issue.action_url)
+                print(status.issue.message, status.issue.destination)
             ```
         """
         response = self._client._request("get", "/api/v1/profile/status")

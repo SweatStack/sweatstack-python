@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.92.0] - Unreleased
+
+Portal links are created with the user's token, when the user acts. Requires the SweatStack API
+release that replaces `action_url` with `destination` (see the platform changelog).
+
+### Changed
+
+- **BREAKING: `issue.action_url` is replaced by `issue.destination`** on `oauth.userinfo()` and
+  `profile.status()`. Show a button only when `destination` is set, and on click pass it to
+  `portal.sessions.create()` for the URL. A destination the client does not know yet parses
+  instead of failing.
+- **BREAKING: `portal.sessions.create()` authenticates with the client's user token**, not the
+  app's `client_id` and `client_secret`. Call it on a client that holds the user's access token;
+  the Portal is branded for the app that token was issued to. A delegated token raises
+  `SweatStackAuthError`.
+- Without `return_url` the Portal no longer links back to your app's URL: it tells the user to
+  close the page. `return_url` must equal or sit under one of your app's registered redirect
+  URIs.
+
+### Upgrading
+
+| Before | After |
+|---|---|
+| `user.issue.action_url` | `client.portal.sessions.create(user.issue.destination, return_url=...).url` |
+| `Client(client_id=..., client_secret=...).portal.sessions.create(...)` | the same call on the client holding the user's token |
+
 ## [0.91.0] - 2026-10-08
 
 One namespace per API resource: `client.activities.list()` instead of `client.get_activities()`.
