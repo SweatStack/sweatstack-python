@@ -147,7 +147,8 @@ class OAuth(Resource):
         ``None`` when there is nothing to say, otherwise the one thing to tell the user now.
         ``issue.destination`` says the user can fix it in the Portal: pass it to
         ``client.portal.sessions.create()`` when they click. It is ``None`` on delegated tokens
-        and on ``syncing`` or ``unavailable`` issues, so show a button only when it is set.
+        and on ``syncing`` issues, so show a button only when it is set. Issues are reported only
+        for the capabilities your app declared it uses.
         Without the ``profile`` scope, ``client.profile.status()`` gives the same ``issue``.
 
         Returns:

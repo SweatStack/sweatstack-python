@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+Issues are only about the data your app uses. Requires the SweatStack API release that adds
+`capabilities` to applications (see the platform changelog).
+
+### Changed
+
+- **BREAKING: `issue.status` is an `IssueStatus`**, `action_required` or `syncing`, on
+  `oauth.userinfo()` and `profile.status()`. The `unavailable` issues
+  (`activity_history_unavailable`, `dailies_unavailable`, `workouts_unavailable`) are gone: what
+  no connected source provides is in `capabilities`, where `unavailable` means the user could
+  still connect a source that provides it. Three new codes, each `action_required` with a
+  `destination`: `activities_blocked_upstream`, `dailies_no_source`, `workouts_no_source`. A
+  client on 0.90.0 or later accepts them without an upgrade (`StatusIssueCode` is open).
+- `ApplicationCreate.capabilities` and `ApplicationResponse.capabilities`: the capabilities an
+  app declares it uses (`list[Capability]`; omit it for the default, `activities` and
+  `activity_history`). SweatStack reports issues only for these.
+
 ## [0.92.0] - 2026-10-08
 
 Portal links are created with the user's token, when the user acts. Requires the SweatStack API

@@ -1,8 +1,9 @@
 """Account status: ``userinfo.issue`` and ``GET /api/v1/profile/status``.
 
-The fixtures are the five payloads the public docs prescribe for mocking
+The fixtures are the six payloads the public docs prescribe for mocking
 ("Why does this user have no data?"), verbatim, so these tests pin the SDK to
-the documented contract rather than to our reading of it.
+the documented contract rather than to our reading of it. An issue is always
+temporary: ``action_required`` or ``syncing``, never ``unavailable`` (plan 075).
 """
 
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,7 @@ from sweatstack import (
     AccountStatusResponse,
     Capability,
     CapabilityStatus,
+    IssueStatus,
     PortalDestination,
     StatusIssueCode,
     StatusIssueResponse,
@@ -50,12 +52,20 @@ DOCS_PAYLOADS = {
             "destination": "manage-integrations",
         }
     },
-    "permanently_limited": {
+    "blocked_upstream": {
         "issue": {
-            "code": "dailies_unavailable",
-            "status": "unavailable",
+            "code": "activities_blocked_upstream",
+            "status": "action_required",
+            "message": "Intervals.icu can't pass on activities that come from Strava.",
+            "destination": "manage-integrations",
+        }
+    },
+    "no_source": {
+        "issue": {
+            "code": "dailies_no_source",
+            "status": "action_required",
             "message": "No connected source provides daily health data.",
-            "destination": None,
+            "destination": "manage-integrations",
         }
     },
     "all_good": {"issue": None},
@@ -108,7 +118,7 @@ class TestDocumentedPayloads:
             assert user.issue is None
         else:
             assert isinstance(user.issue, StatusIssueResponse)
-            assert user.issue.status == CapabilityStatus(payload["issue"]["status"])
+            assert user.issue.status == IssueStatus(payload["issue"]["status"])
             assert user.issue.code == StatusIssueCode(payload["issue"]["code"])
             assert user.issue.message == payload["issue"]["message"]
             expected = payload["issue"]["destination"]

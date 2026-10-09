@@ -24,16 +24,20 @@ class Profile(Resource):
 
         **Beta**: the server documents this endpoint as beta.
 
-        ``issue`` is ``None`` when there is nothing to tell the user, otherwise
-        ``{code, status, message, destination}``. Branch on ``issue.status``
-        (:class:`CapabilityStatus`: ``ready``, ``syncing``, ``action_required``,
-        ``unavailable``), show ``issue.message``, and show a button only when
-        ``issue.destination`` is set: on click, pass it to ``client.portal.sessions.create()``.
-        Don't parse ``message`` or branch on ``code``.
+        ``issue`` is ``None`` when nothing is wrong with the data your app uses, otherwise
+        ``{code, status, message, destination}``. An issue is always temporary: ``issue.status``
+        is ``action_required`` (the user can fix it) or ``syncing`` (the data is arriving), never
+        a third value. Show ``issue.message``, and show a button only when ``issue.destination``
+        is set: on click, pass it to ``client.portal.sessions.create()``. Don't parse
+        ``message`` or branch on ``code``. Issues are reported only for the capabilities your app
+        declared it uses (its settings; the default is activities and activity history).
 
         ``capabilities`` maps each :class:`Capability` (``activities``, ``activity_history``,
-        ``dailies``, ``workouts``) to a :class:`CapabilityStatus`. Codes and capability keys are
-        open sets: a value the client doesn't know parses as a pseudo-member; ignore it.
+        ``dailies``, ``workouts``) to a :class:`CapabilityStatus` (``ready``, ``syncing``,
+        ``action_required``, ``unavailable``): facts about the user's connected sources, the
+        same for every app. ``unavailable`` means no connected source provides it, which
+        changes when the user connects one that does. Codes and capability keys are open sets:
+        a value the client doesn't know parses as a pseudo-member; ignore it.
 
         Accepts a token with ``data:read`` or ``profile``. Delegated tokens are allowed and
         always get ``destination=None``.

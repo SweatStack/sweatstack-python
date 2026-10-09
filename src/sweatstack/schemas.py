@@ -30,6 +30,7 @@ from .openapi_schemas import (
     CapabilityStatus,
     DailyMeasure,
     DailyResponse,
+    IssueStatus,
     Marker,
     Metric,
     PortalDestination,
