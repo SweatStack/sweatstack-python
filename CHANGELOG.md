@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.93.0] - 2026-10-09
 
 Issues are only about the data your app uses. Requires the SweatStack API release that adds
 `capabilities` to applications (see the platform changelog).
