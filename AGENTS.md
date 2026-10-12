@@ -258,9 +258,13 @@ fields unchanged (users) is an `update` and sends only the fields given.
 
 Until 1.0, breaking changes are allowed when they ship with an upgrade path. Every one needs:
 
-1. A `### Upgrading` section in the CHANGELOG entry, with an old-to-new table.
+1. A `### Upgrading` section in the CHANGELOG entry, with an old-to-new table. Mark a row
+   whose change raises nothing as **Silent:**. Wrap the section in
+   `<!-- --8<-- [start:upgrading-X-Y] -->` / `[end:...]` markers (the docs include it), and add
+   a `## X.Y` section with that include to the docs' Upgrading page. `tests/test_changelog.py`
+   checks that every entry saying "breaking" has the section and its markers.
 2. A copy-paste migration prompt for coding agents in the same section, for any change bigger
-   than a rename or two.
+   than a rename or two. The generic prompt in `UPGRADING.md` covers the rest.
 3. For a removed method or attribute, an entry in `_renames.REMOVED_IN`, so calling it raises an
    `AttributeError` that names the replacement. Entries are permanent.
    `tests/test_renames.py` checks each one against the client, the module and the CHANGELOG.

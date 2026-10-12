@@ -53,7 +53,9 @@ npx skills add SweatStack/sweatstack-python
 - [Python SDK guide](https://docs.sweatstack.no/learn/python/): authentication,
   clients, data output, errors, Streamlit and FastAPI
 - [API reference](https://docs.sweatstack.no/learn/api-reference/): every endpoint and model
-- [Changelog](https://docs.sweatstack.no/learn/python/changelog/) and [upgrade notes](https://docs.sweatstack.no/learn/python/upgrading/)
+- [Changelog](https://docs.sweatstack.no/learn/python/changelog/)
+- [Upgrading](UPGRADING.md): moving from an older release, from any version, with a prompt for
+  your coding agent. Also at [docs.sweatstack.no](https://docs.sweatstack.no/learn/python/upgrading/).
 
 Sports follow [OpenSportTaxonomy](https://open-sport-taxonomy.sweatstack.no): `sweatstack.Sport`
 is its `Sport` type.

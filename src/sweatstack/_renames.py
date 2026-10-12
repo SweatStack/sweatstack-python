@@ -71,6 +71,8 @@ REMOVED_IN = {
     ),
     "switch_back": ("0.91", "the original client, or {c}.principal_client()"),
     "jwt": ("0.91", "{c}.api_key"),
+    # 0.76: the typed exception hierarchy.
+    "TokenRefreshError": ("0.76", "sweatstack.SweatStackTokenRefreshError"),
 }
 
 
@@ -88,6 +90,6 @@ def attribute_error(owner: str, name: str, *, prefix: str) -> AttributeError:
         return AttributeError(
             f"{owner} has no attribute {name!r}: it was removed in {release}. "
             f"Use {hint.format(c=prefix)} instead. "
-            f"The CHANGELOG entry for {release} lists every change"
+            f"The CHANGELOG entry for {release} lists every change; UPGRADING.md has the procedure"
         )
     return AttributeError(f"{owner} has no attribute {name!r}")

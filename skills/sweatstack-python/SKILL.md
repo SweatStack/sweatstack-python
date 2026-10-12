@@ -17,7 +17,9 @@ Install with a frame library: `uv add "sweatstack[polars]>=0.91"` (or `[pandas]`
 
 **This skill describes 0.91+.** Code from older examples or training data uses flat names
 (`get_activities()`, `get_activity_data()`, `switch_user()`); they no longer exist. Calling one
-raises an `AttributeError` that names the replacement.
+raises an `AttributeError` that names the replacement. To upgrade an existing project from an
+older release, follow https://docs.sweatstack.no/learn/python/upgrading/: inventory the SDK
+usage first, then apply each release's Upgrading table, oldest first.
 
 ## Quickstart
 

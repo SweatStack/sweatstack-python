@@ -156,7 +156,9 @@ minimal feature delta. Commit, then handle the remainder separately.
 ## Releasing
 
 1. Bump `version` in `pyproject.toml` (SemVer).
-2. Add a CHANGELOG entry — see [AGENTS.md → CHANGELOG](AGENTS.md#changelog).
+2. Add a CHANGELOG entry — see [AGENTS.md → CHANGELOG](AGENTS.md#changelog). A breaking
+   change also needs its `### Upgrading` section
+   ([AGENTS.md → Breaking changes](AGENTS.md#breaking-changes)).
 3. `gitleaks git .` reports no leaks (`brew install gitleaks`). Known false
    positives go in `.gitleaks.toml`, each with the reason it's safe.
 4. `make publish`: runs `make check`, builds, and uploads with twine.

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Until 1.0 a minor release may contain breaking changes. Every one has an **Upgrading** section
+with a table from old to new. The procedure for moving across several releases, and a prompt
+for a coding agent, are in `UPGRADING.md` next to this file and at
+https://docs.sweatstack.no/learn/python/upgrading/.
+
 
 ## [0.93.0] - 2026-10-09
 
@@ -23,6 +28,17 @@ Issues are only about the data your app uses. Requires the SweatStack API releas
 - `ApplicationCreate.capabilities` and `ApplicationResponse.capabilities`: the capabilities an
   app declares it uses (`list[Capability]`; omit it for the default, `activities` and
   `activity_history`). SweatStack reports issues only for these.
+
+<!-- --8<-- [start:upgrading-0-93] -->
+### Upgrading
+
+| 0.92 | 0.93 |
+|---|---|
+| `issue.status` is a `CapabilityStatus` | `IssueStatus`: `action_required` or `syncing`. The `.value` strings are unchanged |
+| Branching on `issue.code` being `activity_history_unavailable`, `dailies_unavailable` or `workouts_unavailable` | **Silent:** these codes are never sent. Read `profile.status().capabilities` instead, where `unavailable` means no connected source provides it |
+| Only the known issue codes | Also `activities_blocked_upstream`, `dailies_no_source` and `workouts_no_source`: each `action_required` with a `destination`; handle them like any other issue |
+| An app that uses dailies or workouts | Declare them in the app's `capabilities` (`ApplicationCreate.capabilities`); issues are reported only for declared capabilities |
+<!-- --8<-- [end:upgrading-0-93] -->
 
 ## [0.92.0] - 2026-10-08
 
@@ -43,12 +59,15 @@ release that replaces `action_url` with `destination` (see the platform changelo
   close the page. `return_url` must equal or sit under one of your app's registered redirect
   URIs.
 
+<!-- --8<-- [start:upgrading-0-92] -->
 ### Upgrading
 
-| Before | After |
+| 0.91 | 0.92 |
 |---|---|
 | `user.issue.action_url` | `client.portal.sessions.create(user.issue.destination, return_url=...).url` |
 | `Client(client_id=..., client_secret=...).portal.sessions.create(...)` | the same call on the client holding the user's token |
+| `portal.sessions.create(destination)` without `return_url` linking back to your app | **Silent:** the Portal tells the user to close the page; pass `return_url=` (under a registered redirect URI) to link back |
+<!-- --8<-- [end:upgrading-0-92] -->
 
 ## [0.91.0] - 2026-10-08
 
@@ -143,7 +162,8 @@ removed name raises an `AttributeError` that names its replacement.
 
 Removed names raise an `AttributeError` naming the replacement, so running your code points at
 each change. The module-level functions moved the same way: `sweatstack.get_activities()` is
-`sweatstack.activities.list()`.
+`sweatstack.activities.list()`. Only `from sweatstack import get_activities` fails with Python's
+plain `ImportError`; look the name up in the table.
 
 | 0.90 | 0.91 |
 |---|---|
@@ -294,6 +314,17 @@ and TypeError (a renamed or keyword-only argument). Do not add compatibility shi
 - **BREAKING:** `by` on `get_longitudinal_mean_max`, and its `DeprecationWarning`. Every curve is
   duration-oriented.
 
+<!-- --8<-- [start:upgrading-0-90] -->
+### Upgrading
+
+| 0.89 | 0.90 |
+|---|---|
+| A mean-max frame with one row per intensity: the metric value, and the `duration` it was held | **Silent:** one row per duration, 19 by default: `duration`, the metric (`power` or `speed`) and `start`; the longitudinal curve adds `activity_id`, `sport` and `after`. The column names still exist, so code keeps running with the axes swapped: `df[df.power >= 300]` becomes `df[df.duration == 300]` |
+| The full curve | `durations="all"`, or a list of seconds |
+| `get_activity_mean_max(id, "power", True)` or `segmentation=True` | Drop the argument |
+| `get_longitudinal_mean_max(..., by="duration")` or `by="intensity"` | Drop `by=`; every curve is by duration |
+<!-- --8<-- [end:upgrading-0-90] -->
+
 ## [0.89.0] - 2026-09-28
 
 Frames on your terms. Every method that returns a collection takes `output=`:
@@ -359,6 +390,7 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
   previously re-indexed by the client.
 - pandas frames keep the float64 / nanosecond dtype policy. Polars and Arrow do not upcast.
 
+<!-- --8<-- [start:upgrading-0-89] -->
 ### Upgrading
 
 1. Change the install line: `uv add "sweatstack[pandas]"` (or `[polars]`, or `[arrow]` for
@@ -370,6 +402,10 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 4. Search for `.index`, `.loc[<timestamp>]`, `.resample(`, `.plot()` on frames from the
    time-series, mean-max, AWD and dailies methods. Where the index mattered, add
    `.set_index("timestamp")` (or the metric name, or `"date"`) right after the call.
+5. **Silent:** `as_dataframe=True` on `get_activities` and `get_traces` kept nested fields as
+   dict columns (`df["summary"][0]["power"]`). `output="pandas"` flattens them to dotted
+   columns (`df["summary.power.mean"]`); Polars and Arrow give structs (`df.unnest("summary")`).
+<!-- --8<-- [end:upgrading-0-89] -->
 
 ## [0.88.0] - 2026-08-06
 
@@ -383,11 +419,29 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 
 - Token refresh no longer sends a `tz` field. The server derives all timezone information from the offsets stored with each record, so the client has nothing to pass.
 
+<!-- --8<-- [start:upgrading-0-88] -->
+### Upgrading
+
+| 0.87 | 0.88 |
+|---|---|
+| `create_trace(timestamp=datetime(2026, 1, 1, 10, 0))`, and `start`/`end` on `create_test`, `update_test`, `update_trace` | Aware: `datetime(2026, 1, 1, 10, 0, tzinfo=ZoneInfo("Europe/Amsterdam"))` or `datetime.now(timezone.utc)`. Naive raises `ValueError` |
+| `activity.start`, `trace.timestamp` shown as the athlete's wall-clock time | **Silent:** these are UTC now. Show `start_local`, `end_local` and `timestamp_local`, which are always present |
+<!-- --8<-- [end:upgrading-0-88] -->
+
 ## [0.87.0] - 2026-06-30
 
 ### Changed
 
 - **Breaking:** the codec previously named NLEC is now AISC (Adaptive Intensity Segmentation Codec), and its parameters are renamed: `nlec_on` is now `segmentation_on` (on `get_activity_data`, `get_latest_activity_data`, `get_longitudinal_data`) and `nlec` is now `segmentation` (on `get_activity_mean_max`, `get_latest_activity_mean_max`). No backwards-compatible aliases.
+
+<!-- --8<-- [start:upgrading-0-87] -->
+### Upgrading
+
+| 0.86 | 0.87 |
+|---|---|
+| `nlec_on=` on `get_activity_data`, `get_latest_activity_data`, `get_longitudinal_data` | `segmentation_on=` |
+| `nlec=` on `get_activity_mean_max`, `get_latest_activity_mean_max` | `segmentation=` (removed in 0.90) |
+<!-- --8<-- [end:upgrading-0-87] -->
 
 
 ## [0.86.0] - 2026-06-18
@@ -395,6 +449,15 @@ Four breaking changes come with it; the upgrade is mechanical, see **Upgrading**
 ### Changed
 
 - **Breaking:** renamed the adaptive-sampling parameters to NLEC (near-lossless effort codec). `adaptive_sampling_on` is now `nlec_on` (on `get_activity_data`, `get_latest_activity_data`, `get_longitudinal_data`) and `adaptive_sampling` is now `nlec` (on `get_activity_mean_max`, `get_latest_activity_mean_max`). No backwards-compatible aliases; requires the SweatStack server 0.107.0 or later.
+
+<!-- --8<-- [start:upgrading-0-86] -->
+### Upgrading
+
+| 0.85 | 0.86 |
+|---|---|
+| `adaptive_sampling_on=` on `get_activity_data`, `get_latest_activity_data`, `get_longitudinal_data` | `nlec_on=` (`segmentation_on=` from 0.87) |
+| `adaptive_sampling=` on `get_activity_mean_max`, `get_latest_activity_mean_max` | `nlec=` (`segmentation=` from 0.87; removed in 0.90) |
+<!-- --8<-- [end:upgrading-0-86] -->
 
 
 ## [0.85.0] - 2026-06-17
@@ -457,8 +520,21 @@ This is a **breaking change** for code that uses `Sport`.
 - `open-sport-taxonomy[pydantic]` is now a runtime dependency. Response models consume `sport` via OST's
   permissive `SportField`, so sports newer than the bundled taxonomy are preserved rather than rejected.
 
-### Migration
-Hand the following prompt to a coding agent, or apply it by hand:
+<!-- --8<-- [start:upgrading-0-81] -->
+### Upgrading
+
+| 0.80 | 0.81 |
+|---|---|
+| `Sport.cycling_road` and other enum members | `Sport("cycling.road")`; `Sport.parse(value)` for external input |
+| `sport.value` | `str(sport)` (with modifiers) or `sport.code` |
+| `sport.display_name()` | `sport.label` |
+| `sport.parent_sport()` | `sport.parent` |
+| `sport.is_sub_sport_of(x)` | `sport.is_subsport_of(x)` (one `Sport`; `any(...)` for a list) |
+| `sport.root_sport()`, `sport.is_root_sport()` | `Sport(sport.code.split(".")[0])`, `"." not in sport.code and not sport.modifiers` |
+| `for s in Sport` | `for s in Sport.all()` |
+| Hardcoded `cycling.trainer`, `running.treadmill`, `rowing.ergometer`, `cycling.tt`, `cycling.mountainbike`, `cross_country_skiing[.classic\|.skate]`, `unknown` | **Silent** in string comparisons: `cycling+stationary`, `running+stationary`, `rowing+stationary`, `cycling.time_trial`, `cycling.mountain`, `xc_skiing[.classic\|.skate]`, `generic` |
+
+**Migration prompt.** Paste this into your coding agent:
 
 ```text
 Migrate this codebase to sweatstack 0.81.0, which replaces its custom `Sport` enum with the
@@ -492,6 +568,7 @@ OpenSportTaxonomy type (`open_sport_taxonomy.Sport`). `from sweatstack import Sp
 After editing, run the test suite and fix any remaining references. Do not add a compatibility shim;
 migrate call sites to the OST API directly.
 ```
+<!-- --8<-- [end:upgrading-0-81] -->
 
 
 ## [0.80.0] - 2026-06-12
@@ -521,6 +598,17 @@ migrate call sites to the OST API directly.
 ### Changed
 - Minimum Python version is now declared as `>=3.10` (the code already required 3.10+ syntax; the previous `>=3.9` declaration was incorrect).
 - Exception types in docstrings now reference the typed hierarchy introduced in 0.76.0 (`SweatStackAPIError`, `SweatStackNotFoundError`, `SweatStackAuthError`, `SweatStackBadRequestError`) instead of the now-incorrect `HTTPStatusError`.
+- **Breaking:** with `__all__` in place, the helpers that leaked to the top level by accident are no longer there: `sweatstack.make_dataframe_streamlit_compatible`, `convert_to_standard_dtypes` and `decode_jwt_body` live in `sweatstack.utils`, `DEFAULT_URL` in `sweatstack.constants`.
+
+<!-- --8<-- [start:upgrading-0-78] -->
+### Upgrading
+
+| 0.77 | 0.78 |
+|---|---|
+| `from sweatstack import make_dataframe_streamlit_compatible` (also `convert_to_standard_dtypes`, `decode_jwt_body`) | `from sweatstack.utils import make_dataframe_streamlit_compatible` |
+| `sweatstack.DEFAULT_URL` | `sweatstack.constants.DEFAULT_URL` |
+| Python 3.9 | Python 3.10 or later |
+<!-- --8<-- [end:upgrading-0-78] -->
 
 
 ## [0.77.1] - 2026-05-19
@@ -566,6 +654,18 @@ migrate call sites to the OST API directly.
 ### Removed
 - `httpx` is no longer part of the public error surface. Consumers do not need to import `httpx` to handle errors.
 
+<!-- --8<-- [start:upgrading-0-76] -->
+### Upgrading
+
+| 0.75 | 0.76 |
+|---|---|
+| `except httpx.HTTPStatusError as e` | `except SweatStackAPIError as e`, or a subclass: `SweatStackNotFoundError` (404), `SweatStackAuthError` (401, 403), `SweatStackRateLimitError` (429), `SweatStackBadRequestError` (other 4xx), `SweatStackServerError` (5xx) |
+| `e.response.status_code`, `e.request.url` | `e.status_code`, `e.url`; also `e.method`, `e.request_id`, `e.body` |
+| `except ValueError` around a call, for a 422 | `except SweatStackBadRequestError` |
+| `except httpx.ConnectError`, `httpx.TimeoutException` | `except SweatStackConnectionError` |
+| `from sweatstack import TokenRefreshError` | `from sweatstack import SweatStackTokenRefreshError` |
+<!-- --8<-- [end:upgrading-0-76] -->
+
 
 ## [0.75.0] - 2026-04-23
 
@@ -600,7 +700,16 @@ migrate call sites to the OST API directly.
 - `AttributeError` on Python <3.11 when the API returns an error response (`add_note` is a Python 3.11+ feature).
 
 ### Removed
-- `SWEATSTACK_LOCAL_CACHE` and `SWEATSTACK_CACHE_DIR` environment variables. Use `sweatstack.enable_cache()` instead.
+- **Breaking:** `SWEATSTACK_LOCAL_CACHE` and `SWEATSTACK_CACHE_DIR` environment variables. Use `sweatstack.enable_cache()` instead.
+
+<!-- --8<-- [start:upgrading-0-72] -->
+### Upgrading
+
+| 0.71 | 0.72 |
+|---|---|
+| `SWEATSTACK_LOCAL_CACHE=true` in the environment | `sweatstack.enable_cache()` in code. **Silent:** the variable is ignored, so nothing is cached until you call it |
+| `SWEATSTACK_CACHE_DIR=/some/dir` | `sweatstack.enable_cache("/some/dir")` |
+<!-- --8<-- [end:upgrading-0-72] -->
 
 
 ## [0.71.0] - 2026-03-13

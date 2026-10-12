@@ -36,6 +36,7 @@ Documentation = "https://docs.sweatstack.no/learn/python/"
 Repository = "https://github.com/SweatStack/sweatstack-python"
 Issues = "https://github.com/SweatStack/sweatstack-python/issues"
 Changelog = "https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md"
+Upgrading = "https://github.com/SweatStack/sweatstack-python/blob/main/UPGRADING.md"
 
 [project.optional-dependencies]
 arrow = [
