@@ -86,12 +86,13 @@ user = auth.select_user(team_id="team_abc")  # via team membership
 
 ## Behind-Proxy Mode
 
-For Streamlit apps running behind an authentication proxy (e.g., the SweatStack Streamlit template proxy). The proxy handles OAuth and passes the access token via HTTP header.
+For Streamlit apps running behind an authentication proxy (e.g., the SweatStack Streamlit template proxy). The proxy handles OAuth and passes the access token, and the refresh token, via HTTP headers.
 
 ```python
 auth = StreamlitAuth.behind_proxy(
     redirect_uri=f"{APP_URL}/auth/callback",
-    header_name="X-SweatStack-Token",  # default
+    header_name="X-SweatStack-Token",                  # default
+    refresh_header_name="X-SweatStack-Refresh-Token",  # default
     logout_uri="/logout",              # default, proxy handles this
     login_uri="/login",                # default, proxy handles this
 )
@@ -104,14 +105,15 @@ auth.logout_button()  # Renders link to proxy's logout endpoint
 activities = auth.client.activities.list()
 ```
 
-**Key difference:** The proxy manages token lifecycle (refresh, storage). The SDK skips its own token expiry checks in this mode.
+**Token lifecycle:** Streamlit sees the headers of the WebSocket handshake only, so the session renews the access token itself with the forwarded refresh token and keeps the renewed pair in session state: one token request per token lifetime, however long the tab stays open. Call `behind_proxy()` at the top of every run. Without the refresh header, calls after the token expires raise `SweatStackTokenRefreshError` with a reload hint. Both headers must come from the proxy (which drops any the browser sends).
 
 **Login/logout buttons** in proxy mode render as styled links (not Streamlit buttons) that navigate to the proxy's endpoints. On iOS standalone PWAs, they open in real Safari via `target="_blank"`.
 
 ## Gotchas
 
-- **Always use `auth.client`** for API calls — never create a standalone `Client()` in a Streamlit app. The standalone client won't have the session's tokens.
-- **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`. Don't overwrite these.
+- **Always use `auth.client`** for API calls — never create a standalone `Client()` in a Streamlit app. The standalone client won't have the session's tokens, and may find the server machine's.
+- **Never cache `auth` or `auth.client` across sessions** (`st.cache_resource`, module globals): they hold one user's tokens. Build them at the top of every run.
+- **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`, and in proxy mode `sweatstack_proxy_api_key`, `sweatstack_proxy_refresh_token`. Don't overwrite these; `auth.client` keeps a renewed token there.
 - **`select_user()` replaces `auth.client`** with a client delegated to the selected user (its own access and refresh token). Call `auth.switch_to_principal_user()` to go back.
 - **Scopes default to `data:read,profile`** in Streamlit — not the broader set used by `Client.authenticate()`. Add `offline_access` if you need refresh tokens in direct OAuth mode.
 

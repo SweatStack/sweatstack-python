@@ -54,11 +54,7 @@ class TestWhoami:
 
     def test_requires_a_token(self, client):
         client._api_key = None
-        # Offline: the property would otherwise fall back to env vars and the developer's stored tokens.
-        with (
-            patch.object(client, "_load_token_pair", return_value=(None, None)),
-            pytest.raises(ValueError, match="Not authenticated"),
-        ):
+        with pytest.raises(ValueError, match="Not authenticated"):
             client.whoami()
 
 

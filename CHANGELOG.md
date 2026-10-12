@@ -11,6 +11,49 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [0.94.0] - 2026-10-12
+
+A client's tokens come from one source. Upgrade every app that other people sign in to.
+
+### Security
+
+- A `Client` in a process shared by several users (Streamlit, FastAPI, any server) could pick
+  up a refresh token, or a whole token pair, that another user's client had saved on that
+  machine, and act as that user. Credentials now come from a single source: the arguments you
+  pass, else the environment, else the tokens saved by `authenticate()`. A client never
+  combines halves from different sources, and writes the saved tokens only when they came from
+  there. The Streamlit and FastAPI integrations never read or write saved tokens.
+
+### Fixed
+
+- Streamlit apps behind a proxy no longer fail after the access token expires. With a proxy
+  that forwards `X-SweatStack-Refresh-Token` (the SweatStack Streamlit template does), the
+  session renews its own token and keeps the renewed pair across reruns. Streamlit apps in
+  OAuth mode refresh once per token lifetime instead of once per rerun.
+- A refresh response that carries a new refresh token replaces the old one.
+- `StreamlitAuth.select_user()` with a user that gets no refresh token (admin access) no longer
+  keeps the previous user's refresh token.
+
+### Changed
+
+- `Client(..., ambient_credentials=False)` builds a client that never reads the environment or
+  the saved tokens and never writes them. Use it for per-user clients in your own server.
+- `oauth.exchange_code()` no longer saves the tokens on the machine by default; pass
+  `persist=True` for that. `authenticate()` still saves them.
+- `StreamlitAuth.behind_proxy()` checks token expiry again. Without a forwarded refresh token,
+  calls after expiry raise `SweatStackTokenRefreshError` with a reload hint, where the API
+  returned a 401.
+
+<!-- --8<-- [start:upgrading-0-94] -->
+### Upgrading
+
+| 0.93 | 0.94 |
+|---|---|
+| `Client(api_key=...)` without a refresh token renewed with `SWEATSTACK_REFRESH_TOKEN` or the saved refresh token | **Silent:** it never borrows one, and raises `SweatStackTokenRefreshError` on expiry. Pass `refresh_token=` too, or pass neither to use the environment or the saved tokens |
+| `oauth.exchange_code(...)` saved the tokens on this machine | **Silent:** pass `persist=True` to keep that |
+| `StreamlitAuth.behind_proxy()` sent the handshake token as it was after expiry (a 401 from the API) | Forward `X-SweatStack-Refresh-Token` from the proxy and the session renews itself. Without it, calls after expiry raise `SweatStackTokenRefreshError` with a reload hint |
+<!-- --8<-- [end:upgrading-0-94] -->
+
 ## [0.93.0] - 2026-10-09
 
 Issues are only about the data your app uses. Requires the SweatStack API release that adds

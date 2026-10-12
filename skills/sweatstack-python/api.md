@@ -108,17 +108,23 @@ client.portal.sessions.create("manage-integrations", return_url=None)  # user to
 client.oauth.userinfo()                 # OpenID claims + issue (needs the profile scope)
 verifier, challenge = client.oauth.generate_pkce_params()
 client.oauth.authorization_url(client_id="YOUR_CLIENT_ID", redirect_uri="http://localhost:8000/callback", code_challenge=challenge)
-client.oauth.exchange_code("code", client_id="YOUR_CLIENT_ID", code_verifier=verifier)
+client.oauth.exchange_code("code", client_id="YOUR_CLIENT_ID", code_verifier=verifier)  # persist=True saves on this machine; never in a server
 ```
 
 ## Client
 
 ```python
-Client(api_key=None, refresh_token=None, url=None, client_id=None, client_secret=None, output=None, timeout=60.0, max_retries=2)
-client.authenticate(force=False)
+Client(api_key=None, refresh_token=None, url=None, client_id=None, client_secret=None, output=None, timeout=60.0, max_retries=2, ambient_credentials=True)
+client.authenticate(force=False, persist=True)
 client.clear_cache()
 client.close()  # or: with Client() as client: ...
 ```
 
 GET, PUT and DELETE are retried (connection errors, timeouts, 408, 429, 5xx) up to
 `max_retries` times; POST never is. Use `max_retries=0` inside web requests.
+
+The access and refresh token come from one source: the arguments, else `SWEATSTACK_API_KEY`
+and `SWEATSTACK_REFRESH_TOKEN`, else the tokens `authenticate()` saved on this machine. A
+client given only an access token cannot renew it and raises `SweatStackTokenRefreshError` on
+expiry. In a server, build each user's client from that user's tokens with
+`ambient_credentials=False`: it then never reads or writes the machine's tokens.

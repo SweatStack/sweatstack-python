@@ -375,6 +375,7 @@ def _load_user_from_store(user_id: str) -> SweatStackUser:
             refresh_token=tokens.refresh_token,
             client_id=config.client_id,
             client_secret=config.client_secret,
+            ambient_credentials=False,
         )
     )
 
@@ -434,6 +435,7 @@ def _create_user(
             refresh_token=tokens.refresh_token,
             client_id=config.client_id,
             client_secret=config.client_secret,
+            ambient_credentials=False,
         )
     )
 

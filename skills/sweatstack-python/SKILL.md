@@ -91,7 +91,10 @@ pandas (`summary.power.mean`) and structs in Polars (`.unnest("summary")`).
 - Headless: set `SWEATSTACK_API_KEY` (and `SWEATSTACK_REFRESH_TOKEN` for refresh); no
   `authenticate()` call.
 - Apps where other people sign in: the Streamlit or FastAPI helper, see
-  [streamlit.md](streamlit.md) and [fastapi.md](fastapi.md).
+  [streamlit.md](streamlit.md) and [fastapi.md](fastapi.md). In your own server, build one
+  client per user from that user's tokens: `Client(api_key=..., refresh_token=...,
+  ambient_credentials=False)`. Never a bare `Client()` or the module-level functions there:
+  they look for credentials on the machine.
 
 ## Errors
 

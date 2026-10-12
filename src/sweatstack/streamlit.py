@@ -25,8 +25,10 @@ Example:
     st.write(f"Latest: {latest.sport}")
 """
 
+import logging
 import os
 import urllib.parse
+from collections.abc import Callable
 from datetime import date
 
 try:
@@ -38,11 +40,61 @@ except ImportError:
         "pip install 'sweatstack[streamlit]'\n\n"
     ) from None
 import httpx
+from pydantic import SecretStr
 
 from .client import Client
 from .constants import DEFAULT_URL
 from .exceptions import SweatStackAuthError
 from .schemas import ActivitySummary, Metric, Scope, Sport, UserSummary
+from .utils import decode_jwt_body
+
+logger = logging.getLogger(__name__)
+
+# A session's tokens live in ``st.session_state``: per session, in memory, never shared with
+# another session, kept across reruns. Each client the integration builds holds one pair and
+# writes a renewed pair back to the keys it came from, so a rerun starts from the renewed
+# token and the token file on the server is never involved.
+#
+# The pair behind ``auth.client``: the signed-in user, or the selected user after ``select_user()``.
+_ACCESS_KEY = "sweatstack_api_key"
+_REFRESH_KEY = "sweatstack_refresh_token"
+# The user's own pair in proxy mode, reconciled with the handshake headers on every rerun. Kept
+# apart from the pair above so that a delegation never overwrites it.
+_PROXY_ACCESS_KEY = "sweatstack_proxy_api_key"
+_PROXY_REFRESH_KEY = "sweatstack_proxy_refresh_token"
+
+_PROXY_NO_REFRESH_HINT = (
+    "Reload the page, or have the proxy forward the refresh token as well "
+    "(StreamlitAuth.behind_proxy reads X-SweatStack-Refresh-Token)."
+)
+
+
+def _secret_value(value: str | SecretStr | None) -> str | None:
+    return value.get_secret_value() if isinstance(value, SecretStr) else value
+
+
+def _expires_at(token: str | None) -> float:
+    """The ``exp`` claim of an access token; 0 for no token or one that cannot be read."""
+    if token is None:
+        return 0.0
+    try:
+        return float(decode_jwt_body(token)["exp"])
+    except Exception:  # noqa: BLE001  not a JWT, or no exp: treat as expired
+        return 0.0
+
+
+def _session_state_writer(access_key: str, refresh_key: str) -> Callable[[str, str | None], None]:
+    """A refresh hook that keeps the renewed pair under these session-state keys."""
+
+    def write(access_token: str, refresh_token: str | None) -> None:
+        try:
+            st.session_state[access_key] = access_token
+            st.session_state[refresh_key] = refresh_token
+        except Exception:  # noqa: BLE001  outside a script run, e.g. in an app's worker thread
+            logger.debug("Could not keep the renewed token in session state", exc_info=True)
+        # The client holds the renewed token either way; only the next rerun starts stale.
+
+    return write
 
 
 class StreamlitAuth:
@@ -124,15 +176,27 @@ class StreamlitAuth:
         self._logout_uri = "/logout"
         self._login_uri = "/login"
 
-        self.api_key = st.session_state.get("sweatstack_api_key")
-        self.refresh_token = st.session_state.get("sweatstack_refresh_token")
-        self.client = Client(
-            self.api_key,
-            refresh_token=self.refresh_token,
+        self.api_key: str | None = st.session_state.get(_ACCESS_KEY)
+        self.refresh_token: str | None = st.session_state.get(_REFRESH_KEY)
+        self.client = self._client_for(self.api_key, self.refresh_token)
+
+    def _client_for(
+        self,
+        access_token: str | SecretStr | None,
+        refresh_token: str | SecretStr | None,
+        keys: tuple[str, str] = (_ACCESS_KEY, _REFRESH_KEY),
+    ) -> Client:
+        """A client for one session's token pair, renewing into the session-state ``keys``."""
+        client = Client(
+            access_token,
+            refresh_token=refresh_token,
             streamlit_compatible=True,
             client_id=self.client_id,
             client_secret=self.client_secret,
+            ambient_credentials=False,
         )
+        client._on_refresh = _session_state_writer(*keys)
+        return client
 
     @classmethod
     def behind_proxy(
@@ -141,11 +205,25 @@ class StreamlitAuth:
         header_name: str = "X-SweatStack-Token",
         logout_uri: str = "/logout",
         login_uri: str = "/login",
+        refresh_header_name: str = "X-SweatStack-Refresh-Token",
     ) -> "StreamlitAuth":
         """Create a StreamlitAuth instance for use behind a proxy.
 
         Use this method when your Streamlit app runs behind a proxy that handles
-        authentication and passes the SweatStack access token via an HTTP header.
+        authentication and passes the SweatStack access token via an HTTP header. Call it at
+        the top of every run; never keep ``auth`` or ``auth.client`` across sessions
+        (``st.cache_resource``, module globals).
+
+        Streamlit exposes the headers of the WebSocket handshake only, so the session never
+        sees a token the proxy refreshed later. When the proxy also forwards the refresh token,
+        the session renews the access token itself and keeps the renewed pair in
+        ``st.session_state``: one token request per token lifetime, however long the tab stays
+        open. Both headers must come from the proxy, which must drop any ``X-SweatStack-*``
+        header the browser sends. This relies on a refresh returning the same refresh token
+        (the API does not rotate them); the proxy's copy stays valid.
+
+        Without the refresh header the handshake token is used as it is, and once it has
+        expired every call raises ``SweatStackTokenRefreshError`` with the advice to reload.
 
         Args:
             redirect_uri: The URI to redirect to after login (used by proxy).
@@ -155,6 +233,8 @@ class StreamlitAuth:
                         Defaults to "/logout".
             login_uri: The URI to redirect to for login.
                        Defaults to "/login".
+            refresh_header_name: The HTTP header name containing the refresh token.
+                         Defaults to "X-SweatStack-Refresh-Token".
 
         Returns:
             StreamlitAuth: An instance configured for proxy mode.
@@ -175,11 +255,32 @@ class StreamlitAuth:
         instance._logout_uri = logout_uri
         instance._login_uri = login_uri
 
-        token = st.context.headers.get(header_name)
-        if token:
-            instance.api_key = token
-            instance.client = Client(token, streamlit_compatible=True, skip_token_expiry_check=True)
+        access_token = st.context.headers.get(header_name) or None
+        refresh_token = st.context.headers.get(refresh_header_name) or None
+        proxy_keys = (_PROXY_ACCESS_KEY, _PROXY_REFRESH_KEY)
 
+        if access_token is None:
+            # Logged out at the proxy.
+            for key in proxy_keys:
+                st.session_state.pop(key, None)
+        elif refresh_token is not None:
+            # Same login as the stored pair: continue from whichever access token lives longer,
+            # the stored one after an in-session renewal, the header one after a reload.
+            # Otherwise (a new login in this tab, or nothing stored yet) the header pair wins.
+            stored_access = st.session_state.get(_PROXY_ACCESS_KEY)
+            if st.session_state.get(_PROXY_REFRESH_KEY) == refresh_token and _expires_at(
+                stored_access
+            ) > _expires_at(access_token):
+                access_token = stored_access
+            st.session_state[_PROXY_ACCESS_KEY] = access_token
+            st.session_state[_PROXY_REFRESH_KEY] = refresh_token
+        # Else the proxy does not forward the refresh token: the handshake token, as it is.
+
+        instance.api_key = access_token
+        instance.refresh_token = refresh_token
+        instance.client = instance._client_for(access_token, refresh_token, keys=proxy_keys)
+        if access_token is not None and refresh_token is None:
+            instance.client._no_refresh_hint = _PROXY_NO_REFRESH_HINT
         return instance
 
     def _show_styled_link_button(self, label: str, url: str):
@@ -235,9 +336,9 @@ class StreamlitAuth:
         elif st.button("Logout"):
             self.api_key = None
             self.refresh_token = None
-            self.client = Client(streamlit_compatible=True)
-            st.session_state.pop("sweatstack_api_key", None)
-            st.session_state.pop("sweatstack_refresh_token", None)
+            self.client = self._client_for(None, None)
+            for key in (_ACCESS_KEY, _REFRESH_KEY, _PROXY_ACCESS_KEY, _PROXY_REFRESH_KEY):
+                st.session_state.pop(key, None)
             st.rerun()
 
     def _running_on_streamlit_cloud(self):
@@ -282,27 +383,23 @@ class StreamlitAuth:
 
         return authorization_url
 
-    def _set_api_key(self, api_key, refresh_token=None):
-        """Sets the API key and refresh token in instance and session state, then refreshes the client.
+    def _set_api_key(
+        self, api_key: str | SecretStr | None, refresh_token: str | SecretStr | None
+    ) -> None:
+        """Makes this pair the one behind ``auth.client``, here and in session state.
+
+        Always both halves: a pair without a refresh token (admin access to a user, a sign-in
+        without ``offline_access``) cannot be renewed, and must not inherit the previous pair's.
 
         Args:
             api_key: The API access token to set.
-            refresh_token: The refresh token to set. If None, keeps the existing refresh token.
+            refresh_token: The refresh token to set, or None when there is none.
         """
-        self.api_key = api_key
-        st.session_state["sweatstack_api_key"] = api_key
-
-        if refresh_token is not None:
-            self.refresh_token = refresh_token
-            st.session_state["sweatstack_refresh_token"] = refresh_token
-
-        self.client = Client(
-            self.api_key,
-            refresh_token=self.refresh_token,
-            streamlit_compatible=True,
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-        )
+        self.api_key = _secret_value(api_key)
+        self.refresh_token = _secret_value(refresh_token)
+        st.session_state[_ACCESS_KEY] = self.api_key
+        st.session_state[_REFRESH_KEY] = self.refresh_token
+        self.client = self._client_for(self.api_key, self.refresh_token)
 
     def _exchange_token(self, code):
         """Exchanges an authorization code for an access token.

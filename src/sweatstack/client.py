@@ -10,7 +10,7 @@ import shutil
 import threading
 import time
 import webbrowser
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from enum import Enum
 from functools import cached_property, wraps
@@ -162,7 +162,8 @@ class Client:
     Create one client per user. In a script or notebook, ``Client()`` finds your credentials
     (``authenticate()``, the ``SWEATSTACK_API_KEY`` environment variable, or the tokens saved
     by an earlier sign-in). In an app, use the client the FastAPI or Streamlit helper hands
-    you for each signed-in user.
+    you for each signed-in user, or build one from that user's tokens with
+    ``ambient_credentials=False``.
 
     Examples:
         ```python
@@ -180,6 +181,21 @@ class Client:
     output: FrameOutput | None = None
     timeout: float = 60.0
     max_retries: int = 2
+    ambient_credentials: bool = True
+    _api_key: SecretStr | None = None
+    _refresh_token: SecretStr | None = None
+    # Whether this client's tokens live in the token file, so a refresh is written back there.
+    # Set by loading them from the file or by saving them to it; never by giving tokens directly.
+    _file_backed: bool = False
+    # Called after every refresh with the access token and the refresh token now in force. The
+    # Streamlit integration keeps a session's renewed pair with it. Not a public parameter yet:
+    # promote it when a second integration needs it.
+    _on_refresh: Callable[[str, str | None], None] | None = None
+    # The second sentence of the error for an expired token that cannot be renewed; an
+    # integration replaces it with advice that fits its setting.
+    _no_refresh_hint: str = (
+        "Pass refresh_token= to renew it, or sign in again with client.authenticate(force=True)."
+    )
 
     def __init__(
         self,
@@ -193,8 +209,17 @@ class Client:
         output: FrameOutput | None = None,
         timeout: float = 60.0,
         max_retries: int = 2,
+        *,
+        ambient_credentials: bool = True,
     ):
         """Initialize a SweatStack client.
+
+        The access token and the refresh token always come from one source: the arguments,
+        else the ``SWEATSTACK_API_KEY`` and ``SWEATSTACK_REFRESH_TOKEN`` environment
+        variables, else the tokens saved on this machine by ``authenticate()``. A client given
+        an access token but no refresh token therefore cannot renew it: on expiry it raises
+        ``SweatStackTokenRefreshError`` rather than renew with a refresh token from elsewhere.
+        Only a client whose tokens came from the saved file writes a renewed token back to it.
 
         Args:
             api_key: Optional API access token. If not provided, will check environment or storage.
@@ -222,6 +247,11 @@ class Client:
                 the server's ``Retry-After``. ``POST`` is never retried, since the API has no
                 idempotency keys. At most 30 s of waiting per call. Use ``0`` where latency
                 matters more than resilience, such as inside a web request.
+            ambient_credentials: Whether the client may look for credentials in the environment
+                and in the tokens saved on this machine, and save renewed tokens there. ``False``
+                for a client in a server that other people sign in to: it then holds only the
+                tokens you give it, and never reads or writes this machine's. The Streamlit and
+                FastAPI integrations build their clients this way.
 
         Examples:
             ```python
@@ -230,6 +260,9 @@ class Client:
             client = Client(timeout=120.0, max_retries=4)  # a long batch job
             with Client(api_key="...") as client:          # closes the connection pool on exit
                 client.activities.list()
+            user_client = Client(  # in your own server, one per signed-in user
+                api_key=access_token, refresh_token=refresh_token, ambient_credentials=False
+            )
             ```
         """
         if timeout <= 0:
@@ -246,6 +279,7 @@ class Client:
         self.client_id = client_id or OAUTH2_CLIENT_ID
         self.timeout = timeout
         self.max_retries = max_retries
+        self.ambient_credentials = ambient_credentials
 
     def __enter__(self) -> Client:
         return self
@@ -329,41 +363,42 @@ class Client:
     # Credentials
     # -------------------------------------------------------------------------
 
-    def _load_token_pair(self) -> tuple[str | None, str | None]:
-        """Load access and refresh tokens from available sources.
+    # A client's access token and refresh token come from one source: the arguments and the
+    # setters, else the environment, else the token file. The halves are never combined across
+    # sources, so a client given only an access token never renews with a refresh token that
+    # another client saved on this machine, and a bare client in a server never becomes the
+    # user who refreshed last. Only a file-backed client writes the file.
 
-        Checks in order: instance, environment, persistent storage.
+    def _resolve_credentials(self) -> tuple[str | None, str | None]:
+        """The access token and the refresh token, as a pair from one source.
 
-        Returns:
-            Tuple of (access_token, refresh_token). Either or both may be None.
+        A client without tokens of its own loads both from the first ambient source that has
+        either, and keeps them, so the environment and the file are read at most once. Finding
+        nothing is not remembered: a client created before the environment is set, or before
+        ``authenticate()``, finds credentials on its next use.
         """
-        access_token: str | None = None
-        refresh_token: str | None = None
+        if self._api_key is None and self._refresh_token is None and self.ambient_credentials:
+            for load, file_backed in (
+                (self._load_environment_tokens, False),
+                (self._load_persistent_tokens, True),
+            ):
+                access_token, refresh_token = load()
+                if access_token is not None or refresh_token is not None:
+                    self._api_key = _to_secret(access_token)
+                    self._refresh_token = _to_secret(refresh_token)
+                    self._file_backed = file_backed
+                    break
+        return (
+            self._api_key.get_secret_value() if self._api_key is not None else None,
+            self._refresh_token.get_secret_value() if self._refresh_token is not None else None,
+        )
 
-        # Instance tokens take priority
-        if self._api_key is not None:
-            access_token = self._api_key.get_secret_value()
-        if self._refresh_token is not None:
-            refresh_token = self._refresh_token.get_secret_value()
+    @staticmethod
+    def _load_environment_tokens() -> tuple[str | None, str | None]:
+        return os.getenv("SWEATSTACK_API_KEY"), os.getenv("SWEATSTACK_REFRESH_TOKEN")
 
-        # Fill gaps from environment variables
-        if access_token is None:
-            access_token = os.getenv("SWEATSTACK_API_KEY")
-        if refresh_token is None:
-            refresh_token = os.getenv("SWEATSTACK_REFRESH_TOKEN")
-
-        # Fill remaining gaps from persistent storage
-        if access_token is None or refresh_token is None:
-            stored_access, stored_refresh = self._load_persistent_tokens()
-            if access_token is None:
-                access_token = stored_access
-            if refresh_token is None:
-                refresh_token = stored_refresh
-
-        return access_token, refresh_token
-
-    def _do_token_refresh(self, refresh_token: str) -> str:
-        """Exchange refresh token for a new access token.
+    def _do_token_refresh(self, refresh_token: str) -> TokenResponse:
+        """Exchange the refresh token for a new access token.
 
         Raises:
             SweatStackTokenRefreshError: If the refresh request fails.
@@ -386,24 +421,25 @@ class Client:
             except SweatStackAPIError as e:
                 raise SweatStackTokenRefreshError(f"Token refresh request failed: {e}") from e
 
-            return response.json()["access_token"]
+            return TokenResponse.model_validate(response.json())
 
-    def _refresh_if_expired(self, access_token: str, refresh_token: str | None) -> str:
-        """Check token expiry and refresh if needed.
+    def _refresh_if_expired(self, access_token: str | None, refresh_token: str | None) -> str:
+        """A valid access token: the given one, or a renewed one when it is missing or expired.
 
-        Returns:
-            Valid access token (original if not expired, refreshed otherwise).
+        After a renewal the client holds the new access token, and the new refresh token if the
+        response rotated it; a file-backed client writes the pair to the file, and
+        ``_on_refresh`` is told.
 
         Raises:
-            SweatStackTokenRefreshError: If the token is expired and refresh fails.
+            SweatStackTokenRefreshError: If the token is expired and cannot be renewed.
         """
-        if not _is_expired(access_token):
+        if access_token is not None and not _is_expired(access_token):
             return access_token
 
         if refresh_token is None:
             raise SweatStackTokenRefreshError(
-                "Access token expired but no refresh token available. "
-                "Call client.authenticate(force=True) to re-authenticate."
+                "The access token expired and this client has no refresh token to renew it. "
+                + self._no_refresh_hint
             )
 
         # One refresh at a time per client: threads sharing a client would otherwise all refresh,
@@ -412,35 +448,39 @@ class Client:
             current = self._api_key.get_secret_value() if self._api_key else None
             if current is not None and current != access_token and not _is_expired(current):
                 return current  # another thread refreshed while this one waited
-            new_access_token = self._do_token_refresh(refresh_token)
-            self._api_key = SecretStr(new_access_token)
-            self._save_tokens(new_access_token, refresh_token)
-        logger.debug("Refreshed and persisted access token")
-        return new_access_token
+            tokens = self._do_token_refresh(refresh_token)
+            self._api_key = SecretStr(tokens.access_token)
+            if tokens.refresh_token is not None:
+                refresh_token = tokens.refresh_token
+                self._refresh_token = SecretStr(refresh_token)
+            if self._file_backed:
+                self._save_tokens(tokens.access_token, refresh_token)
+            if self._on_refresh is not None:
+                self._on_refresh(tokens.access_token, refresh_token)
+        logger.debug("Refreshed the access token")
+        return tokens.access_token
 
     @property
     def api_key(self) -> SecretStr | None:
-        """The current API access token.
+        """The current API access token, renewed when it has expired.
 
-        Loads from instance, environment (SWEATSTACK_API_KEY), or persistent
-        storage. Automatically refreshes expired tokens.
+        See ``Client`` for where the tokens come from.
 
         Returns:
             SecretStr containing the access token, or None if not authenticated.
 
         Raises:
-            SweatStackTokenRefreshError: If the token is expired and refresh fails.
+            SweatStackTokenRefreshError: If the token is expired and cannot be renewed.
         """
-        access_token, refresh_token = self._load_token_pair()
+        access_token, refresh_token = self._resolve_credentials()
 
-        if access_token is None:
+        if access_token is None and refresh_token is None:
             return None
 
-        if self.skip_token_expiry_check:
+        if self.skip_token_expiry_check and access_token is not None:
             return SecretStr(access_token)
 
-        valid_token = self._refresh_if_expired(access_token, refresh_token)
-        return SecretStr(valid_token)
+        return SecretStr(self._refresh_if_expired(access_token, refresh_token))
 
     @api_key.setter
     def api_key(self, value: str | SecretStr | None):
@@ -450,18 +490,13 @@ class Client:
     def refresh_token(self) -> SecretStr | None:
         """The refresh token used for automatic token renewal.
 
-        Loads from instance, environment (SWEATSTACK_REFRESH_TOKEN), or persistent storage.
+        See ``Client`` for where the tokens come from.
 
         Returns a SecretStr to prevent accidental logging of the token.
         Use .get_secret_value() to get the actual token string.
         """
-        if self._refresh_token is not None:
-            return self._refresh_token
-        elif value := os.getenv("SWEATSTACK_REFRESH_TOKEN"):
-            return SecretStr(value)
-        else:
-            _, value = self._load_persistent_tokens()
-            return _to_secret(value)
+        _, refresh_token = self._resolve_credentials()
+        return _to_secret(refresh_token)
 
     @refresh_token.setter
     def refresh_token(self, value: str | SecretStr | None):
@@ -506,12 +541,24 @@ class Client:
         return Path(user_data_dir("SweatStack", "SweatStack")) / "tokens.json"
 
     def _save_tokens(self, access_token: str, refresh_token: str | None) -> None:
-        """Save tokens to the user data directory, readable by the user only."""
+        """Save the tokens to the user data directory, readable by the user only.
+
+        The client is file-backed from then on: a renewed token is written back here.
+
+        Raises:
+            ValueError: If the client was built with ``ambient_credentials=False``.
+        """
+        if not self.ambient_credentials:
+            raise ValueError(
+                "This client never uses the tokens saved on this machine "
+                "(ambient_credentials=False), so it cannot save any; pass persist=False."
+            )
         token_file = self._get_token_file_path()
         token_file.parent.mkdir(parents=True, exist_ok=True)
         with open(token_file, "w") as f:
             json.dump({"access_token": access_token, "refresh_token": refresh_token}, f, indent=2)
         token_file.chmod(0o600)
+        self._file_backed = True
 
     def _load_persistent_tokens(self) -> tuple[str | None, str | None]:
         """Load tokens from the user data directory."""
@@ -546,6 +593,7 @@ class Client:
             persist: Save new tokens on this machine for later sessions.
 
         Raises:
+            ValueError: If ``persist`` is set on a client built with ``ambient_credentials=False``.
             Exception: If the browser sign-in fails or times out.
 
         Examples:
@@ -557,9 +605,14 @@ class Client:
             client.authenticate(force=True)  # sign in again, e.g. as another user
             ```
         """
+        if persist and not self.ambient_credentials:
+            raise ValueError(
+                "This client never uses the tokens saved on this machine "
+                "(ambient_credentials=False), so it cannot save any; pass persist=False."
+            )
         if not force:
-            access_token, _ = self._load_token_pair()
-            if access_token is not None:
+            access_token, refresh_token = self._resolve_credentials()
+            if access_token is not None or refresh_token is not None:
                 return
 
         self._open_browser_oauth(persist=persist)
@@ -697,6 +750,7 @@ class Client:
             output=self.output,
             timeout=self.timeout,
             max_retries=self.max_retries,
+            ambient_credentials=self.ambient_credentials,
         )
 
     def whoami(self) -> UserSummary:

@@ -94,18 +94,22 @@ class OAuth(Resource):
         client_id: str,
         code_verifier: str | None = None,
         client_secret: str | None = None,
-        persist: bool = True,
+        persist: bool = False,
     ) -> TokenResponse:
         """Exchanges an authorization code for tokens, and signs this client in with them.
 
         Endpoint: ``POST /api/v1/oauth/token``
+
+        The tokens stay in this client. In a server, keep them with the user's session; they
+        are that user's credentials, not the machine's.
 
         Args:
             code: The ``code`` from the redirect back to your app.
             client_id: Your app's client ID.
             code_verifier: The PKCE verifier, if you sent a challenge.
             client_secret: Your app's secret, for confidential clients.
-            persist: Also save the tokens to this machine's token storage.
+            persist: Also save the tokens on this machine for later sessions, as
+                ``authenticate()`` does. Never in a server.
 
         Returns:
             TokenResponse: ``access_token``, ``refresh_token`` and their metadata.
@@ -113,6 +117,7 @@ class OAuth(Resource):
         Raises:
             SweatStackAuthError: If the code or credentials are rejected.
             SweatStackAPIError: If the API request fails for any other reason.
+            ValueError: If ``persist`` is set on a client built with ``ambient_credentials=False``.
 
         Examples:
             ```python

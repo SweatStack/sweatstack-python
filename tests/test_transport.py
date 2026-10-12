@@ -21,6 +21,7 @@ from sweatstack.exceptions import (
     SweatStackRateLimitError,
     SweatStackServerError,
 )
+from sweatstack.schemas import TokenResponse
 
 URL = "https://test.sweatstack.no"
 
@@ -213,12 +214,9 @@ def test_concurrent_threads_refresh_an_expired_token_once():
     def refresh(refresh_token):
         calls.append(refresh_token)
         time.sleep(0.05)  # long enough for every thread to arrive while one refreshes
-        return _jwt(time.time() + 3600)
+        return TokenResponse(access_token=_jwt(time.time() + 3600), expires_in=3600)
 
-    with (
-        patch.object(client, "_do_token_refresh", side_effect=refresh),
-        patch.object(client, "_save_tokens"),
-    ):
+    with patch.object(client, "_do_token_refresh", side_effect=refresh):
         threads = [threading.Thread(target=lambda: client.api_key) for _ in range(8)]
         for thread in threads:
             thread.start()
