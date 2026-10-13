@@ -28,7 +28,8 @@ Scopes are categories now. Request what your app uses.
 - `client.profile.status()` needs no scope.
 - `Application.default_scopes` and `Application.purposes` replace `capabilities` on
   `client.applications` (the old field is still accepted and translated).
-- The metabolic map responses have no `inputs`; the VO2 map has `vo2max_relative`.
+- The metabolic map responses are the markers themselves: no `inputs`, no `markers` wrapper; the
+  VO2 map has `vo2max_relative`.
 - The `dailies` capability and its issue codes are `wellness`, `wellness_not_granted` and
   `wellness_no_source`.
 
@@ -49,7 +50,8 @@ Scopes are categories now. Request what your app uses.
 | `scope="data:read data:write profile offline_access"` | `scope=DEFAULT_SCOPE` plus the categories you use |
 | `Scope.data_read` in `teams.authorize(scopes=...)` | `"activities:read"` and the other categories |
 | `userinfo()` with `profile` | `userinfo()` with `openid profile email` |
-| `response.inputs.body_mass` on a metabolic map | not published; `markers.vo2max_relative` on the VO2 map |
+| `response.markers.fatmax` on a metabolic map | `response.fatmax` |
+| `response.inputs.body_mass` on a metabolic map | not published; `response.vo2max_relative` on the VO2 map |
 | `status.capabilities["dailies"]` | `status.capabilities["wellness"]` |
 
 An app registered before the platform release keeps working with `data:read` and `data:write`

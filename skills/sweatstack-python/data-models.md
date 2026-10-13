@@ -29,7 +29,7 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
 - `Metric`: data streams such as `power`, `speed`, `heart_rate`, `cadence`, `altitude`,
   `distance`, `temperature`, `core_temperature`, `smo2`, `lactate`, `rpe`. `metric.display_name()`
   gives a readable form. Open set: unknown values from a newer server still parse.
-- `Scope`: `Scope.data_read` (`"data:read"`), `data_write`, `profile`, `openid`, `offline_access`, `admin`. Open set.
+- `Scope`: `Scope.activities_read` (`"activities:read"`), `activities_write`, `wellness_read`, `wellness_write`, `reproductive_health_read`, `reproductive_health_write`, `workouts_read`, `workouts_write`, `sharing_read`, `sharing_write`, `openid`, `profile`, `email`, `offline_access`, `admin`; `data_read` and `data_write` are the retired bundles. Open set.
 - `DailyMeasure`: `body_mass`, `body_fat_pct`, `resting_hr`, `hrv`, `sleep_duration`,
   `sleep_altitude`, `menstrual_cycle_day`. Open set.
 

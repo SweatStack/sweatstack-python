@@ -62,7 +62,7 @@ DOCS_PAYLOADS = {
     },
     "no_source": {
         "issue": {
-            "code": "dailies_no_source",
+            "code": "wellness_no_source",
             "status": "action_required",
             "message": "No connected source provides daily health data.",
             "destination": "manage-integrations",
@@ -74,7 +74,7 @@ DOCS_PAYLOADS = {
 CAPABILITIES = {
     "activities": "ready",
     "activity_history": "action_required",
-    "dailies": "unavailable",
+    "wellness": "unavailable",
     "workouts": "ready",
 }
 
@@ -130,7 +130,7 @@ class TestDocumentedPayloads:
         restored = AccountStatusResponse.model_validate(status.model_dump())
         assert restored == status
         assert status.capabilities[Capability.activity_history] == CapabilityStatus.action_required
-        assert status.capabilities.get(Capability.dailies) == CapabilityStatus.unavailable
+        assert status.capabilities.get(Capability.wellness) == CapabilityStatus.unavailable
 
     def test_the_one_line_integration_reads_naturally(self):
         user = UserInfoResponse.model_validate({**USERINFO, **DOCS_PAYLOADS["history_not_shared"]})
@@ -170,9 +170,9 @@ class TestOpenSets:
 
     def test_unknown_capability_key_parses_and_known_keys_still_resolve(self):
         status = AccountStatusResponse.model_validate(
-            {"issue": None, "capabilities": {**CAPABILITIES, "dailies_history": "syncing"}}
+            {"issue": None, "capabilities": {**CAPABILITIES, "wellness_history": "syncing"}}
         )
-        assert status.capabilities[Capability("dailies_history")] == CapabilityStatus.syncing
+        assert status.capabilities[Capability("wellness_history")] == CapabilityStatus.syncing
         assert status.capabilities[Capability.activities] == CapabilityStatus.ready
 
     def test_unknown_status_is_rejected(self):
