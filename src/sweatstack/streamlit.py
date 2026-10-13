@@ -42,6 +42,7 @@ except ImportError:
 import httpx
 from pydantic import SecretStr
 
+from . import _transport
 from .client import Client
 from .constants import DEFAULT_SCOPE, DEFAULT_URL
 from .exceptions import SweatStackAuthError
@@ -422,7 +423,7 @@ class StreamlitAuth:
             "code": code,
         }
         auth = httpx.BasicAuth(username=self.client_id, password=self.client_secret)
-        response = httpx.post(
+        response = _transport.post(
             f"{DEFAULT_URL}/api/v1/oauth/token",
             data=token_data,
             auth=auth,

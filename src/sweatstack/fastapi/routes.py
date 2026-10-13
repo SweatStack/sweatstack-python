@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
+from .. import _transport
 from ..constants import DEFAULT_URL
 from ..exceptions import SweatStackAPIError, SweatStackConnectionError
 from ..utils import decode_jwt_body
@@ -101,7 +102,7 @@ def _fetch_delegated_token(
         body["team_id"] = team_id
 
     try:
-        response = httpx.post(
+        response = _transport.post(
             f"{DEFAULT_URL}/api/v1/oauth/delegated-token",
             headers={"Authorization": f"Bearer {principal_tokens.access_token}"},
             json=body,
@@ -211,7 +212,7 @@ def create_router() -> APIRouter:
             return error_redirect("missing_code")
 
         try:
-            token_response = httpx.post(
+            token_response = _transport.post(
                 f"{DEFAULT_URL}/api/v1/oauth/token",
                 data={
                     "grant_type": "authorization_code",

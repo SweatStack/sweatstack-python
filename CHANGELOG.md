@@ -32,6 +32,16 @@ Scopes are categories now. Request what your app uses.
 - The `dailies` capability and its issue codes are `wellness`, `wellness_not_granted` and
   `wellness_no_source`.
 
+### Added
+
+- `sweatstack.__version__` is the installed version.
+
+### Fixed
+
+- Token calls from the FastAPI and Streamlit integrations (login, refresh and delegated tokens)
+  now send the `python-sweatstack/<version>` User-Agent, like every other request the SDK
+  makes. Before, they identified themselves as plain httpx.
+
 ### Upgrading
 
 | Old | New |

@@ -13,6 +13,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import Depends, HTTPException, Request, Response
 
+from .. import _transport
 from ..client import Client
 from ..constants import DEFAULT_URL
 from ..utils import decode_jwt_body
@@ -122,7 +123,7 @@ def _refresh_access_token(
     on ``/oauth/token``; the tuple shape exists so that a future
     server change is handled transparently.
     """
-    response = httpx.post(
+    response = _transport.post(
         f"{DEFAULT_URL}/api/v1/oauth/token",
         data={
             "grant_type": "refresh_token",

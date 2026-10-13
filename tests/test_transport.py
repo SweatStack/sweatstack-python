@@ -5,17 +5,21 @@ Requests run through the real transport (``Client._request``, ``_http_client``,
 wire. ``time.sleep`` is patched; the waits it would have slept are asserted instead.
 """
 
+import ast
 import base64
 import json
 import threading
 import time
+from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
 import httpx
 import pytest
 
+import sweatstack
 from sweatstack import _transport
 from sweatstack.client import Client
+from sweatstack.constants import USER_AGENT
 from sweatstack.exceptions import (
     SweatStackConnectionError,
     SweatStackRateLimitError,
@@ -223,3 +227,68 @@ def test_concurrent_threads_refresh_an_expired_token_once():
         for thread in threads:
             thread.join()
     assert len(calls) == 1
+
+
+class TestOutsideThePool:
+    """``_transport.post``: the token calls the integrations make without a client."""
+
+    def test_sends_the_sdk_user_agent_and_passes_everything_else_through(self):
+        with patch("httpx.post") as post:
+            _transport.post(URL, data={"grant_type": "x"}, timeout=3.0)
+        assert post.call_args.args == (URL,)
+        kwargs = post.call_args.kwargs
+        assert kwargs["headers"]["User-Agent"] == USER_AGENT
+        assert kwargs["data"] == {"grant_type": "x"}
+        assert kwargs["timeout"] == 3.0
+
+    def test_keeps_the_callers_headers(self):
+        with patch("httpx.post") as post:
+            _transport.post(URL, headers={"Authorization": "Bearer t"})
+        headers = post.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer t"
+        assert headers["User-Agent"] == USER_AGENT
+
+    def test_the_caller_wins_on_a_clash(self):
+        with patch("httpx.post") as post:
+            _transport.post(URL, headers={"user-agent": "mine/1"})
+        assert post.call_args.kwargs["headers"]["User-Agent"] == "mine/1"
+
+
+HTTPX_REQUEST_NAMES = frozenset(
+    {"get", "post", "put", "patch", "delete", "request", "stream", "Client", "AsyncClient"}
+)
+"""The ``httpx`` names that make a request or build something that does."""
+
+MAY_CALL_HTTPX = {
+    "_transport.py": "the pool's requests and post()",
+    "client.py": "builds the pool, with the User-Agent",
+    "cli.py": "a developer tool against a local server",
+}
+"""Modules allowed to call httpx directly, and why."""
+
+
+def test_only_the_transport_makes_requests():
+    """A request from anywhere else goes out without the SDK's User-Agent.
+
+    Route it through ``_transport.post`` (or the client's pool) instead of adding a module here.
+    """
+    package = Path(sweatstack.__file__).parent
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        name = str(path.relative_to(package))
+        if name in MAY_CALL_HTTPX:
+            continue
+        for node in ast.walk(ast.parse(path.read_text(), filename=name)):
+            if isinstance(node, ast.ImportFrom) and node.module == "httpx":
+                imported = {alias.name for alias in node.names} & HTTPX_REQUEST_NAMES
+                if imported:
+                    offenders.append(f"{name}:{node.lineno} from httpx import {sorted(imported)}")
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "httpx"
+                and node.func.attr in HTTPX_REQUEST_NAMES
+            ):
+                offenders.append(f"{name}:{node.lineno} httpx.{node.func.attr}(...)")
+    assert offenders == []

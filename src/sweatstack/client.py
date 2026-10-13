@@ -15,7 +15,6 @@ from datetime import date, datetime
 from enum import Enum
 from functools import cached_property, wraps
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from importlib.metadata import version
 from inspect import getmembers, isfunction
 from pathlib import Path
 from typing import Any, Literal
@@ -27,7 +26,7 @@ from pydantic import SecretStr
 
 from . import _frames, _renames, _transport
 from ._frames import FrameOutput, set_output
-from .constants import DEFAULT_SCOPE, DEFAULT_URL
+from .constants import DEFAULT_SCOPE, DEFAULT_URL, USER_AGENT
 from .exceptions import (
     SweatStackAPIError,
     SweatStackAuthError,
@@ -120,11 +119,6 @@ AUTH_SUCCESSFUL_RESPONSE = """<!DOCTYPE html>
 </body>
 </html>"""
 OAUTH2_CLIENT_ID = "5382f68b0d254378"
-
-try:
-    __version__ = version("sweatstack")
-except ImportError:
-    __version__ = "unknown"
 
 
 def _to_secret(value: str | SecretStr | None) -> SecretStr | None:
@@ -894,7 +888,7 @@ class Client:
             return built[1]
         pool = httpx.Client(
             base_url=url,
-            headers={"User-Agent": f"python-sweatstack/{__version__}"},
+            headers={"User-Agent": USER_AGENT},
             timeout=self.timeout,
         )
         self.__dict__["_pool_entry"] = (url, pool)
@@ -918,7 +912,7 @@ class Client:
                 For the token exchange, which authenticates with the app's own credentials in
                 the body, so a user's bearer is never sent where it is not needed.
         """
-        headers = httpx.Headers({"User-Agent": f"python-sweatstack/{__version__}"})
+        headers = httpx.Headers({"User-Agent": USER_AGENT})
         if not auth:
             token = None
         elif skip_token_check:

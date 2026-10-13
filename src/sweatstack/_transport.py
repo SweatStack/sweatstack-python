@@ -3,6 +3,11 @@
 The policy follows the OpenAI, Anthropic and Stripe clients, with one difference: ``POST`` is
 never retried, because the SweatStack API has no idempotency keys and a retried create could
 create twice.
+
+This module is also the only place in the package that calls ``httpx`` to make a request:
+through a client's pool, or through :func:`post` for the token calls the FastAPI and Streamlit
+integrations make without a client. Both put the SDK's ``User-Agent`` on the wire, and
+``tests/test_transport.py`` fails on a request made from anywhere else.
 """
 
 from __future__ import annotations
@@ -13,6 +18,8 @@ from contextlib import contextmanager
 from typing import Any
 
 import httpx
+
+from .constants import USER_AGENT
 
 RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 """Statuses worth retrying: timeouts, rate limits and transient server errors."""
@@ -71,6 +78,18 @@ def wait_before_retry(
     if waited + wait > RETRY_BUDGET:
         return None
     return wait
+
+
+def post(url: str, **kwargs: Any) -> httpx.Response:
+    """``httpx.post`` with the SDK's ``User-Agent``; the caller's headers win on a clash.
+
+    For the one-off token calls the integrations make without a ``Client``. It adds the header
+    and nothing else: no retry (a ``POST`` is never retried), no error translation and no
+    timeout, so each caller keeps its own.
+    """
+    headers = httpx.Headers({"User-Agent": USER_AGENT})
+    headers.update(kwargs.pop("headers", None) or {})
+    return httpx.post(url, headers=headers, **kwargs)
 
 
 class Session:

@@ -1,6 +1,7 @@
 from . import _renames
 from .client import *  # noqa: F403
 from .client import __all__ as _client_all
+from .constants import __version__ as __version__
 from .exceptions import (
     SweatStackAPIError,
     SweatStackAuthError,
