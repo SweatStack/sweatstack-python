@@ -98,7 +98,9 @@ class Teams(Resource):
 
         Args:
             team_id: The team's ID.
-            scopes: The scopes to grant. Defaults to ``[Scope.data_read]``.
+            scopes: The scopes to grant. Defaults to ``["activities:read"]``. Only the
+                delegable scopes are ever granted (``activities``, ``wellness``,
+                ``reproductive_health`` and ``workouts``, read or write); the rest is dropped.
 
         Returns:
             dict: ``team_id``, ``user_id`` and the granted ``scopes``.
@@ -112,10 +114,10 @@ class Teams(Resource):
             from sweatstack import Client
 
             client = Client()
-            client.teams.authorize("team_123", scopes=["data:read"])
+            client.teams.authorize("team_123", scopes=["activities:read", "wellness:read"])
             ```
         """
-        wire = self._client._enums_to_strings(list(scopes or [Scope.data_read]))
+        wire = self._client._enums_to_strings(list(scopes or ["activities:read"]))
         response = self._client._request(
             "post", f"/api/v1/teams/{team_id}/authorize", json={"scopes": wire}
         )

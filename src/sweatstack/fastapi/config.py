@@ -11,6 +11,7 @@ from urllib.parse import quote
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 
+from ..constants import DEFAULT_SCOPE
 from .access_token_cache import AccessTokenCache, InMemoryAccessTokenCache
 
 if TYPE_CHECKING:
@@ -89,7 +90,7 @@ def configure(
         session_secret: Fernet key(s) for cookie encryption. Can be a single key
             or a list of keys for key rotation (first encrypts, all decrypt).
             Falls back to SWEATSTACK_SESSION_SECRET env var.
-        scopes: OAuth scopes to request. Defaults to ["profile", "data:read"].
+        scopes: OAuth scopes to request. Defaults to ``DEFAULT_SCOPE`` split on spaces.
         cookie_secure: Whether to set the Secure flag on cookies. If not specified,
             auto-detected from app_url (True for https, False for http).
         cookie_max_age: Session cookie lifetime in seconds. Defaults to 86400 (24h).
@@ -151,7 +152,7 @@ def configure(
         session_secret_obj = [_to_secret(s) for s in session_secret]
 
     if scopes is None:
-        scopes = ["profile", "data:read"]
+        scopes = DEFAULT_SCOPE.split()
 
     # Normalize prefix (strip trailing slash)
     auth_route_prefix = auth_route_prefix.rstrip("/")

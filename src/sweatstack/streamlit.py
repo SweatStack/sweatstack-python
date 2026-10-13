@@ -43,7 +43,7 @@ import httpx
 from pydantic import SecretStr
 
 from .client import Client
-from .constants import DEFAULT_URL
+from .constants import DEFAULT_SCOPE, DEFAULT_URL
 from .exceptions import SweatStackAuthError
 from .schemas import ActivitySummary, Metric, Scope, Sport, UserSummary
 from .utils import decode_jwt_body
@@ -150,7 +150,7 @@ class StreamlitAuth:
         Args:
             client_id: OAuth2 client ID. Falls back to SWEATSTACK_CLIENT_ID env var.
             client_secret: OAuth2 client secret. Falls back to SWEATSTACK_CLIENT_SECRET env var.
-            scopes: OAuth2 scopes. Falls back to SWEATSTACK_SCOPES env var. Defaults to data:read, profile.
+            scopes: OAuth2 scopes. Falls back to SWEATSTACK_SCOPES env var. Defaults to ``DEFAULT_SCOPE``.
             redirect_uri: OAuth2 redirect URI. Falls back to SWEATSTACK_REDIRECT_URI env var.
         """
         self.client_id = client_id or os.environ.get("SWEATSTACK_CLIENT_ID")
@@ -168,7 +168,7 @@ class StreamlitAuth:
         elif env_scopes := os.environ.get("SWEATSTACK_SCOPES"):
             self.scopes = [Scope(scope.strip().lower()) for scope in env_scopes.split(",")]
         else:
-            self.scopes = [Scope.data_read, Scope.profile]
+            self.scopes = [Scope(value) for value in DEFAULT_SCOPE.split()]
 
         self.redirect_uri = redirect_uri or os.environ.get("SWEATSTACK_REDIRECT_URI")
 

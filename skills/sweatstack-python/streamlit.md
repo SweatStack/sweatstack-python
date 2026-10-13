@@ -49,7 +49,7 @@ st.dataframe(auth.client.activities.list(output="pandas"))  # st.dataframe also 
 | `SWEATSTACK_CLIENT_ID` | OAuth client ID |
 | `SWEATSTACK_CLIENT_SECRET` | OAuth client secret |
 | `SWEATSTACK_REDIRECT_URI` | OAuth callback URI |
-| `SWEATSTACK_SCOPES` | Comma-separated scopes (default: `data:read,profile`) |
+| `SWEATSTACK_SCOPES` | Comma-separated scopes (default: `sweatstack.constants.DEFAULT_SCOPE`, i.e. `openid,profile,email,activities:read,offline_access`) |
 
 ## Selector Components
 
@@ -115,7 +115,7 @@ activities = auth.client.activities.list()
 - **Never cache `auth` or `auth.client` across sessions** (`st.cache_resource`, module globals): they hold one user's tokens. Build them at the top of every run.
 - **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`, and in proxy mode `sweatstack_proxy_api_key`, `sweatstack_proxy_refresh_token`. Don't overwrite these; `auth.client` keeps a renewed token there.
 - **`select_user()` replaces `auth.client`** with a client delegated to the selected user (its own access and refresh token). Call `auth.switch_to_principal_user()` to go back.
-- **Scopes default to `data:read,profile`** in Streamlit — not the broader set used by `Client.authenticate()`. Add `offline_access` if you need refresh tokens in direct OAuth mode.
+- **Scopes default to `DEFAULT_SCOPE`** (`openid profile email activities:read offline_access`), the same set as `Client.authenticate()` and the FastAPI plugin. Add `wellness:read`, `reproductive_health:read`, `workouts:write` or `sharing:read` when the app uses them.
 
 ## Account Status and the Portal
 

@@ -27,7 +27,7 @@ from pydantic import SecretStr
 
 from . import _frames, _renames, _transport
 from ._frames import FrameOutput, set_output
-from .constants import DEFAULT_URL
+from .constants import DEFAULT_SCOPE, DEFAULT_URL
 from .exceptions import (
     SweatStackAPIError,
     SweatStackAuthError,
@@ -647,7 +647,7 @@ class Client:
             client_id=OAUTH2_CLIENT_ID,
             redirect_uri=f"http://localhost:{port}",
             code_challenge=code_challenge,
-            scope="data:read data:write profile offline_access",
+            scope=DEFAULT_SCOPE,
             prompt=None,
         )
 

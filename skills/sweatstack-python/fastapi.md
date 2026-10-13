@@ -50,7 +50,7 @@ configure(
     client_secret: str = None,                # SWEATSTACK_CLIENT_SECRET
     app_url: str = None,                      # APP_URL
     session_secret: str = None,               # SWEATSTACK_SESSION_SECRET (Fernet key)
-    scopes: list[str] = ["profile", "data:read"],
+    scopes: list[str] = DEFAULT_SCOPE.split(),  # openid profile email activities:read offline_access
     cookie_secure: bool = None,               # auto-detected from app_url scheme
     cookie_max_age: int = 86400,              # session lifetime in seconds
     auth_route_prefix: str = "/auth/sweatstack",

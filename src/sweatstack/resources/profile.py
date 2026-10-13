@@ -39,14 +39,14 @@ class Profile(Resource):
         changes when the user connects one that does. Codes and capability keys are open sets:
         a value the client doesn't know parses as a pseudo-member; ignore it.
 
-        Accepts a token with ``data:read`` or ``profile``. Delegated tokens are allowed and
+        Accepts any valid token, whatever its scopes. Delegated tokens are allowed and
         always get ``destination=None``.
 
         Returns:
             AccountStatusResponse: ``issue`` and ``capabilities``.
 
         Raises:
-            SweatStackAuthError: If the token has neither ``data:read`` nor ``profile``.
+            SweatStackAuthError: If the token is invalid.
             SweatStackAPIError: If the API request fails for any other reason.
 
         Examples:

@@ -11,6 +11,41 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+Scopes are categories now. Request what your app uses.
+
+### Changed
+
+- The default scope of `Client.login()`, `client.oauth.authorization_url()`, the FastAPI plugin and
+  the Streamlit helper is one constant, `sweatstack.constants.DEFAULT_SCOPE`:
+  `openid profile email activities:read offline_access`. Add `wellness:read`,
+  `reproductive_health:read`, `workouts:write` or `sharing:read` when your app uses them.
+- `client.teams.authorize()` grants `activities:read` by default; only the delegable scopes are
+  ever granted.
+- `client.oauth.userinfo()` needs the `openid` scope; the name claims need `profile`, the email
+  needs `email`.
+- `client.profile.status()` needs no scope.
+- `Application.default_scopes` and `Application.purposes` replace `capabilities` on
+  `client.applications` (the old field is still accepted and translated).
+- The metabolic map responses have no `inputs`; the VO2 map has `vo2max_relative`.
+- The `dailies` capability and its issue codes are `wellness`, `wellness_not_granted` and
+  `wellness_no_source`.
+
+### Upgrading
+
+| Old | New |
+| --- | --- |
+| `scope="data:read data:write profile offline_access"` | `scope=DEFAULT_SCOPE` plus the categories you use |
+| `Scope.data_read` in `teams.authorize(scopes=...)` | `"activities:read"` and the other categories |
+| `userinfo()` with `profile` | `userinfo()` with `openid profile email` |
+| `response.inputs.body_mass` on a metabolic map | not published; `markers.vo2max_relative` on the VO2 map |
+| `status.capabilities["dailies"]` | `status.capabilities["wellness"]` |
+
+An app registered before the platform release keeps working with `data:read` and `data:write`
+for six months; see the platform changelog.
+
+
 ## [0.94.0] - 2026-10-12
 
 A client's tokens come from one source. Upgrade every app that other people sign in to.

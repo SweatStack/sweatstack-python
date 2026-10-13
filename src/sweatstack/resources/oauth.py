@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import urllib.parse
 
+from ..constants import DEFAULT_SCOPE
 from ..schemas import TokenResponse, UserInfoResponse
 from ._base import Resource
 
@@ -43,7 +44,7 @@ class OAuth(Resource):
         client_id: str,
         redirect_uri: str,
         code_challenge: str | None = None,
-        scope: str = "data:read data:write profile",
+        scope: str = DEFAULT_SCOPE,
         prompt: str | None = "none",
         state: str | None = None,
     ) -> str:
@@ -147,20 +148,21 @@ class OAuth(Resource):
 
         Endpoint: ``GET /api/v1/oauth/userinfo``
 
-        Requires the ``profile`` scope. Besides ``sub``, ``name``, ``given_name``,
-        ``family_name``, ``email`` and ``registered_at``, the response has ``issue`` (beta):
+        Requires the ``openid`` scope. ``sub`` and ``registered_at`` always come; the name claims
+        (``name``, ``given_name``, ``family_name``) need ``profile`` and ``email`` needs the
+        ``email`` scope, otherwise they are ``None``. The response also has ``issue`` (beta):
         ``None`` when there is nothing to say, otherwise the one thing to tell the user now.
         ``issue.destination`` says the user can fix it in the Portal: pass it to
         ``client.portal.sessions.create()`` when they click. It is ``None`` on delegated tokens
         and on ``syncing`` issues, so show a button only when it is set. Issues are reported only
-        for the capabilities your app declared it uses.
-        Without the ``profile`` scope, ``client.profile.status()`` gives the same ``issue``.
+        for the capabilities your app's scopes reach.
+        Without the ``openid`` scope, ``client.profile.status()`` gives the same ``issue``.
 
         Returns:
             UserInfoResponse: The claims and the optional ``issue``.
 
         Raises:
-            SweatStackAuthError: If the token lacks the ``profile`` scope.
+            SweatStackAuthError: If the token lacks the ``openid`` scope.
             SweatStackAPIError: If the API request fails for any other reason.
 
         Examples:
