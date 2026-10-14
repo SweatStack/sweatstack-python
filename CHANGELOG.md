@@ -13,7 +13,9 @@ https://docs.sweatstack.no/learn/python/upgrading/.
 
 ## [0.95.0] - 2026-10-13
 
-Scopes are categories now. Request what your app uses.
+Scopes are categories now. Request what your app uses. Breaking: the default scopes change
+without an error, and the metabolic map and capability names move; see **Upgrading** below, or
+hand the migration prompt to your coding agent.
 
 ### Changed
 
@@ -43,19 +45,47 @@ Scopes are categories now. Request what your app uses.
   now send the `python-sweatstack/<version>` User-Agent, like every other request the SDK
   makes. Before, they identified themselves as plain httpx.
 
+<!-- --8<-- [start:upgrading-0-95] -->
 ### Upgrading
 
-| Old | New |
-| --- | --- |
-| `scope="data:read data:write profile offline_access"` | `scope=DEFAULT_SCOPE` plus the categories you use |
-| `Scope.data_read` in `teams.authorize(scopes=...)` | `"activities:read"` and the other categories |
-| `userinfo()` with `profile` | `userinfo()` with `openid profile email` |
+| 0.94 | 0.95 |
+|---|---|
+| `scope="data:read data:write profile offline_access"`, or no `scope=` at all | **Silent:** the default is `DEFAULT_SCOPE` (`openid profile email activities:read offline_access`). Add the categories you use: `wellness`, `reproductive_health`, `workouts` and `sharing`, each as `:read` or `:write` |
+| `Scope.data_read` in `teams.authorize(scopes=...)`, or no `scopes=` | **Silent:** `"activities:read"` is the default, and only the delegable categories are granted; anything else is dropped |
+| `userinfo()` with `profile` | `userinfo()` with `openid profile email`; without `openid` it raises `SweatStackAuthError` |
 | `response.markers.fatmax` on a metabolic map | `response.fatmax` |
 | `response.inputs.body_mass` on a metabolic map | not published; `response.vo2max_relative` on the VO2 map |
 | `status.capabilities["dailies"]` | `status.capabilities["wellness"]` |
 
 An app registered before the platform release keeps working with `data:read` and `data:write`
 for six months; see the platform changelog.
+
+**Migration prompt.** Paste this into your coding agent:
+
+```text
+Upgrade this codebase to sweatstack 0.95, which replaces the data:read and data:write scope
+bundles with per-category scopes. The upgrade table is the "Upgrading" section of the 0.95.0
+entry in https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md
+(also at https://docs.sweatstack.no/learn/python/upgrading/). Read it first.
+
+Find every place the app requests or grants scopes (Client.login(), oauth.authorization_url(),
+sweatstack.fastapi.configure(scopes=...), StreamlitAuth(scopes=...) and SWEATSTACK_SCOPES,
+teams.authorize(scopes=...)) and:
+
+1. Replace data:read and data:write with the categories the app uses: activities, wellness,
+   reproductive_health, workouts and sharing, each as :read or :write. Start from
+   sweatstack.constants.DEFAULT_SCOPE (openid profile email activities:read offline_access)
+   and add to it. Do not keep the old bundles.
+2. Where the app calls userinfo(), request openid, plus profile and email for the claims it
+   shows.
+3. On the metabolic maps, read response.<marker> instead of response.markers.<marker>, drop
+   any use of response.inputs, and read status.capabilities["wellness"] where the app read
+   ["dailies"].
+
+Then run the code and the tests. A category the app forgot surfaces as SweatStackAuthError
+on the first call that needs it; add that category, not a bundle.
+```
+<!-- --8<-- [end:upgrading-0-95] -->
 
 
 ## [0.94.0] - 2026-10-12
