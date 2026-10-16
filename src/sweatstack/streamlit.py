@@ -45,7 +45,7 @@ from . import _transport
 from .client import Client
 from .constants import DEFAULT_SCOPE, DEFAULT_URL
 from .exceptions import SweatStackAuthError
-from .resources.oauth import build_authorization_url
+from .resources.oauth import _build_authorization_url
 from .schemas import ActivitySummary, Metric, Scope, Sport, UserSummary
 from .utils import decode_jwt_body
 
@@ -379,7 +379,7 @@ class StreamlitAuth:
                 "StreamlitAuth needs client_id and redirect_uri "
                 "(or SWEATSTACK_CLIENT_ID and SWEATSTACK_REDIRECT_URI)"
             )
-        return build_authorization_url(
+        return _build_authorization_url(
             DEFAULT_URL,
             client_id=self.client_id,
             redirect_uri=self.redirect_uri,

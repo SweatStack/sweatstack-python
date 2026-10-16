@@ -12,7 +12,7 @@ from ..schemas import TokenResponse, UserInfoResponse
 from ._base import Resource
 
 
-def build_authorization_url(
+def _build_authorization_url(
     base_url: str,
     *,
     client_id: str,
@@ -117,7 +117,7 @@ class OAuth(Resource):
             )
             ```
         """
-        return build_authorization_url(
+        return _build_authorization_url(
             self._client.url,
             client_id=client_id,
             redirect_uri=redirect_uri,
