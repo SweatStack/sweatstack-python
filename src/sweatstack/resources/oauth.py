@@ -12,6 +12,37 @@ from ..schemas import TokenResponse, UserInfoResponse
 from ._base import Resource
 
 
+def build_authorization_url(
+    base_url: str,
+    *,
+    client_id: str,
+    redirect_uri: str,
+    scope: str,
+    code_challenge: str | None = None,
+    prompt: str | None = None,
+    state: str | None = None,
+    nonce: str | None = None,
+    integration: str | None = None,
+    email_auth_mode: str | None = None,
+) -> str:
+    """The one place an ``/oauth/authorize`` URL is built: :meth:`OAuth.authorization_url`, the
+    FastAPI plugin and the Streamlit helper all call it. A parameter that is ``None`` or empty is left out."""
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": scope,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256" if code_challenge else None,
+        "prompt": prompt,
+        "state": state,
+        "nonce": nonce,
+        "integration": integration,
+        "email_auth_mode": email_auth_mode,
+    }
+    query = urllib.parse.urlencode({key: value for key, value in params.items() if value})
+    return urllib.parse.urljoin(base_url, "/oauth/authorize?" + query)
+
+
 class OAuth(Resource):
     """OAuth2 and OpenID Connect: build sign-in links, exchange codes, read the user's claims.
 
@@ -45,8 +76,11 @@ class OAuth(Resource):
         redirect_uri: str,
         code_challenge: str | None = None,
         scope: str = DEFAULT_SCOPE,
-        prompt: str | None = "none",
+        prompt: str | None = None,
         state: str | None = None,
+        nonce: str | None = None,
+        integration: str | None = None,
+        email_auth_mode: str | None = None,
     ) -> str:
         """Builds the URL to send a user to for signing in with SweatStack.
 
@@ -57,8 +91,15 @@ class OAuth(Resource):
             redirect_uri: Where SweatStack sends the user back to; must be registered.
             code_challenge: A PKCE challenge from :meth:`generate_pkce_params`.
             scope: Space-separated scopes.
-            prompt: The OAuth ``prompt``; ``None`` to omit it.
+            prompt: The OpenID Connect ``prompt``. Leave it out and SweatStack skips the consent
+                screen when the user's grant already covers the request; ``"consent"`` always
+                shows it.
             state: An opaque value to check on the way back, against CSRF.
+            nonce: Echoed in the ``id_token`` that comes with the code exchange.
+            integration: One provider (``"garmin_connect"``, ``"intervals_icu"``, ``"wahoo"``):
+                the user skips the sign-in chooser and goes straight to it.
+            email_auth_mode: ``"existing_only"`` presents email sign-in as for existing
+                accounts, so a new user picks a wearable sign-in instead.
 
         Returns:
             str: The authorization URL.
@@ -76,16 +117,17 @@ class OAuth(Resource):
             )
             ```
         """
-        params = {"client_id": client_id, "redirect_uri": redirect_uri, "scope": scope}
-        if prompt is not None:
-            params["prompt"] = prompt
-        if code_challenge:
-            params["code_challenge"] = code_challenge
-            params["code_challenge_method"] = "S256"
-        if state:
-            params["state"] = state
-        return urllib.parse.urljoin(
-            self._client.url, "/oauth/authorize?" + urllib.parse.urlencode(params)
+        return build_authorization_url(
+            self._client.url,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            scope=scope,
+            prompt=prompt,
+            state=state,
+            nonce=nonce,
+            integration=integration,
+            email_auth_mode=email_auth_mode,
         )
 
     def exchange_code(

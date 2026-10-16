@@ -6,7 +6,7 @@ import base64
 import json
 import logging
 import secrets
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse
 from .. import _transport
 from ..constants import DEFAULT_URL
 from ..exceptions import SweatStackAPIError, SweatStackConnectionError
+from ..resources.oauth import build_authorization_url
 from ..utils import decode_jwt_body
 from .config import get_config
 from .dependencies import _extract_expiry
@@ -162,14 +163,13 @@ def create_router() -> APIRouter:
         state = create_state(validated_next)
 
         # Build authorization URL
-        params = {
-            "client_id": config.client_id,
-            "redirect_uri": config.redirect_uri,
-            "scope": " ".join(config.scopes),
-            "state": state,
-            "prompt": "none",
-        }
-        auth_url = f"{DEFAULT_URL}/oauth/authorize?{urlencode(params)}"
+        auth_url = build_authorization_url(
+            DEFAULT_URL,
+            client_id=config.client_id,
+            redirect_uri=config.redirect_uri,
+            scope=" ".join(config.scopes),
+            state=state,
+        )
 
         # Set state cookie and redirect
         response = RedirectResponse(url=auth_url, status_code=302)

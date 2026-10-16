@@ -363,7 +363,6 @@ def field_types(model: type[BaseModel]) -> dict[str, FieldType]:
     }
 
 
-_DATETIME_FORMATS = frozenset({"date-time", "naive-date-time"})
 _STRING_FORMATS = {
     "date-time": "datetime",
     "naive-date-time": "naive_datetime",
@@ -392,8 +391,6 @@ def _field_type(node: dict, definitions: dict, path: str, stack: tuple[str, ...]
             return _field_type(options[0], definitions, path, stack)
         if options and all(option.get("type") in ("integer", "number") for option in options):
             return "float"
-        if options and all(option.get("format") in _DATETIME_FORMATS for option in options):
-            return "datetime"  # aware | naive: naive values are taken as UTC
         return _fallback(path, node)
 
     if "enum" in node or "const" in node:

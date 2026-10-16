@@ -642,7 +642,6 @@ class Client:
             redirect_uri=f"http://localhost:{port}",
             code_challenge=code_challenge,
             scope=DEFAULT_SCOPE,
-            prompt=None,
         )
 
         webbrowser.open(authorization_url)

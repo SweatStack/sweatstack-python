@@ -121,27 +121,6 @@ class TestPolarsSchema:
         # activity.traces[] would be TraceDetails again: each item is JSON text
         assert dict(activity.to_schema())["traces"] == pl.List(pl.String)
 
-    def test_aware_or_naive_datetime_union_is_utc(self):
-        from sweatstack.openapi_schemas import UserResponse
-
-        assert polars_schema(UserResponse)["registered_at"] == pl.Datetime("us", "UTC")
-
-        def user(registered_at):
-            return UserResponse(
-                id="u",
-                first_name="a",
-                last_name=None,
-                admin=False,
-                display_name="a",
-                is_managed=False,
-                registered_at=registered_at,
-            )
-
-        naive = user(datetime(2025, 1, 1, 12))
-        aware = user(datetime(2025, 1, 1, 12, tzinfo=timezone.utc))
-        df = models_to_polars([naive, aware], UserResponse)
-        assert df["registered_at"].to_list() == [datetime(2025, 1, 1, 12, tzinfo=timezone.utc)] * 2
-
     def test_dailies(self):
         schema = polars_schema(DailyResponse)
         assert schema["date"] == pl.Date

@@ -27,7 +27,6 @@ Example:
 
 import logging
 import os
-import urllib.parse
 from collections.abc import Callable
 from datetime import date
 
@@ -46,6 +45,7 @@ from . import _transport
 from .client import Client
 from .constants import DEFAULT_SCOPE, DEFAULT_URL
 from .exceptions import SweatStackAuthError
+from .resources.oauth import build_authorization_url
 from .schemas import ActivitySummary, Metric, Scope, Sport, UserSummary
 from .utils import decode_jwt_body
 
@@ -370,19 +370,21 @@ class StreamlitAuth:
 
         Returns:
             str: The complete authorization URL.
-        """
-        params = {
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
-            "scope": ",".join([scope.value for scope in self.scopes]),
-            "prompt": "none",
-        }
-        path = "/oauth/authorize"
-        authorization_url = urllib.parse.urljoin(
-            DEFAULT_URL, path + "?" + urllib.parse.urlencode(params)
-        )
 
-        return authorization_url
+        Raises:
+            ValueError: Without a client ID or a redirect URI.
+        """
+        if not self.client_id or not self.redirect_uri:
+            raise ValueError(
+                "StreamlitAuth needs client_id and redirect_uri "
+                "(or SWEATSTACK_CLIENT_ID and SWEATSTACK_REDIRECT_URI)"
+            )
+        return build_authorization_url(
+            DEFAULT_URL,
+            client_id=self.client_id,
+            redirect_uri=self.redirect_uri,
+            scope=" ".join(scope.value for scope in self.scopes),
+        )
 
     def _set_api_key(
         self, api_key: str | SecretStr | None, refresh_token: str | SecretStr | None

@@ -11,6 +11,25 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+### Added
+
+- `client.oauth.authorization_url()` takes `nonce`, `integration` and `email_auth_mode`, the
+  authorization parameters it was missing. `integration="garmin_connect"` sends the user straight
+  to Garmin, skipping the sign-in chooser.
+
+### Changed
+
+- No sign-in link sends `prompt` any more: `client.oauth.authorization_url()` defaults to
+  `prompt=None` instead of `"none"`, and the FastAPI plugin and the Streamlit helper leave it out.
+  Users see what they saw before: SweatStack skips the consent screen by itself when the user's
+  grant already covers the request.
+- The Streamlit helper separates scopes with spaces, as the other sign-in links do.
+- `StreamlitAuth.get_authorization_url()` raises `ValueError` without a client ID or redirect
+  URI, instead of building a link that fails on the server.
+
+
 ## [0.95.0] - 2026-10-13
 
 Scopes are categories now. Request what your app uses. Breaking: the default scopes change

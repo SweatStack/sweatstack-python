@@ -58,18 +58,14 @@ def _bind_sport_to_ost(path: Path) -> None:
     path.write_text("".join(out))
 
 
-# Fields the server sends without a UTC offset, though the OpenAPI schema says date-time.
-_NAIVE_OR_AWARE = {"registered_at", "backfill_loaded_until"}
-
-
 def _restore_naive_local_datetimes(path: Path) -> None:
     """Type local timestamps as ``NaiveDatetime`` rather than ``AwareDatetime``.
 
     The API returns *local* timestamps without a timezone, but datamodel-codegen types every
     ``date-time`` field as ``AwareDatetime`` -- which rejects a naive value. Retype the local fields
-    (those whose name ends in ``_local``) back to ``NaiveDatetime``, and let the fields the server
-    sends without an offset (``registered_at``, ``backfill_loaded_until``) accept either. AST-anchored and idempotent, so it survives regeneration (and replaces the
-    manual fixups this file has needed in the past).
+    (those whose name ends in ``_local``) back to ``NaiveDatetime``; every other timestamp the server
+    returns is UTC with ``Z``. AST-anchored and idempotent, so it survives regeneration (and replaces
+    the manual fixups this file has needed in the past).
     """
     src = path.read_text()
     tree = ast.parse(src)
@@ -83,12 +79,9 @@ def _restore_naive_local_datetimes(path: Path) -> None:
         annotation = ast.get_source_segment(src, node.annotation)
         if annotation is None:
             continue
-        if name.endswith("_local") and "AwareDatetime" in annotation:
-            retyped = annotation.replace("AwareDatetime", "NaiveDatetime")
-        elif name in _NAIVE_OR_AWARE and "NaiveDatetime" not in annotation:
-            retyped = annotation.replace("AwareDatetime", "AwareDatetime | NaiveDatetime", 1)
-        else:
+        if not (name.endswith("_local") and "AwareDatetime" in annotation):
             continue
+        retyped = annotation.replace("AwareDatetime", "NaiveDatetime")
         i = node.lineno - 1
         replace[i] = lines[i].replace(annotation, retyped, 1)
 

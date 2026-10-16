@@ -33,6 +33,7 @@ NOT_EXPOSED = {
     "Longitudinal.mean_max": {"date", "window_days"},  # deprecated on the server
     "Longitudinal.awd": {"date", "window_days", "format"},  # output= chooses the format
     "OAuth.exchange_code": {"grant_type", "refresh_token"},  # set by the method / another grant
+    "OAuth.authorization_url": {"code_challenge_method"},  # always S256, set with code_challenge
     "PortalSessions.create": {"client_id", "client_secret"},  # from the client's app credentials
 }
 # SDK parameters with no wire counterpart yet (AGENTS.md: client-side name filter).

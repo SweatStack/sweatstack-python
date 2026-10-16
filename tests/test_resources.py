@@ -142,12 +142,11 @@ class TestActivities:
         assert status.backfill_loaded_until.year == 2026
         assert sleep.call_count == 2
 
-    def test_backfill_status_accepts_the_servers_naive_timestamps(self, client, caplog):
-        """Regression: the server sends no offset; every line failed validation and was skipped."""
+    def test_backfill_status_skips_a_line_it_cannot_read(self, client, caplog):
         response = MagicMock()
         response.iter_lines.return_value = [
             "not json",
-            '{"backfill_loaded_until": "2021-09-27T00:56:34.667483"}',
+            '{"backfill_loaded_until": "2021-09-27T00:56:34.667483Z"}',
         ]
         http = MagicMock()
         http.__enter__.return_value = http
