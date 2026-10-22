@@ -38,7 +38,7 @@ except ImportError:
         "You can install it with:\n\n"
         "pip install 'sweatstack[streamlit]'\n\n"
     ) from None
-import httpx
+import httpx2
 from pydantic import SecretStr
 
 from . import _transport
@@ -424,7 +424,7 @@ class StreamlitAuth:
             "client_secret": self.client_secret,
             "code": code,
         }
-        auth = httpx.BasicAuth(username=self.client_id, password=self.client_secret)
+        auth = httpx2.BasicAuth(username=self.client_id, password=self.client_secret)
         response = _transport.post(
             f"{DEFAULT_URL}/api/v1/oauth/token",
             data=token_data,

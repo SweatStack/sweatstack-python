@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from sweatstack import PortalDestination, PortalSessionResponse
@@ -24,8 +24,8 @@ def app():
 
 
 def _http_returning(status_code: int, payload) -> MagicMock:
-    request = httpx.Request("POST", "https://test.sweatstack.no/api/v1/portal/sessions")
-    response = httpx.Response(status_code, json=payload, request=request)
+    request = httpx2.Request("POST", "https://test.sweatstack.no/api/v1/portal/sessions")
+    response = httpx2.Response(status_code, json=payload, request=request)
     http = MagicMock()
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)

@@ -4,7 +4,7 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 
@@ -60,7 +60,7 @@ class TestWhoami:
 
 class TestUserinfo:
     def test_issue_is_exposed(self, client):
-        request = httpx.Request("GET", "https://test.sweatstack.no/api/v1/oauth/userinfo")
+        request = httpx2.Request("GET", "https://test.sweatstack.no/api/v1/oauth/userinfo")
         payload = {
             "sub": "01JUSER",
             "name": "A",
@@ -75,7 +75,7 @@ class TestUserinfo:
         http = MagicMock()
         http.__enter__ = MagicMock(return_value=http)
         http.__exit__ = MagicMock(return_value=False)
-        http.get.return_value = httpx.Response(200, json=payload, request=request)
+        http.get.return_value = httpx2.Response(200, json=payload, request=request)
         with patch.object(client, "_http_client", return_value=http):
             user = client.oauth.userinfo()
         assert isinstance(user, UserInfoResponse)

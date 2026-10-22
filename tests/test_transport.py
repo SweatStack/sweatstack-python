@@ -1,7 +1,7 @@
 """The HTTP layer: connection reuse, timeouts, retries and the token refresh lock.
 
 Requests run through the real transport (``Client._request``, ``_http_client``,
-``_transport.Session``) against ``httpx.MockTransport``, so what is tested is what goes on the
+``_transport.Session``) against ``httpx2.MockTransport``, so what is tested is what goes on the
 wire. ``time.sleep`` is patched; the waits it would have slept are asserted instead.
 """
 
@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 import sweatstack
@@ -30,16 +30,16 @@ from sweatstack.schemas import TokenResponse
 URL = "https://test.sweatstack.no"
 
 
-def _client(handler, **kwargs) -> tuple[Client, list[httpx.Request]]:
+def _client(handler, **kwargs) -> tuple[Client, list[httpx2.Request]]:
     """A client whose pool answers with ``handler``; also returns the requests it received."""
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
 
-    def record(request: httpx.Request) -> httpx.Response:
+    def record(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
         return handler(request, len(seen))
 
     client = Client(api_key="user-token", url=URL, skip_token_expiry_check=True, **kwargs)
-    pool = httpx.Client(base_url=URL, transport=httpx.MockTransport(record))
+    pool = httpx2.Client(base_url=URL, transport=httpx2.MockTransport(record))
     client.__dict__["_pool_entry"] = (URL, pool)
     return client, seen
 
@@ -49,7 +49,7 @@ def _statuses(*codes, headers=None):
 
     def handler(request, n):
         code = codes[min(n, len(codes)) - 1]
-        return httpx.Response(code, json=[] if code < 400 else {"detail": "x"}, headers=headers)
+        return httpx2.Response(code, json=[] if code < 400 else {"detail": "x"}, headers=headers)
 
     return handler
 
@@ -72,16 +72,16 @@ class TestPolicy:
 
     def test_post_is_never_retried(self):
         assert _transport.wait_before_retry("post", 0, 2, 0.0) is None
-        assert _transport.wait_before_retry("post", 0, 2, 0.0, httpx.Response(503)) is None
+        assert _transport.wait_before_retry("post", 0, 2, 0.0, httpx2.Response(503)) is None
 
     @pytest.mark.parametrize("status", [400, 401, 403, 404, 409, 422])
     def test_client_errors_are_not_retried(self, status):
-        assert _transport.wait_before_retry("get", 0, 2, 0.0, httpx.Response(status)) is None
+        assert _transport.wait_before_retry("get", 0, 2, 0.0, httpx2.Response(status)) is None
 
     def test_retry_after_is_honoured_up_to_a_minute(self):
-        honoured = httpx.Response(429, headers={"retry-after": "3"})
+        honoured = httpx2.Response(429, headers={"retry-after": "3"})
         assert _transport.wait_before_retry("get", 0, 2, 0.0, honoured) == 3.0
-        too_long = httpx.Response(429, headers={"retry-after": "120"})
+        too_long = httpx2.Response(429, headers={"retry-after": "120"})
         assert _transport.wait_before_retry("get", 0, 2, 0.0, too_long) is None
 
     def test_the_budget_and_max_retries_stop_retrying(self):
@@ -123,7 +123,7 @@ class TestRetries:
 
     def test_connection_errors_are_retried_then_raised(self, sleep):
         def handler(request, n):
-            raise httpx.ConnectError("refused")
+            raise httpx2.ConnectError("refused")
 
         client, seen = _client(handler)
         with pytest.raises(SweatStackConnectionError):
@@ -196,7 +196,7 @@ class TestConnections:
 
     def test_derived_clients_keep_the_settings(self):
         client, _ = _client(
-            lambda request, n: httpx.Response(
+            lambda request, n: httpx2.Response(
                 200, json={"access_token": "a", "refresh_token": "r"}
             ),
             timeout=5.0,
@@ -233,7 +233,7 @@ class TestOutsideThePool:
     """``_transport.post``: the token calls the integrations make without a client."""
 
     def test_sends_the_sdk_user_agent_and_passes_everything_else_through(self):
-        with patch("httpx.post") as post:
+        with patch("httpx2.post") as post:
             _transport.post(URL, data={"grant_type": "x"}, timeout=3.0)
         assert post.call_args.args == (URL,)
         kwargs = post.call_args.kwargs
@@ -242,14 +242,14 @@ class TestOutsideThePool:
         assert kwargs["timeout"] == 3.0
 
     def test_keeps_the_callers_headers(self):
-        with patch("httpx.post") as post:
+        with patch("httpx2.post") as post:
             _transport.post(URL, headers={"Authorization": "Bearer t"})
         headers = post.call_args.kwargs["headers"]
         assert headers["Authorization"] == "Bearer t"
         assert headers["User-Agent"] == USER_AGENT
 
     def test_the_caller_wins_on_a_clash(self):
-        with patch("httpx.post") as post:
+        with patch("httpx2.post") as post:
             _transport.post(URL, headers={"user-agent": "mine/1"})
         assert post.call_args.kwargs["headers"]["User-Agent"] == "mine/1"
 
@@ -257,14 +257,14 @@ class TestOutsideThePool:
 HTTPX_REQUEST_NAMES = frozenset(
     {"get", "post", "put", "patch", "delete", "request", "stream", "Client", "AsyncClient"}
 )
-"""The ``httpx`` names that make a request or build something that does."""
+"""The ``httpx2`` names that make a request or build something that does."""
 
 MAY_CALL_HTTPX = {
     "_transport.py": "the pool's requests and post()",
     "client.py": "builds the pool, with the User-Agent",
     "cli.py": "a developer tool against a local server",
 }
-"""Modules allowed to call httpx directly, and why."""
+"""Modules allowed to call httpx2 directly, and why."""
 
 
 def test_only_the_transport_makes_requests():
@@ -279,16 +279,38 @@ def test_only_the_transport_makes_requests():
         if name in MAY_CALL_HTTPX:
             continue
         for node in ast.walk(ast.parse(path.read_text(), filename=name)):
-            if isinstance(node, ast.ImportFrom) and node.module == "httpx":
+            if isinstance(node, ast.ImportFrom) and node.module == "httpx2":
                 imported = {alias.name for alias in node.names} & HTTPX_REQUEST_NAMES
                 if imported:
-                    offenders.append(f"{name}:{node.lineno} from httpx import {sorted(imported)}")
+                    offenders.append(f"{name}:{node.lineno} from httpx2 import {sorted(imported)}")
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "httpx"
+                and node.func.value.id == "httpx2"
                 and node.func.attr in HTTPX_REQUEST_NAMES
             ):
-                offenders.append(f"{name}:{node.lineno} httpx.{node.func.attr}(...)")
+                offenders.append(f"{name}:{node.lineno} httpx2.{node.func.attr}(...)")
+    assert offenders == []
+
+
+def test_nothing_imports_httpx():
+    """The SDK depends on ``httpx2``, not ``httpx``.
+
+    The ``fastapi`` extra still installs ``httpx``, so a stray ``import httpx`` would pass the
+    suite and fail on a base install.
+    """
+    package = Path(sweatstack.__file__).parent
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        name = str(path.relative_to(package))
+        for node in ast.walk(ast.parse(path.read_text(), filename=name)):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [node.module or ""]
+            else:
+                continue
+            if any(module.split(".")[0] in {"httpx", "httpcore"} for module in modules):
+                offenders.append(f"{name}:{node.lineno}")
     assert offenders == []

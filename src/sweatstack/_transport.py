@@ -4,7 +4,7 @@ The policy follows the OpenAI, Anthropic and Stripe clients, with one difference
 never retried, because the SweatStack API has no idempotency keys and a retried create could
 create twice.
 
-This module is also the only place in the package that calls ``httpx`` to make a request:
+This module is also the only place in the package that calls ``httpx2`` to make a request:
 through a client's pool, or through :func:`post` for the token calls the FastAPI and Streamlit
 integrations make without a client. Both put the SDK's ``User-Agent`` on the wire, and
 ``tests/test_transport.py`` fails on a request made from anywhere else.
@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-import httpx
+import httpx2
 
 from .constants import USER_AGENT
 
@@ -42,7 +42,7 @@ def backoff(attempt: int) -> float:
     return min(0.5 * 2**attempt * random.uniform(0.75, 1.25), MAX_BACKOFF)
 
 
-def retry_after(response: httpx.Response) -> float | None:
+def retry_after(response: httpx2.Response) -> float | None:
     """The response's ``Retry-After`` in seconds, if it sent one as a number."""
     try:
         return float(response.headers["retry-after"])
@@ -55,7 +55,7 @@ def wait_before_retry(
     attempt: int,
     max_retries: int,
     waited: float,
-    response: httpx.Response | None = None,
+    response: httpx2.Response | None = None,
 ) -> float | None:
     """How long to wait before retrying, or ``None`` to stop.
 
@@ -80,16 +80,16 @@ def wait_before_retry(
     return wait
 
 
-def post(url: str, **kwargs: Any) -> httpx.Response:
-    """``httpx.post`` with the SDK's ``User-Agent``; the caller's headers win on a clash.
+def post(url: str, **kwargs: Any) -> httpx2.Response:
+    """``httpx2.post`` with the SDK's ``User-Agent``; the caller's headers win on a clash.
 
     For the one-off token calls the integrations make without a ``Client``. It adds the header
     and nothing else: no retry (a ``POST`` is never retried), no error translation and no
     timeout, so each caller keeps its own.
     """
-    headers = httpx.Headers({"User-Agent": USER_AGENT})
+    headers = httpx2.Headers({"User-Agent": USER_AGENT})
     headers.update(kwargs.pop("headers", None) or {})
-    return httpx.post(url, headers=headers, **kwargs)
+    return httpx2.post(url, headers=headers, **kwargs)
 
 
 class Session:
@@ -100,29 +100,29 @@ class Session:
     endpoints must never see it.
     """
 
-    def __init__(self, http: httpx.Client, headers: httpx.Headers, timeout: float) -> None:
+    def __init__(self, http: httpx2.Client, headers: httpx2.Headers, timeout: float) -> None:
         self._http = http
         self.headers = headers
         self._timeout = timeout
 
-    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx2.Response:
         return self._http.request(method, url, headers=self.headers, **kwargs)
 
-    def get(self, url: str, **kwargs: Any) -> httpx.Response:
+    def get(self, url: str, **kwargs: Any) -> httpx2.Response:
         return self.request("GET", url, **kwargs)
 
-    def post(self, url: str, **kwargs: Any) -> httpx.Response:
+    def post(self, url: str, **kwargs: Any) -> httpx2.Response:
         return self.request("POST", url, **kwargs)
 
-    def put(self, url: str, **kwargs: Any) -> httpx.Response:
+    def put(self, url: str, **kwargs: Any) -> httpx2.Response:
         return self.request("PUT", url, **kwargs)
 
-    def delete(self, url: str, **kwargs: Any) -> httpx.Response:
+    def delete(self, url: str, **kwargs: Any) -> httpx2.Response:
         return self.request("DELETE", url, **kwargs)
 
     @contextmanager
-    def stream(self, method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+    def stream(self, method: str, url: str, **kwargs: Any) -> Iterator[httpx2.Response]:
         """A streaming request. No read timeout: a stream may stay quiet for a while."""
-        timeout = httpx.Timeout(self._timeout, read=None)
+        timeout = httpx2.Timeout(self._timeout, read=None)
         with self._http.stream(method, url, headers=self.headers, timeout=timeout, **kwargs) as r:
             yield r

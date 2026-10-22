@@ -11,6 +11,20 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+### Changed
+
+- Requires Python 3.11 or later. On Python 3.10, pip and uv keep installing 0.96.
+- The SDK sends its requests with [`httpx2`](https://github.com/pydantic/httpx2), the maintained
+  continuation of `httpx`. Calling the SDK is unchanged, and errors are still the `SweatStack*`
+  exceptions.
+- HTTPS certificates are checked against the operating system's trust store instead of the
+  `certifi` bundle that `httpx` shipped. A root certificate installed on the machine, such as a
+  company proxy's, is now trusted. A Linux image without a CA bundle (the `ca-certificates`
+  package) can no longer connect; install it, or point `SSL_CERT_FILE` at a bundle.
+
+
 ## [0.96.0] - 2026-10-16
 
 ### Added

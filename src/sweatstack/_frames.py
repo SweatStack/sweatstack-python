@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import warnings
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import cache
 from importlib import import_module
@@ -489,7 +489,7 @@ def _plain_value(value: Any, node: FieldType) -> Any:
     if node == "string":
         return value if isinstance(value, str) else str(value)  # Sport and other value objects
     if node == "datetime" and isinstance(value, datetime) and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)  # naive value in a UTC column
+        return value.replace(tzinfo=UTC)  # naive value in a UTC column
     if node == "naive_datetime" and isinstance(value, datetime) and value.tzinfo is not None:
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value.astimezone(UTC).replace(tzinfo=None)
     return value  # date, timedelta, bool, int, float, datetime already matching

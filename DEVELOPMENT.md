@@ -17,7 +17,7 @@ uv run python -c "..."      # ad-hoc scripts
 uv run generate-response-models   # regenerate OpenAPI schemas (see below)
 ```
 
-Python ≥ 3.10 is supported; develop against the version pinned in
+Python ≥ 3.11 is supported; develop against the version pinned in
 `.python-version`.
 
 

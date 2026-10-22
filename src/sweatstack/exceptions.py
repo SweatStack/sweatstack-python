@@ -1,7 +1,7 @@
 """Typed exception hierarchy for the SweatStack client.
 
 This module defines all exceptions raised by the SweatStack library.
-No httpx types are exposed — this is the public error contract.
+No HTTP-library types are exposed — this is the public error contract.
 """
 
 

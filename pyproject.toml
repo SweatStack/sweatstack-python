@@ -7,14 +7,13 @@ license = "MIT"
 authors = [
     { name = "Aart Goossens", email = "aart@sweatstack.no" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["sweatstack", "sports", "fitness", "api", "client"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -24,7 +23,7 @@ classifiers = [
 # consumers and anyone who only needs the models. CI's bare-install job keeps it so.
 dependencies = [
     "email-validator>=2.2.0",
-    "httpx>=0.28.1",
+    "httpx2>=2.16.0",
     "open-sport-taxonomy[pydantic]>=0.10.0",
     "platformdirs>=4.0.0",
     "pydantic>=2.10.5",
@@ -91,7 +90,7 @@ evals = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["src/sweatstack/openapi_schemas.py"]
 
 [tool.ruff.lint]

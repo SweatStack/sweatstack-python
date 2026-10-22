@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -81,7 +81,7 @@ def create_webhook_payload(
 ) -> dict[str, Any]:
     """Create a webhook payload dict."""
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
     return {
         "user_id": user_id,
         "event_type": event_type,
@@ -306,7 +306,7 @@ class TestTokenStore:
             user_id="user_123",
             access_token="access_token_value",
             refresh_token="refresh_token_value",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
         store.save(tokens)
@@ -329,7 +329,7 @@ class TestTokenStore:
             user_id="user_123",
             access_token="access",
             refresh_token="refresh",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
         store.save(tokens)
@@ -351,13 +351,13 @@ class TestTokenStore:
             user_id="user_123",
             access_token="access_v1",
             refresh_token="refresh",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
         tokens2 = StoredTokens(
             user_id="user_123",
             access_token="access_v2",
             refresh_token="refresh",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
         store.save(tokens1)
@@ -375,7 +375,7 @@ class TestStoredTokensRepr:
             user_id="user_123",
             access_token="super_secret_access_token",
             refresh_token="super_secret_refresh_token",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
         repr_str = repr(tokens)
@@ -403,7 +403,7 @@ class TestSQLiteTokenStore:
             user_id="user_123",
             access_token="access",
             refresh_token="refresh",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
         # Save
@@ -430,13 +430,13 @@ class TestSQLiteTokenStore:
             user_id="user_123",
             access_token="access_v1",
             refresh_token="refresh",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
         tokens2 = StoredTokens(
             user_id="user_123",
             access_token="access_v2",
             refresh_token="refresh",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
 
         store.save(tokens1)

@@ -8,7 +8,7 @@ import logging
 import secrets
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
@@ -108,7 +108,7 @@ def _fetch_delegated_token(
             headers={"Authorization": f"Bearer {principal_tokens.access_token}"},
             json=body,
         )
-    except httpx.HTTPError as exc:
+    except httpx2.HTTPError as exc:
         raise SweatStackConnectionError(str(exc)) from exc
 
     if response.status_code == 403:
@@ -222,7 +222,7 @@ def create_router() -> APIRouter:
                     "redirect_uri": config.redirect_uri,
                 },
             )
-        except httpx.HTTPError as e:
+        except httpx2.HTTPError as e:
             logger.error("Token exchange error: %s", e)
             return error_redirect("token_exchange_failed")
 

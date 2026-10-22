@@ -7,7 +7,7 @@ are the regen guard: any construct the mapper does not know raises here (via
 
 import json
 import warnings
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from inspect import isclass
 
 import polars as pl
@@ -138,7 +138,7 @@ class TestModelsToPolars:
 
         assert df.shape == (2, len(ActivitySummary.model_fields))
         assert df["sport"].to_list() == ["cycling.road", "cycling.road"]
-        assert df["start"].to_list() == [datetime(2025, 6, 1, 8, tzinfo=timezone.utc)] * 2
+        assert df["start"].to_list() == [datetime(2025, 6, 1, 8, tzinfo=UTC)] * 2
         assert df["start_local"].to_list() == [datetime(2025, 6, 1, 10)] * 2
         assert df["duration"].to_list() == [timedelta(hours=2)] * 2
         assert df["metrics"].to_list() == [["power", "heart_rate"], ["speed"]]

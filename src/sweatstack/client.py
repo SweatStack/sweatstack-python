@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 from platformdirs import user_cache_dir, user_data_dir
 from pydantic import SecretStr
 
@@ -875,7 +875,7 @@ class Client:
     # Transport: the internal API the resources use
     # -------------------------------------------------------------------------
 
-    def _pool(self) -> httpx.Client:
+    def _pool(self) -> httpx2.Client:
         """The client's connection pool, created on first use and kept for its lifetime.
 
         Rebuilt if ``url`` changes. Authorization is per request (see ``_http_client``), so the
@@ -885,7 +885,7 @@ class Client:
         built = self.__dict__.get("_pool_entry")
         if built is not None and built[0] == url:
             return built[1]
-        pool = httpx.Client(
+        pool = httpx2.Client(
             base_url=url,
             headers={"User-Agent": USER_AGENT},
             timeout=self.timeout,
@@ -902,7 +902,7 @@ class Client:
         """A request scope on the client's connection pool, with the right Authorization header.
 
         Transport-level errors (DNS, timeouts, connection refused) are re-raised as
-        SweatStackConnectionError so consumers never see raw httpx types.
+        SweatStackConnectionError so consumers never see the HTTP library's types.
 
         Args:
             skip_token_check: Use the raw token without the expiry check (used during
@@ -911,7 +911,7 @@ class Client:
                 For the token exchange, which authenticates with the app's own credentials in
                 the body, so a user's bearer is never sent where it is not needed.
         """
-        headers = httpx.Headers({"User-Agent": USER_AGENT})
+        headers = httpx2.Headers({"User-Agent": USER_AGENT})
         if not auth:
             token = None
         elif skip_token_check:
@@ -924,7 +924,7 @@ class Client:
 
         try:
             yield _transport.Session(self._pool(), headers, self.timeout)
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             raise SweatStackConnectionError(str(exc)) from exc
 
     def _request(
@@ -934,7 +934,7 @@ class Client:
         *,
         auth: bool = True,
         **kwargs: Any,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """Send one request, retrying when safe, and raise the typed exception for an error status.
 
         Every resource method that makes a single request goes through here. Retries follow
@@ -981,7 +981,7 @@ class Client:
             waited += wait
             attempt += 1
 
-    def _raise_for_status(self, response: httpx.Response) -> None:
+    def _raise_for_status(self, response: httpx2.Response) -> None:
         if response.is_success:
             return
 
@@ -1008,7 +1008,7 @@ class Client:
         raise SweatStackAPIError(**common)
 
     @staticmethod
-    def _parse_error_body(response: httpx.Response) -> dict | str | None:
+    def _parse_error_body(response: httpx2.Response) -> dict | str | None:
         try:
             return response.json()
         except Exception:

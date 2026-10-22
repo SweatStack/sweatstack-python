@@ -6,11 +6,11 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 from urllib.parse import quote
 
-import httpx
+import httpx2
 from fastapi import Depends, HTTPException, Request, Response
 
 from .. import _transport
@@ -37,7 +37,7 @@ TOKEN_EXPIRY_MARGIN = 5
 # endpoint is normally sub-second; 10 seconds is generous enough to
 # absorb a one-off spike but tight enough that a hung server doesn't
 # pin a threadpool worker for minutes.
-REFRESH_HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+REFRESH_HTTP_TIMEOUT = httpx2.Timeout(10.0, connect=5.0)
 
 # Maximum time to wait for the per-session refresh lock. Set above
 # ``REFRESH_HTTP_TIMEOUT`` plus a small slack so that under normal
@@ -103,7 +103,7 @@ def _is_token_expiring(token: str) -> bool:
 def _extract_expiry(access_token: str) -> datetime:
     """Extract expiry time from JWT access token."""
     body = decode_jwt_body(access_token)
-    return datetime.fromtimestamp(body["exp"], tz=timezone.utc)
+    return datetime.fromtimestamp(body["exp"], tz=UTC)
 
 
 def _refresh_access_token(

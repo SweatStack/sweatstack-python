@@ -8,7 +8,7 @@ Covers:
 - Transport error wrapping
 """
 
-import httpx
+import httpx2
 import pytest
 
 from sweatstack import Client
@@ -146,9 +146,9 @@ class TestFormatting:
 
 
 def _make_response(status_code, headers=None, json_body=None, text_body=""):
-    """Create a mock httpx.Response for testing _raise_for_status."""
-    request = httpx.Request("GET", "https://api.sweatstack.no/api/v1/test")
-    response = httpx.Response(
+    """Create a mock httpx2.Response for testing _raise_for_status."""
+    request = httpx2.Request("GET", "https://api.sweatstack.no/api/v1/test")
+    response = httpx2.Response(
         status_code=status_code,
         request=request,
         headers=headers or {},
@@ -280,7 +280,7 @@ class TestTransportErrors:
 
         with pytest.raises(SweatStackConnectionError) as exc_info:
             with client._http_client(skip_token_check=True):
-                raise httpx.ConnectError("Connection refused")
+                raise httpx2.ConnectError("Connection refused")
 
         assert "Connection refused" in str(exc_info.value)
 
@@ -293,7 +293,7 @@ class TestTransportErrors:
 
         with pytest.raises(SweatStackConnectionError):
             with client._http_client(skip_token_check=True):
-                raise httpx.ReadTimeout("Read timed out")
+                raise httpx2.ReadTimeout("Read timed out")
 
     def test_connection_error_preserves_cause(self):
         client = Client.__new__(Client)
@@ -302,7 +302,7 @@ class TestTransportErrors:
         client._client_secret = None
         client.streamlit_compatible = False
 
-        original = httpx.ConnectError("DNS resolution failed")
+        original = httpx2.ConnectError("DNS resolution failed")
         with pytest.raises(SweatStackConnectionError) as exc_info:
             with client._http_client(skip_token_check=True):
                 raise original

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # dependencies = [
-#   "httpx",
+#   "httpx2",
 # ]
 # ///
 """
@@ -32,9 +32,9 @@ import hmac
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import httpx
+import httpx2
 
 
 def create_signature(payload: bytes, secret: str, timestamp: int) -> str:
@@ -55,14 +55,14 @@ def send_webhook(
     resource_id: str,
     secret: str,
     verbose: bool = False,
-) -> httpx.Response:
+) -> httpx2.Response:
     """Send a webhook to the specified URL."""
     # Create payload
     payload = {
         "user_id": user_id,
         "event_type": event_type,
         "resource_id": resource_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     payload_bytes = json.dumps(payload).encode()
@@ -79,7 +79,7 @@ def send_webhook(
         print(f"{'=' * 60}\n")
 
     # Send request
-    response = httpx.post(
+    response = httpx2.post(
         url,
         content=payload_bytes,
         headers={
@@ -176,10 +176,10 @@ Examples:
             if args.verbose and response.headers:
                 print(f"  Response headers: {dict(response.headers)}")
 
-        except httpx.ConnectError:
+        except httpx2.ConnectError:
             print(f"✗ Connection failed - is the server running at {args.url}?")
             sys.exit(1)
-        except httpx.TimeoutException:
+        except httpx2.TimeoutException:
             print("✗ Request timed out")
             sys.exit(1)
         except Exception as e:

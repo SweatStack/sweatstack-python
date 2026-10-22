@@ -4,7 +4,7 @@ Tests schema round-trips, DataFrame conversion, and enum handling
 without hitting the API.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import pytest
@@ -34,8 +34,8 @@ def sample_test_summary(sample_results: TestResults) -> TestSummary:
         id="test_001",
         title="Lab test Q1",
         sport=Sport("cycling"),
-        start=datetime(2026, 3, 15, 9, 0, tzinfo=timezone.utc),
-        end=datetime(2026, 3, 15, 11, 0, tzinfo=timezone.utc),
+        start=datetime(2026, 3, 15, 9, 0, tzinfo=UTC),
+        end=datetime(2026, 3, 15, 11, 0, tzinfo=UTC),
         results=sample_results,
         tags=["lab", "cycling"],
         start_local=datetime(2026, 3, 15, 10, 0),
@@ -134,8 +134,8 @@ class TestDataFrameConversion:
             TestSummary(
                 id=f"test_{i}",
                 sport=Sport("cycling"),
-                start=datetime(2026, 1, i + 1, 9, 0, tzinfo=timezone.utc),
-                end=datetime(2026, 1, i + 1, 11, 0, tzinfo=timezone.utc),
+                start=datetime(2026, 1, i + 1, 9, 0, tzinfo=UTC),
+                end=datetime(2026, 1, i + 1, 11, 0, tzinfo=UTC),
                 results=sample_results if i == 0 else None,
                 tags=[],
                 start_local=datetime(2026, 1, i + 1, 10, 0),

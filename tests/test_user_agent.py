@@ -1,8 +1,8 @@
 """The token calls the integrations make without a ``Client`` carry the SDK's User-Agent.
 
 Four call sites post to the token endpoints directly: the FastAPI refresh, login and delegated
-token, and the Streamlit login. Each goes through ``_transport.post``. ``httpx.post`` is patched
-here, so what is asserted is the request each site hands to httpx: the SDK's ``User-Agent``,
+token, and the Streamlit login. Each goes through ``_transport.post``. ``httpx2.post`` is patched
+here, so what is asserted is the request each site hands to httpx2: the SDK's ``User-Agent``,
 and everything the site sent before it got one. The guard that keeps new call sites honest is
 in ``test_transport.py``.
 """
@@ -12,7 +12,7 @@ import json
 import time
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 
 from sweatstack.constants import DEFAULT_URL, USER_AGENT
@@ -26,9 +26,9 @@ def _jwt(sub: str = "user_123") -> str:
     return f"header.{base64.urlsafe_b64encode(body).decode().rstrip('=')}.signature"
 
 
-def _token_response(**extra: str) -> httpx.Response:
+def _token_response(**extra: str) -> httpx2.Response:
     payload = {"access_token": _jwt(), "refresh_token": "refresh_123", **extra}
-    return httpx.Response(200, json=payload, request=httpx.Request("POST", TOKEN_URL))
+    return httpx2.Response(200, json=payload, request=httpx2.Request("POST", TOKEN_URL))
 
 
 class TestFastAPI:
@@ -52,7 +52,7 @@ class TestFastAPI:
     def test_refresh(self):
         from sweatstack.fastapi.dependencies import REFRESH_HTTP_TIMEOUT, _refresh_access_token
 
-        with patch("httpx.post", return_value=_token_response(access_token="new")) as post:
+        with patch("httpx2.post", return_value=_token_response(access_token="new")) as post:
             access_token, rotated = _refresh_access_token("refresh_123", "app_123", "secret_123")
 
         assert (access_token, rotated) == ("new", None)  # same refresh token echoed: no rotation
@@ -81,7 +81,7 @@ class TestFastAPI:
         state = create_state(None)
         http.cookies.set(STATE_COOKIE_NAME, state)
 
-        with patch("httpx.post", return_value=_token_response()) as post:
+        with patch("httpx2.post", return_value=_token_response()) as post:
             response = http.get(
                 "/auth/sweatstack/callback", params={"code": "code_123", "state": state}
             )
@@ -100,7 +100,7 @@ class TestFastAPI:
         from sweatstack.fastapi.routes import _fetch_delegated_token
 
         principal = TokenSet(access_token=_jwt("user_1"), refresh_token="r1", user_id="user_1")
-        with patch("httpx.post", return_value=_token_response()) as post:
+        with patch("httpx2.post", return_value=_token_response()) as post:
             delegated = _fetch_delegated_token(principal, "user_2", team_id="team_123")
 
         assert delegated.user_id == "user_2"
@@ -120,7 +120,7 @@ class TestStreamlit:
             auth = StreamlitAuth(
                 client_id="app_123", client_secret="secret_123", redirect_uri="http://x"
             )
-            with patch("httpx.post", return_value=_token_response()) as post:
+            with patch("httpx2.post", return_value=_token_response()) as post:
                 auth._exchange_token("code_123")
 
         kwargs = post.call_args.kwargs
@@ -128,4 +128,4 @@ class TestStreamlit:
         assert kwargs["headers"]["User-Agent"] == USER_AGENT
         assert kwargs["data"]["grant_type"] == "authorization_code"
         assert kwargs["data"]["code"] == "code_123"
-        assert isinstance(kwargs["auth"], httpx.BasicAuth)
+        assert isinstance(kwargs["auth"], httpx2.BasicAuth)

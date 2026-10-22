@@ -98,7 +98,7 @@ pandas (`summary.power.mean`) and structs in Polars (`.unnest("summary")`).
 
 ## Errors
 
-Everything derives from `SweatStackError`; never import `httpx`. `SweatStackAPIError` (has
+Everything derives from `SweatStackError`; never import `httpx2`. `SweatStackAPIError` (has
 `status_code`, `url`, `method`, `request_id`, `body`) splits into `SweatStackAuthError` (401,
 403), `SweatStackNotFoundError` (404), `SweatStackRateLimitError` (429, `retry_after`),
 `SweatStackBadRequestError` (other 4xx) and `SweatStackServerError` (5xx). Also

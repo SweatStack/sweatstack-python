@@ -9,7 +9,7 @@ All offline: the guard runs before ``_http_client`` is ever touched, so a bare
 ``Client.__new__(Client)`` instance is enough.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -18,7 +18,7 @@ from sweatstack import Sport
 from sweatstack.client import Client
 
 NAIVE = datetime(2026, 3, 15, 9, 0)
-AWARE_UTC = datetime(2026, 3, 15, 9, 0, tzinfo=timezone.utc)
+AWARE_UTC = datetime(2026, 3, 15, 9, 0, tzinfo=UTC)
 AWARE_ZONE = datetime(2026, 3, 15, 9, 0, tzinfo=ZoneInfo("Europe/Amsterdam"))
 
 

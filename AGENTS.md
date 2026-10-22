@@ -87,7 +87,7 @@ src/sweatstack/
 ├── _frames.py           # output= backends: parquet/models -> pandas/polars/arrow/bytes.
 ├── _renames.py          # Removed names -> replacement hints. Permanent; see "Breaking changes".
 ├── _transport.py        # Retry policy and the per-request Session on the client's connection pool.
-├── exceptions.py        # Public error contract. No httpx types leak.
+├── exceptions.py        # Public error contract. No HTTP-library types leak.
 ├── client.py            # Client: config, auth, delegation, transport (_request), resource attributes,
 │                        #   and the module-level interface (one shared default client).
 ├── resources/           # One module per URL segment: activities.py, traces.py, tests.py, ...
@@ -233,8 +233,8 @@ Both kinds take `output` as a keyword-only parameter and carry `@overload` stubs
 `Literal` values (clone the neighbours); `tests/typing/output_types.py` pins them.
 
 **Query parameters** are only sent when the caller supplied a non-default value. Repeatable
-ones go through `self._wire(value)` (R8). Always pass `.value` for enums into `httpx` params:
-`httpx` calls `str()`, which gives `"TraceResolution.linked"`, not `"linked"`.
+ones go through `self._wire(value)` (R8). Always pass `.value` for enums into `httpx2` params:
+`httpx2` calls `str()`, which gives `"TraceResolution.linked"`, not `"linked"`.
 
 
 ## Full-replace `replace` methods
@@ -309,7 +309,7 @@ construct fails the suite, not a user's notebook.
 ## Exceptions
 
 The hierarchy in `sweatstack/exceptions.py` is the **public** error
-contract — consumers should never need to import `httpx`.
+contract — consumers should never need to import `httpx2`.
 
 ```
 SweatStackError

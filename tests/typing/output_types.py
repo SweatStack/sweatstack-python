@@ -6,11 +6,11 @@ so pytest does not collect it.
 """
 
 from datetime import date
+from typing import assert_type
 
 import pandas as pd
 import polars as pl
 import pyarrow as pa
-from typing_extensions import assert_type  # typing.assert_type is 3.11+
 
 from sweatstack import ActivityDetails, ActivitySummary, Client, DailyResponse
 

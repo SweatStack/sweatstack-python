@@ -2,7 +2,7 @@ import ast
 import re
 from pathlib import Path
 
-import httpx
+import httpx2
 from datamodel_code_generator import DataModelType, InputFileType, generate
 
 
@@ -95,7 +95,7 @@ def _restore_naive_local_datetimes(path: Path) -> None:
 
 
 def generate_response_models():
-    response = httpx.get("http://localhost:8080/openapi.json")
+    response = httpx2.get("http://localhost:8080/openapi.json")
     response.raise_for_status()
     output_directory = Path(__file__).parent
     output = Path(output_directory / "openapi_schemas.py")

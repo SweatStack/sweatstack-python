@@ -126,7 +126,7 @@ class TestActivities:
         assert name == "ride.fit" and handle.closed
 
     def test_watch_backfill_status_reconnects_after_a_dropped_connection(self, client):
-        """Regression: auto_reconnect caught httpx errors the transport had already converted."""
+        """Regression: auto_reconnect caught transport errors the transport had already converted."""
         response = MagicMock()
         response.iter_lines.return_value = ['{"backfill_loaded_until": "2026-01-01T00:00:00Z"}']
         http = MagicMock()

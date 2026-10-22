@@ -8,7 +8,7 @@ Covers:
 - ``TraceResolution`` is exposed on the public package surface.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import sweatstack
 from sweatstack import TraceDetails, TraceResolution
@@ -18,7 +18,7 @@ from sweatstack.openapi_schemas import TraceCreateOrUpdate
 def _trace_details(**overrides) -> TraceDetails:
     base = dict(
         id="trace_001",
-        timestamp=datetime(2026, 3, 15, 9, 30, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 3, 15, 9, 30, tzinfo=UTC),
         timestamp_local=datetime(2026, 3, 15, 10, 30),
     )
     base.update(overrides)
@@ -39,7 +39,7 @@ class TestTestIdField:
 
     def test_trace_create_or_update_accepts_test_id(self):
         payload = TraceCreateOrUpdate(
-            timestamp=datetime(2026, 3, 15, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 3, 15, 9, 30, tzinfo=UTC),
             lactate=4.2,
             test_id="test_123",
         )
@@ -49,7 +49,7 @@ class TestTestIdField:
 
     def test_trace_create_or_update_test_id_defaults_to_none(self):
         payload = TraceCreateOrUpdate(
-            timestamp=datetime(2026, 3, 15, 9, 30, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 3, 15, 9, 30, tzinfo=UTC),
         )
 
         assert payload.test_id is None
