@@ -11,7 +11,7 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
-## [Unreleased]
+## [0.97.0] - 2026-10-22
 
 ### Changed
 
