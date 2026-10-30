@@ -124,7 +124,8 @@ GET, PUT and DELETE are retried (connection errors, timeouts, 408, 429, 5xx) up 
 `max_retries` times; POST never is. Use `max_retries=0` inside web requests.
 
 The access and refresh token come from one source: the arguments, else `SWEATSTACK_API_KEY`
-and `SWEATSTACK_REFRESH_TOKEN`, else the tokens `authenticate()` saved on this machine. A
+and `SWEATSTACK_REFRESH_TOKEN` (renewed by the app in `SWEATSTACK_CLIENT_ID` and
+`SWEATSTACK_CLIENT_SECRET`, if set), else the tokens `authenticate()` saved on this machine. A
 client given only an access token cannot renew it and raises `SweatStackTokenRefreshError` on
 expiry. In a server, build each user's client from that user's tokens with
 `ambient_credentials=False`: it then never reads or writes the machine's tokens.

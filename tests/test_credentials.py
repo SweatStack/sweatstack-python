@@ -12,10 +12,12 @@ import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
+import httpx2
 import pytest
 
-from sweatstack.client import Client
+from sweatstack.client import OAUTH2_CLIENT_ID, Client
 from sweatstack.exceptions import SweatStackTokenRefreshError
 from sweatstack.schemas import TokenResponse
 
@@ -259,3 +261,114 @@ class TestResolution:
         import sweatstack
 
         assert sweatstack.client._default_client.ambient_credentials is True
+
+
+class TestApp:
+    """Only the app a refresh token was issued to can renew it, with that app's secret.
+
+    What a refresh sends is read off the wire, so these pin the request the server sees.
+    """
+
+    @pytest.fixture
+    def renewed_by(self, monkeypatch):
+        """The ``(client_id, client_secret)`` of every refresh request, answered offline."""
+        sent: list[tuple[str, str | None]] = []
+
+        def token_endpoint(request: httpx2.Request) -> httpx2.Response:
+            form = parse_qs(request.content.decode())
+            sent.append((form["client_id"][0], form.get("client_secret", [None])[0]))
+            owner = OWNERS[form["refresh_token"][0]]
+            return httpx2.Response(200, json={"access_token": jwt(owner, 900), "expires_in": 900})
+
+        pool = httpx2.Client(base_url=URL, transport=httpx2.MockTransport(token_endpoint))
+        monkeypatch.setattr(Client, "_pool", lambda self: pool)
+        return sent
+
+    @pytest.fixture
+    def environment_pair(self, monkeypatch):
+        monkeypatch.setenv("SWEATSTACK_API_KEY", jwt("user_a", -60))
+        monkeypatch.setenv("SWEATSTACK_REFRESH_TOKEN", "refresh_a")
+
+    @pytest.fixture
+    def environment_app(self, monkeypatch):
+        monkeypatch.setenv("SWEATSTACK_CLIENT_ID", "app_123")
+        monkeypatch.setenv("SWEATSTACK_CLIENT_SECRET", "secret_123")
+
+    def test_an_environment_pair_is_renewed_by_the_environment_app(
+        self, renewed_by, environment_pair, environment_app
+    ):
+        client = Client(url=URL)
+        assert client.client_id == "app_123"  # before any request, too
+        assert acts_as(client) == "user_a"
+        assert renewed_by == [("app_123", "secret_123")]
+
+    def test_a_public_environment_app_sends_no_secret(
+        self, renewed_by, environment_pair, monkeypatch
+    ):
+        monkeypatch.setenv("SWEATSTACK_CLIENT_ID", "app_123")
+        assert acts_as(Client(url=URL)) == "user_a"
+        assert renewed_by == [("app_123", None)]
+
+    def test_without_an_environment_app_the_sdk_client_renews(self, renewed_by, environment_pair):
+        assert acts_as(Client(url=URL)) == "user_a"
+        assert renewed_by == [(OAUTH2_CLIENT_ID, None)]
+
+    def test_a_secret_without_a_client_id_is_ignored(
+        self, renewed_by, environment_pair, monkeypatch
+    ):
+        monkeypatch.setenv("SWEATSTACK_CLIENT_SECRET", "secret_123")
+        assert acts_as(Client(url=URL)) == "user_a"
+        assert renewed_by == [(OAUTH2_CLIENT_ID, None)]
+
+    def test_a_given_app_wins_and_never_takes_the_environment_secret(
+        self, renewed_by, environment_pair, environment_app
+    ):
+        assert acts_as(Client(url=URL, client_id="app_456")) == "user_a"
+        assert renewed_by == [("app_456", None)]
+
+    def test_a_given_secret_wins(self, renewed_by, environment_pair, environment_app):
+        assert acts_as(Client(url=URL, client_secret="secret_456")) == "user_a"
+        assert renewed_by == [("app_123", "secret_456")]
+
+    def test_it_never_applies_to_the_saved_pair(self, renewed_by, token_file, environment_app):
+        write_token_file(token_file, jwt("user_a", -60), "refresh_a")  # from authenticate()
+        assert acts_as(Client(url=URL)) == "user_a"
+        assert renewed_by == [(OAUTH2_CLIENT_ID, None)]
+
+    def test_it_never_applies_to_given_tokens(self, renewed_by, environment_app):
+        assert acts_as(Client(jwt("user_a", -60), refresh_token="refresh_a", url=URL)) == "user_a"
+        assert renewed_by == [(OAUTH2_CLIENT_ID, None)]
+
+    def test_a_new_sign_in_drops_it(self, renewed_by, environment_pair, environment_app):
+        client = Client(url=URL)
+        assert acts_as(client) == "user_a"
+        # What authenticate(force=True) does: tokens issued to the SDK's own client.
+        client.api_key, client.refresh_token = jwt("user_b", -60), "refresh_b"
+        assert acts_as(client) == "user_b"
+        assert renewed_by == [("app_123", "secret_123"), (OAUTH2_CLIENT_ID, None)]
+
+    def test_a_new_access_token_keeps_it(self, renewed_by, environment_pair, environment_app):
+        client = Client(url=URL)
+        assert acts_as(client) == "user_a"
+        client.api_key = jwt("user_a", -60)  # the refresh token is still the environment's
+        assert acts_as(client) == "user_a"
+        assert renewed_by == [("app_123", "secret_123")] * 2
+
+    def test_a_derived_client_keeps_it(self, renewed_by, environment_pair, environment_app):
+        derived = Client(url=URL)._with_tokens(
+            {"access_token": jwt("user_b", -60), "refresh_token": "refresh_b"}
+        )
+        assert acts_as(derived) == "user_b"
+        assert renewed_by == [("app_123", "secret_123")]
+
+    def test_the_module_level_client_picks_it_up(
+        self, renewed_by, environment_pair, environment_app, monkeypatch
+    ):
+        import sweatstack
+
+        client = sweatstack.client._default_client
+        monkeypatch.setattr(client, "url", URL)
+        for name in ("_api_key", "_refresh_token", "_client_id", "_environment_app"):
+            monkeypatch.setattr(client, name, None)
+        assert acts_as(client) == "user_a"
+        assert renewed_by == [("app_123", "secret_123")]

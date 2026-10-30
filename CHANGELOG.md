@@ -13,6 +13,17 @@ https://docs.sweatstack.no/learn/python/upgrading/.
 
 ## [Unreleased]
 
+### Added
+
+- `SWEATSTACK_CLIENT_ID` and `SWEATSTACK_CLIENT_SECRET` name the app that issued
+  `SWEATSTACK_API_KEY` and `SWEATSTACK_REFRESH_TOKEN`, so a client that takes its tokens from the
+  environment renews them with that app. Before, it renewed with the SDK's own client, which
+  SweatStack refuses for a token issued to another app: tokens your app hands to a notebook, a
+  job or a sandbox stopped working once the access token expired. Set the secret only if your app
+  exchanged the sign-in code with it. The variables never apply to tokens saved by
+  `authenticate()` or passed to `Client`, and `client_id=` and `client_secret=` given to `Client`
+  always win.
+
 ### Fixed
 
 - Polars output works in the browser (Pyodide, as in JupyterLite). Pyodide's Polars has no

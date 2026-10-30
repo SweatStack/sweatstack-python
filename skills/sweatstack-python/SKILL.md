@@ -88,7 +88,8 @@ pandas (`summary.power.mean`) and structs in Polars (`.unnest("summary")`).
 ## Authentication
 
 - Scripts and notebooks: `client.authenticate()` (browser once, tokens saved on the machine).
-- Headless: set `SWEATSTACK_API_KEY` (and `SWEATSTACK_REFRESH_TOKEN` for refresh); no
+- Headless: set `SWEATSTACK_API_KEY` (and `SWEATSTACK_REFRESH_TOKEN` for refresh, with
+  `SWEATSTACK_CLIENT_ID` and `SWEATSTACK_CLIENT_SECRET` when your own app issued them); no
   `authenticate()` call.
 - Apps where other people sign in: the Streamlit or FastAPI helper, see
   [streamlit.md](streamlit.md) and [fastapi.md](fastapi.md). In your own server, build one

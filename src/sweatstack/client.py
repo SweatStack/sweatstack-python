@@ -178,6 +178,12 @@ class Client:
     ambient_credentials: bool = True
     _api_key: SecretStr | None = None
     _refresh_token: SecretStr | None = None
+    # The app credentials given to the client; see ``_app`` for the ones a refresh uses.
+    _client_id: str | None = None
+    _client_secret: SecretStr | None = None
+    # The app that issued a refresh token loaded from the environment, as SWEATSTACK_CLIENT_ID
+    # and SWEATSTACK_CLIENT_SECRET name it. Cleared when a refresh token is set from elsewhere.
+    _environment_app: tuple[str, SecretStr | None] | None = None
     # Whether this client's tokens live in the token file, so a refresh is written back there.
     # Set by loading them from the file or by saving them to it; never by giving tokens directly.
     _file_backed: bool = False
@@ -215,13 +221,18 @@ class Client:
         ``SweatStackTokenRefreshError`` rather than renew with a refresh token from elsewhere.
         Only a client whose tokens came from the saved file writes a renewed token back to it.
 
+        Only the app a refresh token was issued to can renew it. That is the ``client_id``
+        and ``client_secret`` given here; else, for tokens from the environment, the app in
+        ``SWEATSTACK_CLIENT_ID`` and ``SWEATSTACK_CLIENT_SECRET``; else the SDK's own client,
+        which ``authenticate()`` signs in with.
+
         Args:
             api_key: Optional API access token. If not provided, will check environment or storage.
             refresh_token: Optional refresh token for automatic token renewal.
             url: Optional SweatStack instance URL. Defaults to production.
             streamlit_compatible: Set to True when using in Streamlit apps.
-            client_id: Optional OAuth client ID. Defaults to the public client ID.
-            client_secret: Optional OAuth client secret for confidential clients.
+            client_id: The client ID of the app the tokens were issued to.
+            client_secret: That app's client secret, if it exchanged the sign-in code with one.
             skip_token_expiry_check: If True, skip JWT expiry validation and use the token as-is.
                 Use this when token lifecycle is managed externally (e.g. by a proxy).
             output: Default container for every method that returns a collection:
@@ -270,7 +281,7 @@ class Client:
         self.streamlit_compatible = streamlit_compatible
         self.skip_token_expiry_check = skip_token_expiry_check
         self.output = _frames.check_frame_output(output)
-        self.client_id = client_id or OAUTH2_CLIENT_ID
+        self._client_id = client_id or None
         self.timeout = timeout
         self.max_retries = max_retries
         self.ambient_credentials = ambient_credentials
@@ -362,6 +373,13 @@ class Client:
     # sources, so a client given only an access token never renews with a refresh token that
     # another client saved on this machine, and a bare client in a server never becomes the
     # user who refreshed last. Only a file-backed client writes the file.
+    #
+    # A refresh token can only be renewed by the app it was issued to, with that app's secret
+    # if it has one. The file holds what authenticate() saved, issued to the SDK's own client.
+    # A pair in the environment may come from any app, so that app travels with it as
+    # SWEATSTACK_CLIENT_ID and SWEATSTACK_CLIENT_SECRET. It belongs to that refresh token: it
+    # never applies to a pair from elsewhere, and is dropped when the refresh token is replaced
+    # (a new sign-in). App credentials given to the client always win.
 
     def _resolve_credentials(self) -> tuple[str | None, str | None]:
         """The access token and the refresh token, as a pair from one source.
@@ -381,6 +399,8 @@ class Client:
                     self._api_key = _to_secret(access_token)
                     self._refresh_token = _to_secret(refresh_token)
                     self._file_backed = file_backed
+                    if not file_backed:
+                        self._environment_app = self._load_environment_app()
                     break
         return (
             self._api_key.get_secret_value() if self._api_key is not None else None,
@@ -391,22 +411,41 @@ class Client:
     def _load_environment_tokens() -> tuple[str | None, str | None]:
         return os.getenv("SWEATSTACK_API_KEY"), os.getenv("SWEATSTACK_REFRESH_TOKEN")
 
+    @staticmethod
+    def _load_environment_app() -> tuple[str, SecretStr | None] | None:
+        client_id = os.getenv("SWEATSTACK_CLIENT_ID")
+        if not client_id:
+            return None
+        return client_id, _to_secret(os.getenv("SWEATSTACK_CLIENT_SECRET") or None)
+
+    def _app(self) -> tuple[str, SecretStr | None]:
+        """The client ID and secret of the app that renews this client's tokens.
+
+        A given client ID wins, and a given secret too. Otherwise a pair from the environment
+        is renewed by the app the environment names, and any other pair by the SDK's own
+        client, which has no secret.
+        """
+        self._resolve_credentials()
+        if self._client_id is None and self._environment_app is not None:
+            client_id, client_secret = self._environment_app
+            return client_id, self._client_secret or client_secret
+        return self._client_id or OAUTH2_CLIENT_ID, self._client_secret
+
     def _do_token_refresh(self, refresh_token: str) -> TokenResponse:
         """Exchange the refresh token for a new access token.
 
         Raises:
             SweatStackTokenRefreshError: If the refresh request fails.
         """
+        client_id, client_secret = self._app()
         with self._http_client(skip_token_check=True) as client:
             response = client.post(
                 "/api/v1/oauth/token",
                 data={
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
-                    "client_id": self.client_id,
-                    "client_secret": self._client_secret.get_secret_value()
-                    if self._client_secret
-                    else None,
+                    "client_id": client_id,
+                    "client_secret": client_secret.get_secret_value() if client_secret else None,
                 },
             )
 
@@ -495,15 +534,28 @@ class Client:
     @refresh_token.setter
     def refresh_token(self, value: str | SecretStr | None):
         self._refresh_token = _to_secret(value)
+        self._environment_app = None  # that app issued the environment's token, not this one
+
+    @property
+    def client_id(self) -> str:
+        """The client ID of the app that renews this client's tokens.
+
+        See ``Client`` for which app that is.
+        """
+        return self._app()[0]
+
+    @client_id.setter
+    def client_id(self, value: str | None):
+        self._client_id = value or None
 
     @property
     def client_secret(self) -> SecretStr | None:
-        """The OAuth client secret for confidential clients.
+        """The client secret of the app that renews this client's tokens, if it has one.
 
         Returns a SecretStr to prevent accidental logging of the secret.
         Use .get_secret_value() to get the actual secret string.
         """
-        return self._client_secret
+        return self._app()[1]
 
     @client_secret.setter
     def client_secret(self, value: str | SecretStr | None):
@@ -580,7 +632,9 @@ class Client:
         sign-in on this machine. Opens the browser for a SweatStack sign-in only when none are
         found, or when ``force=True``.
 
-        In headless environments, set the environment variables instead of calling this.
+        In headless environments, set the environment variables instead of calling this, with
+        ``SWEATSTACK_CLIENT_ID`` and ``SWEATSTACK_CLIENT_SECRET`` when your own app issued the
+        tokens.
 
         Args:
             force: Sign in again even if credentials exist.
@@ -732,14 +786,18 @@ class Client:
         return self._with_tokens(tokens)
 
     def _with_tokens(self, tokens: dict[str, Any]) -> Client:
-        """A new client with these tokens and this client's settings."""
+        """A new client with these tokens and this client's settings.
+
+        The tokens were issued to this client's app, so the new client renews them with it.
+        """
+        client_id, client_secret = self._app()
         return self.__class__(
             api_key=tokens["access_token"],
             refresh_token=tokens["refresh_token"],
             url=self._url,
             streamlit_compatible=self.streamlit_compatible,
-            client_id=self.client_id,
-            client_secret=self._client_secret,
+            client_id=client_id,
+            client_secret=client_secret,
             output=self.output,
             timeout=self.timeout,
             max_retries=self.max_retries,
