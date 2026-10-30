@@ -285,6 +285,19 @@ class TestApp:
         return sent
 
     @pytest.fixture
+    def answer(self, monkeypatch):
+        """Makes the token endpoint answer every refresh request with an error status."""
+
+        def answer_with(status: int) -> None:
+            def token_endpoint(request: httpx2.Request) -> httpx2.Response:
+                return httpx2.Response(status, json={"error": "invalid_grant"})
+
+            pool = httpx2.Client(base_url=URL, transport=httpx2.MockTransport(token_endpoint))
+            monkeypatch.setattr(Client, "_pool", lambda self: pool)
+
+        return answer_with
+
+    @pytest.fixture
     def environment_pair(self, monkeypatch):
         monkeypatch.setenv("SWEATSTACK_API_KEY", jwt("user_a", -60))
         monkeypatch.setenv("SWEATSTACK_REFRESH_TOKEN", "refresh_a")
@@ -372,3 +385,24 @@ class TestApp:
             monkeypatch.setattr(client, name, None)
         assert acts_as(client) == "user_a"
         assert renewed_by == [("app_123", "secret_123")]
+
+    @pytest.mark.parametrize("status", [400, 401])
+    def test_a_refusal_says_the_environment_app_renewed(
+        self, answer, environment_pair, environment_app, status
+    ):
+        answer(status)
+        with pytest.raises(SweatStackTokenRefreshError, match=r"SWEATSTACK_CLIENT_ID \(app_123\)"):
+            _ = Client(url=URL).api_key
+
+    @pytest.mark.parametrize(
+        ("status", "client_id"),
+        [(503, None), (400, "app_456")],
+        ids=["an outage", "a given app"],
+    )
+    def test_other_failures_do_not_mention_it(
+        self, answer, environment_pair, environment_app, status, client_id
+    ):
+        answer(status)
+        with pytest.raises(SweatStackTokenRefreshError) as raised:
+            _ = Client(url=URL, client_id=client_id).api_key
+        assert "SWEATSTACK_CLIENT_ID" not in str(raised.value)

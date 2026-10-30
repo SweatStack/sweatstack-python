@@ -24,6 +24,15 @@ https://docs.sweatstack.no/learn/python/upgrading/.
   `authenticate()` or passed to `Client`, and `client_id=` and `client_secret=` given to `Client`
   always win.
 
+### Changed
+
+- If your environment sets `SWEATSTACK_CLIENT_ID` for the Streamlit or FastAPI helper and also
+  holds a `SWEATSTACK_REFRESH_TOKEN` that `authenticate()` issued, a plain `Client()` there now
+  renews that token with your app, which SweatStack refuses: the renewal fails once the access
+  token expires, with an error that says why. Unset `SWEATSTACK_CLIENT_ID` and
+  `SWEATSTACK_CLIENT_SECRET` for that process, or pass them to the helper as `client_id=` and
+  `client_secret=` instead.
+
 ### Fixed
 
 - Polars output works in the browser (Pyodide, as in JupyterLite). Pyodide's Polars has no

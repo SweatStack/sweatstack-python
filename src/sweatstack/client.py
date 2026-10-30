@@ -426,10 +426,14 @@ class Client:
         client, which has no secret.
         """
         self._resolve_credentials()
-        if self._client_id is None and self._environment_app is not None:
-            client_id, client_secret = self._environment_app
+        if (app := self._renewing_environment_app()) is not None:
+            client_id, client_secret = app
             return client_id, self._client_secret or client_secret
         return self._client_id or OAUTH2_CLIENT_ID, self._client_secret
+
+    def _renewing_environment_app(self) -> tuple[str, SecretStr | None] | None:
+        """The environment's app, when it is the one that renews this client's tokens."""
+        return self._environment_app if self._client_id is None else None
 
     def _do_token_refresh(self, refresh_token: str) -> TokenResponse:
         """Exchange the refresh token for a new access token.
@@ -452,7 +456,16 @@ class Client:
             try:
                 self._raise_for_status(response)
             except SweatStackAPIError as e:
-                raise SweatStackTokenRefreshError(f"Token refresh request failed: {e}") from e
+                message = f"Token refresh request failed: {e}"
+                refused = isinstance(e, (SweatStackAuthError, SweatStackBadRequestError))
+                if refused and self._renewing_environment_app() is not None:
+                    message += (
+                        " The tokens came from the environment, so they were renewed with the "
+                        f"app in SWEATSTACK_CLIENT_ID ({client_id}), which works only for tokens "
+                        "that app issued. If authenticate() issued them, unset "
+                        "SWEATSTACK_CLIENT_ID and SWEATSTACK_CLIENT_SECRET for this process."
+                    )
+                raise SweatStackTokenRefreshError(message) from e
 
             return TokenResponse.model_validate(response.json())
 
