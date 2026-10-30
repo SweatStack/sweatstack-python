@@ -32,6 +32,9 @@ https://docs.sweatstack.no/learn/python/upgrading/.
   token expires, with an error that says why. Unset `SWEATSTACK_CLIENT_ID` and
   `SWEATSTACK_CLIENT_SECRET` for that process, or pass them to the helper as `client_id=` and
   `client_secret=` instead.
+- `DailySource` is an open enum, like `Metric` and `DailyMeasure`: a `source` this version does
+  not know (on a daily, a marker or a max effort) becomes a `DailySource` with that value instead
+  of failing the whole response, so a new source on SweatStack never breaks this version.
 
 ### Fixed
 

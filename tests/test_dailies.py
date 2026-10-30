@@ -9,8 +9,8 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from sweatstack import DailyMeasure, DailyResponse, _frames
-from sweatstack.openapi_schemas import DailySource, DailyStatus
+from sweatstack import DailyMeasure, DailyResponse, DailySource, _frames
+from sweatstack.openapi_schemas import DailyStatus, MarkerRowResponse, MaxEffortRowResponse
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -127,3 +127,48 @@ class TestSchemaRoundTrip:
             restored = DailyResponse.model_validate(payload)
             assert restored.source is None
             assert restored.status is DailyStatus(status)
+
+
+@pytest.mark.parametrize(
+    "model, row",
+    [
+        (DailyResponse, {"date": "2026-03-10", "value": 82.5, "status": "stored"}),
+        (
+            MarkerRowResponse,
+            {
+                "id": "m1",
+                "sport": "cycling",
+                "marker": "second_threshold",
+                "metric": "power",
+                "value": 280.0,
+                "date": "2026-03-10",
+                "provenance": "declared",
+                "pinned": False,
+                "application_id": None,
+                "activity_id": None,
+            },
+        ),
+        (
+            MaxEffortRowResponse,
+            {
+                "id": "e1",
+                "sport": "cycling",
+                "metric": "power",
+                "duration": 300,
+                "distance": None,
+                "value": 350.0,
+                "date": "2026-03-10",
+                "provenance": "measured",
+                "title": None,
+                "application_id": None,
+                "activity_id": None,
+            },
+        ),
+    ],
+    ids=["daily", "marker", "max_effort"],
+)
+def test_source_is_an_open_set(model, row):
+    # `DailySource` is opened in schemas.py (`_open_enum`): the API may add `source` values.
+    assert model.model_validate({**row, "source": "manual"}).source is DailySource.manual
+    added_later = model.model_validate({**row, "source": "a_source_added_later"}).source
+    assert isinstance(added_later, DailySource) and added_later.value == "a_source_added_later"

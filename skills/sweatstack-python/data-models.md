@@ -48,7 +48,8 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
   `end_local`, `results` (`TestResults`: thresholds `lt1`, `lt2`, `vt1`, `vt2`, `mlss`, `fatmax`
   as `Marker`s, plus `vo2max`, `critical_power`, `w_prime`, ...), `tags`, `created_by`;
   `TestDetails` adds the resolved `traces` and overlapping `activities`.
-- **DailyResponse**: `date`, `value`, `status`, `source`.
+- **DailyResponse**: `date`, `value`, `status`, `source` (`DailySource`, an open set: `manual`,
+  `garmin_connect`, ...; markers and max efforts carry it too).
 - **UserSummary** (`users.list()`): `id`, `first_name`, `last_name`, `display_name`, `scopes`,
   `is_managed`.
 - **UserResponse** (`users.create()`, `retrieve()`, `update()`): `id`, `first_name`,

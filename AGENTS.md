@@ -137,7 +137,7 @@ it automatically.
 - **Enum-typed params accept `Enum | str`** and route through
   `_enums_to_strings`. Don't introduce strict-enum-only parameters.
 - **Open enums stay open.** When the server documents an enum as an open
-  set (metrics, scopes, daily measures, status codes, capabilities),
+  set (metrics, scopes, daily measures, sources, status codes, capabilities),
   register it with `_open_enum(...)` in `schemas.py` so unknown values
   parse as pseudo-members. Leave closed sets strict.
 - **Never retry a request the server can't safely repeat.** `_transport.RETRYABLE_METHODS`
