@@ -20,6 +20,7 @@ package imports without any of them (enforced by CI's bare-install job).
 from __future__ import annotations
 
 import json
+import sys
 import warnings
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -185,15 +186,22 @@ def parquet_to_pandas(content: bytes) -> pd.DataFrame:
 
 def parquet_to_polars(content: bytes) -> pl.DataFrame:
     """Parquet bytes to a Polars DataFrame with the wire dtypes, except
-    Float16 -> Float32 (Polars supports few operations on Float16)."""
+    Float16 -> Float32 (Polars supports few operations on Float16).
+
+    In the browser (Pyodide), Polars is built without its Parquet reader, so the bytes go
+    through pyarrow, which Pyodide ships, and ``pl.from_arrow``."""
     pl = require("polars")
 
-    df = pl.read_parquet(BytesIO(content))
+    if sys.platform == "emscripten":
+        df = pl.from_arrow(parquet_to_arrow(content))
+    else:
+        df = pl.read_parquet(BytesIO(content))
+        metadata = pl.read_parquet_metadata(BytesIO(content))
+        df = df.select(_index_columns_first(df.columns, metadata.get("pandas")))
     float16 = getattr(pl, "Float16", None)  # older Polars already reads float16 as Float32
     if float16 is not None:
         df = df.cast({name: pl.Float32 for name, dtype in df.schema.items() if dtype == float16})
-    metadata = pl.read_parquet_metadata(BytesIO(content))
-    return df.select(_index_columns_first(df.columns, metadata.get("pandas")))
+    return df
 
 
 def parquet_to_arrow(content: bytes) -> Any:

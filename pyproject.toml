@@ -53,6 +53,8 @@ polars = [
     # >=1.30 verified: reads the server's float16 columns (as Float32 before Float16
     # support landed, as Float16 after; the client casts to Float32 either way).
     "polars>=1.30",
+    # Pyodide's Polars has no Parquet reader; the client reads through pyarrow there.
+    "pyarrow>=20.0.0; sys_platform == 'emscripten'",
 ]
 streamlit = [
     "sweatstack[pandas]",

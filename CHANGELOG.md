@@ -11,6 +11,15 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+### Fixed
+
+- Polars output works in the browser (Pyodide, as in JupyterLite). Pyodide's Polars has no
+  Parquet reader, so every time series and mean-max call raised an `AttributeError`; the client
+  now reads through pyarrow there, and `sweatstack[polars]` installs pyarrow on Pyodide.
+
+
 ## [0.97.0] - 2026-10-22
 
 ### Changed

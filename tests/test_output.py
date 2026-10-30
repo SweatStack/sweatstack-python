@@ -14,6 +14,7 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pytest
+from polars.testing import assert_frame_equal
 
 import sweatstack
 from sweatstack import _frames
@@ -349,3 +350,24 @@ class TestPropagation:
             selected = auth.select_activity()
         assert selected.id == "a1"
         assert auth.client.activities.list.call_args.kwargs["output"] == "models"
+
+
+# ---------------------------------------------------------------------------
+# Polars in the browser
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("content", [_mean_max_with_index(), _mean_max_without_index()])
+def test_polars_in_pyodide_reads_through_arrow_with_the_same_result(monkeypatch, content):
+    """Pyodide's Polars has no Parquet reader; the pyarrow route must give the same frame."""
+    expected = _frames.parquet_to_polars(content)
+
+    def no_parquet_reader(*args, **kwargs):
+        raise AttributeError(
+            "type object 'builtins.PyLazyFrame' has no attribute 'new_from_parquet'"
+        )
+
+    monkeypatch.setattr(pl, "read_parquet", no_parquet_reader)
+    monkeypatch.setattr(pl, "read_parquet_metadata", no_parquet_reader)
+    monkeypatch.setattr(_frames.sys, "platform", "emscripten")
+    assert_frame_equal(_frames.parquet_to_polars(content), expected)
