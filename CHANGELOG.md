@@ -11,7 +11,7 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
-## [Unreleased]
+## [0.99.0] - 2026-11-09
 
 Records say who wrote them and which platform their data came from, as two separate answers.
 Breaking: `DailyResponse.source`, `SourceResponse.origin` and `DailySource` are gone; see
