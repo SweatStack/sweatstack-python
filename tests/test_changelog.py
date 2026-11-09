@@ -15,20 +15,36 @@ CHANGELOG = (ROOT / "CHANGELOG.md").read_text()
 UPGRADING = (ROOT / "UPGRADING.md").read_text()
 
 ENTRY = re.compile(r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})\n", re.M)
+UNRELEASED = re.compile(r"^## \[Unreleased\]\n", re.M)
 
 
-def _entries() -> dict[str, tuple[str, str]]:
-    """``{version: (heading, body)}`` for every release entry."""
-    matches = list(ENTRY.finditer(CHANGELOG))
+def _next_minor(version: str) -> str:
+    major, minor, _ = version.split(".")
+    return f"{major}.{int(minor) + 1}.0"
+
+
+def _entries(changelog: str) -> dict[str, tuple[str, str]]:
+    """``{version: (heading, body)}`` for every release entry.
+
+    ``## [Unreleased]`` counts as the next minor release, the version it will get (a breaking
+    change is always a minor). So the work in progress is held to the same rules from its first
+    commit, and not only once the release renames the heading.
+    """
+    matches = list(ENTRY.finditer(changelog))
     entries = {}
     for match, following in zip(matches, matches[1:] + [None], strict=True):
-        end = following.start() if following else len(CHANGELOG)
+        end = following.start() if following else len(changelog)
         heading = match.group(0).removeprefix("## ").strip()
-        entries[match.group("version")] = (heading, CHANGELOG[match.end() : end])
+        entries[match.group("version")] = (heading, changelog[match.end() : end])
+    unreleased = UNRELEASED.search(changelog)
+    if unreleased:
+        assert matches and unreleased.end() <= matches[0].start(), "[Unreleased] comes first"
+        body = changelog[unreleased.end() : matches[0].start()]
+        entries[_next_minor(matches[0].group("version"))] = ("[Unreleased]", body)
     return entries
 
 
-ENTRIES = _entries()
+ENTRIES = _entries(CHANGELOG)
 BREAKING = {v for v, (_, body) in ENTRIES.items() if re.search(r"\bbreaking\b", body, re.I)}
 UPGRADING_SECTIONS = {v for v, (_, body) in ENTRIES.items() if "### Upgrading" in body}
 
@@ -39,6 +55,17 @@ def _minor(version: str) -> str:
 
 def test_the_changelog_parses():
     assert "0.91.0" in ENTRIES and "0.91.0" in BREAKING and "0.91.0" in UPGRADING_SECTIONS
+
+
+def test_unreleased_is_checked_as_the_next_minor():
+    changelog = (
+        "# Changelog\n\n## [Unreleased]\n\nBreaking: x.\n\n"
+        "## [0.98.1] - 2026-10-31\n\nFixed.\n\n## [0.98.0] - 2026-10-30\n\nAdded.\n"
+    )
+    entries = _entries(changelog)
+    assert entries["0.99.0"] == ("[Unreleased]", "\nBreaking: x.\n\n")
+    assert entries["0.98.1"] == ("[0.98.1] - 2026-10-31", "\nFixed.\n\n")
+    assert "0.99.0" not in _entries(changelog.replace("## [Unreleased]\n\nBreaking: x.\n\n", ""))
 
 
 @pytest.mark.parametrize("version", sorted(BREAKING))

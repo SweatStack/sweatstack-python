@@ -5,16 +5,13 @@ the CHANGELOG, so code written against an older release (or an agent's stale tra
 fails with a fix rather than a bare ``AttributeError``.
 """
 
-import re
-from pathlib import Path
-
 import pytest
 
 import sweatstack
 from sweatstack._renames import REMOVED_IN
 from sweatstack.client import Client
 
-CHANGELOG = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text()
+from .test_changelog import ENTRIES
 
 
 @pytest.mark.parametrize("name", sorted(REMOVED_IN))
@@ -42,10 +39,11 @@ def test_module_error_names_the_replacement(name):
 
 @pytest.mark.parametrize("name", sorted(REMOVED_IN))
 def test_removed_name_is_in_its_changelog_entry(name):
+    # ENTRIES counts [Unreleased] as the next minor, so a removal is checked from its own commit.
     release, _ = REMOVED_IN[name]
-    entry = re.search(rf"^## \[{re.escape(release)}\.0\].*?(?=^## \[)", CHANGELOG, re.M | re.S)
-    assert entry, f"no CHANGELOG entry for {release}"
-    assert f"`{name}`" in entry.group(0) or f"`client.{name}`" in entry.group(0)
+    assert f"{release}.0" in ENTRIES, f"no CHANGELOG entry for {release}"
+    _, body = ENTRIES[f"{release}.0"]
+    assert f"`{name}`" in body or f"`client.{name}`" in body
 
 
 def test_unknown_names_still_raise_plain_attribute_errors():
