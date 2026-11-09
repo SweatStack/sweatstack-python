@@ -121,6 +121,9 @@ it automatically.
 
 ## Hard rules
 
+- **Work on `main`, never on a branch.** Every commit goes straight onto `main`; don't create
+  branches in this repository. Work that must wait for a server release stays uncommitted or
+  unpushed, or is committed without being published, rather than parked on a branch.
 - **`uv`, never `pip`.** Every command goes through `uv run` / `uv add`.
 - **`make check` before every commit.** Format, lint, types and tests; `make
   publish` runs it too. Don't silence a finding without a comment saying why.
