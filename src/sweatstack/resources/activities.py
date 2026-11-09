@@ -506,6 +506,9 @@ class Activities(Resource):
     def upload(
         self,
         files: str | Path | Sequence[str | Path],
+        *,
+        platform: str | None = None,
+        external_id: str | Sequence[str] | None = None,
     ) -> builtins.list[SourceResponse]:
         """Uploads activity files (FIT or CSV); they are processed in the background.
 
@@ -515,16 +518,34 @@ class Activities(Resource):
         Taxonomy code (``cycling.road``) and a ``timestamp`` column with offset-aware ISO 8601
         datetimes (``...+02:00`` or ``...Z``); naive timestamps are rejected during processing.
 
+        An app that relays files it received from another platform names that platform and its
+        own ID for each file. Uploading again with the same IDs is then safe: an unchanged file
+        returns its existing source, and a changed one is processed again under the same source
+        ID, its old activities replaced by new ones with new IDs. Without ``external_id``, every
+        upload creates new sources.
+
         Args:
             files: One path or a list of paths.
+            platform: Where the files came from, when another platform recorded them:
+                ``"garmin_connect"``, ``"strava"``, ... One platform per call: it applies to
+                every file, so upload files from different platforms in separate calls. Accepted
+                with a token from ``authenticate()`` or one issued to your app, and refused with
+                a personal API key from SweatStack's settings. SweatStack stores the canonical
+                spelling: ``"garmin"`` reads back as ``"garmin_connect"``.
+            external_id: Your app's own ID for each file, one per file in the same order; a
+                single string for a single file. Needs a token issued to your app.
 
         Returns:
-            list[SourceResponse]: One entry per file. ``status`` starts as ``"processing"``;
-            retrieve the activities by ID once processed.
+            list[SourceResponse]: One entry per file, with who wrote it, where it came from and
+            its ``external_id``. ``status`` starts as ``"processing"``; retrieve the activities
+            by ID once processed.
 
         Raises:
             FileNotFoundError: If a file does not exist.
-            SweatStackBadRequestError: If the server rejects the upload.
+            SweatStackBadRequestError: If the server rejects the upload: among other reasons,
+                when ``platform`` is not a platform name or the token may not name one, when
+                ``external_id`` comes with a token not issued to an app, or when the number of
+                IDs differs from the number of files.
             SweatStackAPIError: If the API request fails for any other reason.
 
         Examples:
@@ -535,8 +556,21 @@ class Activities(Resource):
             sources = client.activities.upload(["ride.fit", "run.fit"])
             print([source.status for source in sources])
             ```
+
+            An app relaying two Garmin activities, by their Garmin IDs:
+
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            sources = client.activities.upload(
+                ["1001.fit", "1002.fit"], platform="garmin_connect", external_id=["1001", "1002"]
+            )
+            ```
         """
         paths = [Path(files)] if isinstance(files, (str, Path)) else [Path(f) for f in files]
+        fields = {"platform": platform, "external_id": self._wire(external_id)}
+        form = {name: value for name, value in fields.items() if value is not None}
         opened = []
         try:
             multipart = []
@@ -544,7 +578,9 @@ class Activities(Resource):
                 handle = path.open("rb")
                 opened.append(handle)
                 multipart.append(("files", (path.name, handle)))
-            response = self._client._request("post", "/api/v1/activities/upload", files=multipart)
+            response = self._client._request(
+                "post", "/api/v1/activities/upload", files=multipart, data=form or None
+            )
         finally:
             for handle in opened:
                 handle.close()

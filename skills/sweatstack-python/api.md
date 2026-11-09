@@ -21,6 +21,7 @@ client.activities.data("act_123", segmentation_on=None, metrics=None, output=Non
 client.activities.mean_max("act_123", metric="power", durations=None, output=None)  # best average per duration
 client.activities.awd("act_123", metric=None, output=None)  # accumulated work duration
 client.activities.upload(["ride.fit"])                  # list[SourceResponse]; a CSV needs a sport column
+client.activities.upload(["1001.fit"], platform="garmin_connect", external_id=["1001"])  # relay: app token; same IDs again are safe
 client.activities.backfill_status()                      # BackfillStatus
 client.activities.watch_backfill_status(auto_reconnect=False)  # generator of BackfillStatus
 client.activities.app_metadata.set("act_123", data={"k": "v"})  # app token only; replaces the dict
@@ -68,8 +69,13 @@ client.tests.app_metadata.delete("test_123")
 ```python
 client.dailies.list("hrv", start=date(2026, 4, 1), end=date(2026, 5, 1), interpolate=True, output=None)
 client.dailies.set("body_mass", date=date(2026, 5, 1), value=71.4)  # upsert
+client.dailies.set("hrv", date=date(2026, 5, 1), value=62, platform="garmin_connect")  # measured elsewhere
 client.dailies.delete("body_mass", date=date(2026, 5, 1))
 ```
+
+`platform=` on `dailies.set()` and `activities.upload()` names where the data came from. It is
+accepted with a token from `authenticate()` or one issued to your app, and refused
+(`SweatStackBadRequestError`) with a personal API key.
 
 ## profile: the user the client acts as
 

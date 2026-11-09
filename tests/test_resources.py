@@ -37,6 +37,27 @@ def _user(user_id: str, name: str) -> dict:
     ).model_dump(mode="json")
 
 
+def _source(source_id: str = "src_1", filename: str = "ride.fit", **fields) -> dict:
+    """An uploaded source as ``POST /activities/upload`` returns it."""
+    return {
+        "id": source_id,
+        "type": "fit",
+        "origin": "manual_upload",
+        "filename": filename,
+        "status": "processing",
+        "activity_ids": [],
+        "created_at": "2026-05-01T09:00:00Z",
+        **fields,
+    }
+
+
+def _fit_files(tmp_path, *names: str) -> list:
+    paths = [tmp_path / name for name in names]
+    for path in paths:
+        path.write_bytes(b"fit")
+    return paths
+
+
 class TestRepeatableParameters:
     """R8: a repeatable query parameter takes one value or a list, under its wire name."""
 
@@ -106,24 +127,51 @@ class TestActivities:
         assert request.call_args.kwargs["params"] == {"sport": "cycling"}
 
     def test_upload_returns_the_sources_and_closes_the_files(self, client, tmp_path):
-        fit = tmp_path / "ride.fit"
-        fit.write_bytes(b"fit")
-        source = {
-            "id": "src_1",
-            "type": "fit",
-            "origin": "manual_upload",
-            "filename": "ride.fit",
-            "status": "processing",
-            "activity_ids": [],
-            "created_at": "2026-05-01T09:00:00Z",
-        }
+        (fit,) = _fit_files(tmp_path, "ride.fit")
         with patch.object(
-            client, "_request", return_value=_response({"sources": [source]})
+            client, "_request", return_value=_response({"sources": [_source()]})
         ) as request:
             sources = client.activities.upload(fit)
         assert [s.id for s in sources] == ["src_1"]
         ((_, (name, handle)),) = request.call_args.kwargs["files"]
         assert name == "ride.fit" and handle.closed
+        assert request.call_args.kwargs["data"] is None  # no form fields unless asked for
+
+    def test_upload_sends_one_platform_for_every_file(self, client, tmp_path):
+        files = _fit_files(tmp_path, "a.fit", "b.fit")
+        body = {"sources": [_source("src_1", "a.fit"), _source("src_2", "b.fit")]}
+        with patch.object(client, "_request", return_value=_response(body)) as request:
+            client.activities.upload(files, platform="strava")
+        assert request.call_count == 1
+        assert request.call_args.kwargs["data"] == {"platform": "strava"}
+        assert [name for _, (name, _) in request.call_args.kwargs["files"]] == ["a.fit", "b.fit"]
+
+    def test_upload_sends_the_external_ids_in_file_order(self, client, tmp_path):
+        files = _fit_files(tmp_path, "a.fit", "b.fit")
+        body = {"sources": [_source("src_1", "a.fit"), _source("src_2", "b.fit")]}
+        with patch.object(client, "_request", return_value=_response(body)) as request:
+            client.activities.upload(files, platform="garmin_connect", external_id=["1001", "1002"])
+        assert request.call_args.kwargs["data"] == {
+            "platform": "garmin_connect",
+            "external_id": ["1001", "1002"],
+        }
+
+    def test_upload_takes_one_external_id_as_a_string(self, client, tmp_path):
+        (fit,) = _fit_files(tmp_path, "ride.fit")
+        relayed = _source(application_id="app_123", external_id="1001")
+        with patch.object(
+            client, "_request", return_value=_response({"sources": [relayed]})
+        ) as request:
+            (source,) = client.activities.upload(fit, external_id="1001")
+        assert request.call_args.kwargs["data"] == {"external_id": ["1001"]}
+        assert (source.application_id, source.external_id) == ("app_123", "1001")
+
+    def test_upload_leaves_counting_the_external_ids_to_the_server(self, client, tmp_path):
+        # A mismatch is the server's 422, which names both counts; the SDK sends what it got.
+        files = _fit_files(tmp_path, "a.fit", "b.fit")
+        with patch.object(client, "_request", return_value=_response({"sources": []})) as request:
+            client.activities.upload(files, external_id="1001")
+        assert request.call_args.kwargs["data"] == {"external_id": ["1001"]}
 
     def test_watch_backfill_status_reconnects_after_a_dropped_connection(self, client):
         """Regression: auto_reconnect caught transport errors the transport had already converted."""
@@ -169,6 +217,28 @@ class TestActivities:
     def test_longitudinal_mean_max_requires_a_sport(self, client):
         with pytest.raises(TypeError):
             client.activities.longitudinal.mean_max(metric="power")  # ty: ignore[missing-argument]
+
+
+class TestDailies:
+    STORED = {"date": "2026-05-01", "value": 71.4, "status": "stored", "source": "manual"}
+
+    def test_set_sends_the_platform(self, client):
+        with patch.object(client, "_request", return_value=_response(self.STORED)) as request:
+            client.dailies.set(
+                "body_mass", date=date(2026, 5, 1), value=71.4, platform="garmin_connect"
+            )
+        assert request.call_args.args[1] == "/api/v1/dailies/body_mass"
+        assert request.call_args.kwargs["json"] == {
+            "date": "2026-05-01",
+            "value": 71.4,
+            "platform": "garmin_connect",
+        }
+
+    def test_set_without_a_platform_leaves_it_out(self, client):
+        # R8: a parameter left at its default is not sent.
+        with patch.object(client, "_request", return_value=_response(self.STORED)) as request:
+            client.dailies.set("body_mass", date=date(2026, 5, 1), value=71.4)
+        assert request.call_args.kwargs["json"] == {"date": "2026-05-01", "value": 71.4}
 
 
 class TestUsers:

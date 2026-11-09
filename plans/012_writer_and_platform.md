@@ -8,6 +8,13 @@
 - **Ships as 0.99.0**, a breaking minor, on the day of the server release and after it. See
   [Release](#release).
 - **Effort:** under a day, plus a short release-day step.
+- **Progress, 2026-11-09.** Commit 1 is on `main`. On `writer-and-platform`, everything that
+  doesn't need the regen is done: `platform=` and `external_id=` with their tests (commit 2,
+  steps 4 and 5), the `[Unreleased]` checks (step 7), the skill lines, and the CHANGELOG's
+  **Added** lines. Left for the regen: steps 1-3, 6, 8's `data-models.md`, 9, the test updates
+  under [Tests](#tests), and the CHANGELOG's breaking part. The `DailySource` entry in
+  `_renames` waits for the regen too, because `tests/test_renames.py` requires the name to be
+  gone.
 - **Process:** red-green. Write the tests in [Tests](#tests) first.
 - **One server decision is still open: whether the upload keeps its `replace` flag.** It has been
   proposed to the server to drop the flag and tell a retry from a correction by the file's bytes
@@ -209,18 +216,17 @@ Two consequences of starting from an old schema:
      IDs differs from the number of files."
    - A second `Examples:` snippet for the relaying app:
      `client.activities.upload(["a.fit", "b.fit"], platform="garmin_connect", external_id=["1001", "1002"])`.
-6. **`tests/test_wire_names.py`**: delete the `NOT_EXPOSED["Activities.upload"]` entry from
-   commit 1. Every upload field is now a parameter: `platform` and `external_id`, plus `replace` if
+6. **`tests/test_wire_names.py`**: delete the `NOT_EXPOSED["Activities.upload"]` entry
+   (`{"provider", "replace"}` since `external_id=` landed). Every upload field is now a parameter: `platform` and `external_id`, plus `replace` if
    S11's fallback applies.
 7. **The release in progress is checkable before it has a version** (`tests/test_renames.py`,
    `tests/test_changelog.py`). Both tests look for a `## [0.99.0] - <date>` heading, but the entry
    sits under `## [Unreleased]` until release day. Without this step, `make check` fails on commit 2
    and on every commit until the release.
-   - In `test_renames`, a release newer than the newest released version is checked against the
-     `## [Unreleased]` entry.
-   - In `test_changelog`, parse `## [Unreleased]` as an entry, so its "breaking", its
-     `### Upgrading` and its `upgrading-0-99` markers are held to the same rules before release.
-     Name the snippet from the version the entry will get: the minor after the newest released one.
+   `test_changelog`'s parser counts `## [Unreleased]` as the next minor release, so its
+   "breaking", its `### Upgrading` and its `upgrading-0-99` markers are held to the same rules
+   before release. `test_renames` reads its entries from that parser instead of keeping its own
+   regex. (Done.)
 8. **Skills.** `skills/sweatstack-python/data-models.md`:
    - **DailyResponse**: `date`, `value`, `status`, `writer` (`WriterKind`: `athlete`,
      `application`, `sweatstack`; `None` on an estimated or missing day), `application_id`,

@@ -19,6 +19,15 @@ https://docs.sweatstack.no/learn/python/upgrading/.
   wrote a stored value, or `None`.
 - `SourceResponse.application_id` and `SourceResponse.external_id`: the app that relayed a file
   from `activities.upload()`, and the ID it gave the file.
+- `dailies.set()` and `activities.upload()` take `platform=` to say where the data came from:
+  `"garmin_connect"`, `"strava"`, ... SweatStack accepts it with a token from `authenticate()` or
+  one issued to your app, and answers `SweatStackBadRequestError` for a personal API key or a
+  malformed name. It stores the canonical spelling: `"garmin"` reads back as `"garmin_connect"`.
+  One `platform` applies to every file in an upload.
+- `activities.upload()` takes `external_id=`: your app's own ID for each file, one per file in
+  order, with a token issued to your app. Uploading again with the same IDs is safe: an unchanged
+  file returns its existing source, and a changed one is processed again under the same source ID,
+  with new activities.
 
 
 ## [0.98.0] - 2026-10-30

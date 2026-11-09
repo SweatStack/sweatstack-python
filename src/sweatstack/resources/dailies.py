@@ -109,7 +109,14 @@ class Dailies(Resource):
         dailies = [DailyResponse.model_validate(item) for item in response.json()]
         return self._client._frame_from_models(dailies, DailyResponse, output)
 
-    def set(self, measure: DailyMeasure | str, *, date: date, value: float) -> DailyResponse:
+    def set(
+        self,
+        measure: DailyMeasure | str,
+        *,
+        date: date,
+        value: float,
+        platform: str | None = None,
+    ) -> DailyResponse:
         """Sets the value of a measure for a day, creating or replacing it.
 
         Endpoint: ``POST /api/v1/dailies/{measure}``
@@ -120,12 +127,21 @@ class Dailies(Resource):
             measure: The measure, e.g. ``"body_mass"``.
             date: The day.
             value: The value, in the measure's unit.
+            platform: Where the value came from, when another platform measured it:
+                ``"garmin_connect"``, ``"strava"``, ... Leave it out for a value you measured or
+                entered yourself. Accepted with a token from ``authenticate()`` (the value's
+                writer is then ``athlete``) or one issued to your app (``application``), and
+                refused with a personal API key from SweatStack's settings. SweatStack stores
+                the canonical spelling: ``"garmin"`` reads back as ``"garmin_connect"``.
 
         Returns:
-            DailyResponse: The stored value.
+            DailyResponse: The stored value, with who wrote it and where it came from.
 
         Raises:
-            SweatStackAPIError: If the API request fails.
+            SweatStackBadRequestError: If ``platform`` is not a platform name (a lower-case
+                letter, then up to 39 lower-case letters, digits or underscores), or the token
+                may not name one.
+            SweatStackAPIError: If the API request fails for any other reason.
 
         Examples:
             ```python
@@ -137,11 +153,10 @@ class Dailies(Resource):
             client.dailies.set("body_mass", date=date(2026, 5, 1), value=71.4)
             ```
         """
-        response = self._client._request(
-            "post",
-            f"/api/v1/dailies/{_measure(measure)}",
-            json={"date": date.isoformat(), "value": value},
-        )
+        body: dict[str, object] = {"date": date.isoformat(), "value": value}
+        if platform is not None:
+            body["platform"] = platform
+        response = self._client._request("post", f"/api/v1/dailies/{_measure(measure)}", json=body)
         return DailyResponse.model_validate(response.json())
 
     def delete(self, measure: DailyMeasure | str, *, date: date) -> None:
