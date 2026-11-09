@@ -307,8 +307,8 @@ class TestListBackends:
             pf = client.dailies.list(
                 "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars"
             )
-        columns = {"date", "value", "status", "writer", "application_id", "platform"}
-        assert isinstance(df.index, pd.RangeIndex) and set(df.columns) == columns
+        columns = ["date", "value", "status", "writer", "application_id", "platform"]
+        assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == columns
         assert pf.columns == list(df.columns)  # one column order on every backend
 
     def test_as_dataframe_is_gone(self, client):

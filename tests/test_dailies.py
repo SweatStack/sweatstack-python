@@ -28,8 +28,9 @@ def sample_dailies() -> list[DailyResponse]:
     ]
 
 
-# The order follows the server's document; the SDK never reorders a model's columns.
-DAILY_COLUMNS = {"date", "value", "status", "writer", "application_id", "platform"}
+# The order follows the server's document (the record first, then who wrote it); the SDK never
+# reorders a model's columns.
+DAILY_COLUMNS = ["date", "value", "status", "writer", "application_id", "platform"]
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +74,7 @@ class TestDataFrameConversion:
 
         assert isinstance(df.index, pd.RangeIndex)
         assert len(df) == 3
-        assert set(df.columns) == DAILY_COLUMNS
+        assert list(df.columns) == DAILY_COLUMNS
 
     def test_dataframe_values(self, sample_dailies: list[DailyResponse]):
         """DataFrame should contain correct values including None."""
@@ -93,7 +94,7 @@ class TestDataFrameConversion:
         df = _frames.models_to_pandas([], DailyResponse)
 
         assert len(df) == 0
-        assert set(df.columns) == DAILY_COLUMNS
+        assert list(df.columns) == DAILY_COLUMNS
 
 
 # ---------------------------------------------------------------------------

@@ -318,13 +318,15 @@ On 2026-11-09, against the server's finished code, before production served it:
   gone from the upload.
 - **The wire-name test** against that document reports only `login_hint` (its own change).
 - **`make check`** is green on the branch.
+- **Release, 2026-11-09.** The server's release has both changes asked after the check (column
+  order, the `external_id` description), and nothing else: the render of its released code
+  regenerates to exactly those two differences (commit 3).
 
-One thing to settle before release, at the server: **the column order of a daily**. The server
-adds the three fields through a base class, so they come first, and `dailies.list()` frames start
-`writer, application_id, platform, date, value, status`. The SDK doesn't reorder a model's
-columns (AGENTS.md, "Never add a per-model special case"), so the fix is in the server's model
-(the record's own fields first). The tests pin the set of columns, not the order, until then.
-Release step 5 checks the order.
+One thing was settled at the server before release: **the column order of a daily**. The server
+first added the three fields through a base class, so they came first, and `dailies.list()` frames
+started `writer, application_id, platform, date, value, status`. The SDK doesn't reorder a model's
+columns (AGENTS.md, "Never add a per-model special case"), so the fix went into the server's model
+(the record's own fields first). Its release has it, and commit 3 pins the order in the tests.
 
 ## Commits
 
