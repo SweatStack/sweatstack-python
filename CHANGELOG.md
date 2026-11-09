@@ -13,21 +13,91 @@ https://docs.sweatstack.no/learn/python/upgrading/.
 
 ## [Unreleased]
 
+Records say who wrote them and which platform their data came from, as two separate answers.
+Breaking: `DailyResponse.source`, `SourceResponse.origin` and `DailySource` are gone; see
+**Upgrading** below, or hand the migration prompt to your coding agent.
+
+### Changed
+
+- Dailies, uploaded sources, markers and max efforts carry `writer` (`WriterKind`: `athlete`,
+  `application` or `sweatstack`), `application_id` (the app, when the writer is an app) and
+  `platform` (where the data came from: `"garmin_connect"`, `"strava"`, ..., or `None`). They
+  replace `DailyResponse.source` and `SourceResponse.origin`, which answered both at once. On a
+  daily, all three are `None` on an estimated or missing day.
+- The frames from `dailies.list()` have `writer`, `application_id` and `platform` columns instead
+  of `source`. In pandas, `writer` holds `WriterKind` members, as every enum column does; in
+  Polars and Arrow it holds strings.
+- `DailySource` is gone, and so is `SourceOrigin` from `sweatstack.openapi_schemas`.
+  `WriterKind` is a closed set: a value outside the three is an error, not a pseudo-member.
+
 ### Added
 
-- `DailyResponse.application_id`, also a column of the `dailies.list()` frames: the app that
-  wrote a stored value, or `None`.
-- `SourceResponse.application_id` and `SourceResponse.external_id`: the app that relayed a file
-  from `activities.upload()`, and the ID it gave the file.
-- `dailies.set()` and `activities.upload()` take `platform=` to say where the data came from:
-  `"garmin_connect"`, `"strava"`, ... SweatStack accepts it with a token from `authenticate()` or
-  one issued to your app, and answers `SweatStackBadRequestError` for a personal API key or a
-  malformed name. It stores the canonical spelling: `"garmin"` reads back as `"garmin_connect"`.
-  One `platform` applies to every file in an upload.
+- `dailies.set()` and `activities.upload()` take `platform=` to say where the data came from.
+  SweatStack accepts it with a token from `authenticate()` or one issued to your app, and answers
+  `SweatStackBadRequestError` for a personal API key or a malformed name. It stores the canonical
+  spelling: `"garmin"` reads back as `"garmin_connect"`. One `platform` applies to every file in
+  an upload.
 - `activities.upload()` takes `external_id=`: your app's own ID for each file, one per file in
   order, with a token issued to your app. Uploading again with the same IDs is safe: an unchanged
   file returns its existing source, and a changed one is processed again under the same source ID,
-  with new activities.
+  with new activities. The source echoes the ID as `SourceResponse.external_id`.
+
+### Fixed
+
+- The `dailies.list()` docstring said a missing day has `source="missing"`; it has
+  `status="missing"`.
+
+<!-- --8<-- [start:upgrading-0-99] -->
+### Upgrading
+
+**Upgrade on the day SweatStack's API makes this change** (the platform changelog has the date).
+0.99 needs that API, and from that day SDKs before 0.99 behave like this:
+
+- `activities.upload()` raises a pydantic `ValidationError` *after* the server has accepted the
+  files. The files are uploaded, so don't retry the call.
+- `dailies.list()` keeps working, but **Silent:** `source` is `None` on every day.
+
+| 0.98 | 0.99 | Fails how |
+|---|---|---|
+| `daily.source == DailySource.manual` | `daily.writer == WriterKind.athlete` | `AttributeError` on `.source` |
+| `daily.source == DailySource.application` | `daily.writer == WriterKind.application`; `daily.application_id` names the app | `AttributeError` |
+| `daily.source == DailySource.garmin_connect` (or `intervals_icu`, `wahoo`) | `daily.writer == WriterKind.sweatstack and daily.platform == "garmin_connect"`. For "from Garmin, whoever wrote it": `daily.platform == "garmin_connect"` | `AttributeError` |
+| `daily.source is None` (an estimated or missing day) | `daily.writer is None`, or `daily.status != DailyStatus.stored` | `AttributeError` |
+| `source.origin == "manual_upload"` | `source.writer == WriterKind.athlete` | `AttributeError` on `.origin` |
+| `source.origin == "garmin_connect"` (or another sync) | `source.writer == WriterKind.sweatstack and source.platform == "garmin_connect"` | `AttributeError` |
+| `df["source"] == DailySource.manual` on a pandas frame from `dailies.list()` | `df["writer"] == WriterKind.athlete` | `KeyError` |
+| `pl.col("source") == "manual"` on a Polars frame from `dailies.list()` | `pl.col("writer") == "athlete"` | `ColumnNotFoundError` |
+| `.get("source")` on a `model_dump()` or a frame row | `.get("writer")`, `.get("platform")` | **Silent:** returns `None` |
+| `from sweatstack import DailySource` | `from sweatstack import WriterKind` | `ImportError` |
+| `from sweatstack.openapi_schemas import SourceOrigin` | `from sweatstack import WriterKind` | `ImportError` |
+
+**Migration prompt.** Paste this into your coding agent:
+
+```text
+Upgrade this codebase to sweatstack 0.99, which splits "who wrote a record" from "which
+platform its data came from". The upgrade table is the "Upgrading" section of the 0.99.0 entry
+in https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md (also at
+https://docs.sweatstack.no/learn/python/upgrading/). Read it first.
+
+Find every read of `.source` on a daily, marker or max effort, of `.origin` on an uploaded
+source, every use of DailySource or SourceOrigin, and every "source" column or key on dailies
+data (frames, model_dump(), dicts). For each, decide which question the code asks:
+
+1. Who wrote it (the athlete, an app, or SweatStack's sync)? Use `.writer` and `WriterKind`;
+   `.application_id` names the app.
+2. Where did the data come from (Garmin, Strava, ...)? Use `.platform`, a plain string such as
+   "garmin_connect", or None.
+3. Both, as the old garmin_connect value did? Combine them:
+   writer == WriterKind.sweatstack and platform == "garmin_connect". Ask whether the code
+   really means "from Garmin, whoever wrote it": then platform alone.
+
+In pandas frames compare `writer` with WriterKind members (df["writer"] == WriterKind.athlete);
+comparing with the string "athlete" is always False. In Polars and Arrow, compare with strings.
+Code that checked `source is None` to find estimated or missing days should check
+`status != DailyStatus.stored`. Search for `.get("source")` and "source" in column lists: those
+return None or drop the column without an error. Then run the code and the tests.
+```
+<!-- --8<-- [end:upgrading-0-99] -->
 
 
 ## [0.98.0] - 2026-10-30

@@ -11,6 +11,8 @@ used. Entries are permanent; removing one turns a helpful error back into a bare
 from __future__ import annotations
 
 REMOVED_IN = {
+    # 0.99: who wrote a record and where its data came from are two fields (plan 012).
+    "DailySource": ("0.99", "the record's writer field (sweatstack.WriterKind) and platform field"),
     # 0.91: flat methods became resource namespaces (plan 009, M3).
     "get_activities": ("0.91", "{c}.activities.list()"),
     "get_activity": ("0.91", "{c}.activities.retrieve(activity_id)"),

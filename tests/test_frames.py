@@ -181,19 +181,27 @@ class TestModelsToPolars:
         schema = polars_schema(DailyResponse)
         with pytest.raises(pl.exceptions.ComputeError):
             pl.from_dicts(
-                [{"date": "not-a-date", "value": 1.0, "status": "stored", "source": None}],
+                [{"date": "not-a-date", "value": 1.0, "status": "stored", "writer": None}],
                 schema=schema,
             )
 
     def test_dailies_values(self):
         dailies = [
-            DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual"),
-            DailyResponse(date=date(2026, 4, 3), value=None, status="missing", source=None),
+            DailyResponse(
+                date=date(2026, 4, 1),
+                value=75.2,
+                status="stored",
+                writer="sweatstack",
+                platform="garmin_connect",
+            ),
+            DailyResponse(date=date(2026, 4, 3), value=None, status="missing"),
         ]
         df = models_to_polars(dailies, DailyResponse)
         assert df["date"].to_list() == [date(2026, 4, 1), date(2026, 4, 3)]
         assert df["value"].to_list() == [75.2, None]
         assert df["status"].to_list() == ["stored", "missing"]
+        assert df["writer"].to_list() == ["sweatstack", None]  # Polars holds enum values
+        assert df["platform"].to_list() == ["garmin_connect", None]
 
 
 class TestModelsToArrow:

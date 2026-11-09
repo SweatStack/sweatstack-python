@@ -48,16 +48,19 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
   `end_local`, `results` (`TestResults`: thresholds `lt1`, `lt2`, `vt1`, `vt2`, `mlss`, `fatmax`
   as `Marker`s, plus `vo2max`, `critical_power`, `w_prime`, ...), `tags`, `created_by`;
   `TestDetails` adds the resolved `traces` and overlapping `activities`.
-- **DailyResponse**: `date`, `value`, `status`, `source` (`DailySource`, an open set: `manual`,
-  `garmin_connect`, ...; markers and max efforts carry it too), `application_id` (the app that
-  wrote a stored value).
+- **DailyResponse**: `date`, `value`, `status`, and on a stored day who wrote it and where it came
+  from: `writer` (`WriterKind`, closed: `athlete`, `application`, `sweatstack`), `application_id`
+  (the app, when the writer is one) and `platform` (an open string such as `garmin_connect`, or
+  `None`). All three are `None` on an estimated or missing day. `SourceResponse`, markers and max
+  efforts carry the same three fields. In a pandas frame `writer` holds `WriterKind` members;
+  in Polars and Arrow, strings.
 - **UserSummary** (`users.list()`): `id`, `first_name`, `last_name`, `display_name`, `scopes`,
   `is_managed`.
 - **UserResponse** (`users.create()`, `retrieve()`, `update()`): `id`, `first_name`,
   `last_name`, `display_name`, `admin`, `is_managed`, `registered_at`.
-- **SourceResponse** (`activities.upload()`): `id`, `type`, `origin`, `filename`, `status`
-  (`processing`, `processed`, `failed`), `error`, `activity_ids`, `created_at`, `application_id`,
-  `external_id` (set on a file an app relayed).
+- **SourceResponse** (`activities.upload()`): `id`, `type`, `filename`, `status` (`processing`,
+  `processed`, `failed`), `error`, `activity_ids`, `created_at`, `writer`, `application_id`,
+  `platform`, `external_id` (set on a file an app relayed).
 - **UserInfoResponse** (`oauth.userinfo()`): `sub`, `name`, `given_name`, `family_name`,
   `email`, `registered_at`, `issue`.
 - **AccountStatusResponse** (`profile.status()`, beta): `issue` (`StatusIssueResponse | None`:

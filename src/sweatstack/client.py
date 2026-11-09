@@ -59,7 +59,6 @@ from .schemas import (
     CapabilityStatus,
     DailyMeasure,
     DailyResponse,
-    DailySource,
     IssueStatus,
     Marker,
     Metric,
@@ -82,6 +81,7 @@ from .schemas import (
     UserInfoResponse,
     UserResponse,
     UserSummary,
+    WriterKind,
 )
 from .utils import decode_jwt_body, make_dataframe_streamlit_compatible
 
@@ -1223,7 +1223,6 @@ __all__ = sorted(
         "CapabilityStatus",
         "DailyMeasure",
         "DailyResponse",
-        "DailySource",
         "IssueStatus",
         "Marker",
         "Metric",
@@ -1246,6 +1245,7 @@ __all__ = sorted(
         "UserInfoResponse",
         "UserResponse",
         "UserSummary",
+        "WriterKind",
         *_SINGLETON_METHODS,
         *RESOURCES,
     ]

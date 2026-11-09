@@ -292,7 +292,7 @@ class TestListBackends:
 
     def test_dailies_date_is_a_column(self, client):
         dailies = [
-            DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual")
+            DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", writer="athlete")
         ]
         with (
             patch.object(client, "_http_client", return_value=_http_returning(b"")) as http,
@@ -307,9 +307,9 @@ class TestListBackends:
             pf = client.dailies.list(
                 "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars"
             )
-        columns = ["date", "value", "status", "source", "application_id"]
-        assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == columns
-        assert pf.columns == columns
+        columns = {"date", "value", "status", "writer", "application_id", "platform"}
+        assert isinstance(df.index, pd.RangeIndex) and set(df.columns) == columns
+        assert pf.columns == list(df.columns)  # one column order on every backend
 
     def test_as_dataframe_is_gone(self, client):
         with pytest.raises(TypeError):

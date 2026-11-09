@@ -8,8 +8,9 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
-from sweatstack import DailyMeasure, DailyResponse, DailySource, _frames
+from sweatstack import DailyMeasure, DailyResponse, SourceResponse, WriterKind, _frames
 from sweatstack.openapi_schemas import DailyStatus, MarkerRowResponse, MaxEffortRowResponse
 
 # ---------------------------------------------------------------------------
@@ -19,12 +20,16 @@ from sweatstack.openapi_schemas import DailyStatus, MarkerRowResponse, MaxEffort
 
 @pytest.fixture
 def sample_dailies() -> list[DailyResponse]:
-    # status is read-time state; source (provenance) is set only when stored.
+    # status is read-time state; who wrote it and where it came from exist only when stored.
     return [
-        DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual"),
-        DailyResponse(date=date(2026, 4, 2), value=75.1, status="estimated", source=None),
-        DailyResponse(date=date(2026, 4, 3), value=None, status="missing", source=None),
+        DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", writer="athlete"),
+        DailyResponse(date=date(2026, 4, 2), value=75.1, status="estimated"),
+        DailyResponse(date=date(2026, 4, 3), value=None, status="missing"),
     ]
+
+
+# The order follows the server's document; the SDK never reorders a model's columns.
+DAILY_COLUMNS = {"date", "value", "status", "writer", "application_id", "platform"}
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +73,7 @@ class TestDataFrameConversion:
 
         assert isinstance(df.index, pd.RangeIndex)
         assert len(df) == 3
-        assert list(df.columns) == ["date", "value", "status", "source", "application_id"]
+        assert set(df.columns) == DAILY_COLUMNS
 
     def test_dataframe_values(self, sample_dailies: list[DailyResponse]):
         """DataFrame should contain correct values including None."""
@@ -76,17 +81,19 @@ class TestDataFrameConversion:
 
         assert df.loc[date(2026, 4, 1), "value"] == 75.2
         assert df.loc[date(2026, 4, 1), "status"] == DailyStatus.stored
-        assert df.loc[date(2026, 4, 1), "source"] == DailySource.manual
+        # pandas keeps enum members, as for every enum column; Polars and Arrow hold strings.
+        assert df.loc[date(2026, 4, 1), "writer"] is WriterKind.athlete
         assert pd.isna(df.loc[date(2026, 4, 3), "value"])
         assert df.loc[date(2026, 4, 3), "status"] == DailyStatus.missing
-        assert df.loc[date(2026, 4, 3), "source"] is None
+        assert df.loc[date(2026, 4, 3), "writer"] is None
+        assert df.loc[date(2026, 4, 3), "platform"] is None
 
     def test_empty_dataframe(self):
         """Empty dailies list should produce valid empty DataFrame with the same columns."""
         df = _frames.models_to_pandas([], DailyResponse)
 
         assert len(df) == 0
-        assert list(df.columns) == ["date", "value", "status", "source", "application_id"]
+        assert set(df.columns) == DAILY_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -97,42 +104,63 @@ class TestDataFrameConversion:
 class TestSchemaRoundTrip:
     def test_daily_response_round_trip(self):
         """A stored DailyResponse should survive serialize -> deserialize."""
-        daily = DailyResponse(date=date(2026, 4, 1), value=75.2, status="stored", source="manual")
-        dumped = daily.model_dump()
-        restored = DailyResponse.model_validate(dumped)
+        daily = DailyResponse(
+            date=date(2026, 4, 1),
+            value=75.2,
+            status="stored",
+            writer="application",
+            application_id="app_123",
+            platform="garmin_connect",
+        )
+        restored = DailyResponse.model_validate(daily.model_dump())
 
         assert restored.date == date(2026, 4, 1)
         assert restored.value == 75.2
         assert restored.status == DailyStatus.stored
-        assert restored.source == DailySource.manual
+        assert restored.writer is WriterKind.application
+        assert (restored.application_id, restored.platform) == ("app_123", "garmin_connect")
 
     def test_daily_response_null_value(self):
-        """A missing day (null value, null source) should round-trip cleanly."""
-        daily = DailyResponse(date=date(2026, 4, 1), value=None, status="missing", source=None)
-        dumped = daily.model_dump()
-        restored = DailyResponse.model_validate(dumped)
+        """A missing day (null value, no writer) should round-trip cleanly."""
+        daily = DailyResponse(date=date(2026, 4, 1), value=None, status="missing")
+        restored = DailyResponse.model_validate(daily.model_dump())
 
         assert restored.value is None
         assert restored.status == DailyStatus.missing
-        assert restored.source is None
+        assert restored.writer is None
 
-    def test_daily_response_null_source_from_api_json(self):
-        """Regression: estimated/missing days come back with source=null and no provenance.
-
-        The generated model previously typed `source` as a required str, so this
-        payload raised a ValidationError. source is now Optional[DailySource].
-        """
+    def test_an_unstored_day_has_no_writer_from_api_json(self):
+        """Estimated and missing days have no writer: the three fields are null, not absent."""
         for status in ("estimated", "missing"):
-            payload = {"date": "2026-04-02", "value": None, "status": status, "source": None}
+            payload = {
+                "date": "2026-04-02",
+                "value": None,
+                "status": status,
+                "writer": None,
+                "application_id": None,
+                "platform": None,
+            }
             restored = DailyResponse.model_validate(payload)
-            assert restored.source is None
+            assert (restored.writer, restored.application_id, restored.platform) == (None,) * 3
             assert restored.status is DailyStatus(status)
 
 
-@pytest.mark.parametrize(
+# One row per model that carries a writer, without the writer fields.
+RECORDS = pytest.mark.parametrize(
     "model, row",
     [
         (DailyResponse, {"date": "2026-03-10", "value": 82.5, "status": "stored"}),
+        (
+            SourceResponse,
+            {
+                "id": "src_1",
+                "type": "fit",
+                "filename": "ride.fit",
+                "status": "processing",
+                "activity_ids": [],
+                "created_at": "2026-03-10T09:00:00Z",
+            },
+        ),
         (
             MarkerRowResponse,
             {
@@ -144,7 +172,6 @@ class TestSchemaRoundTrip:
                 "date": "2026-03-10",
                 "provenance": "declared",
                 "pinned": False,
-                "application_id": None,
                 "activity_id": None,
             },
         ),
@@ -160,15 +187,44 @@ class TestSchemaRoundTrip:
                 "date": "2026-03-10",
                 "provenance": "measured",
                 "title": None,
-                "application_id": None,
                 "activity_id": None,
             },
         ),
     ],
-    ids=["daily", "marker", "max_effort"],
+    ids=["daily", "source", "marker", "max_effort"],
 )
-def test_source_is_an_open_set(model, row):
-    # `DailySource` is opened in schemas.py (`_open_enum`): the API may add `source` values.
-    assert model.model_validate({**row, "source": "manual"}).source is DailySource.manual
-    added_later = model.model_validate({**row, "source": "a_source_added_later"}).source
-    assert isinstance(added_later, DailySource) and added_later.value == "a_source_added_later"
+
+
+@RECORDS
+@pytest.mark.parametrize(
+    "writer, application_id, platform",
+    [
+        ("athlete", None, None),  # typed in, or uploaded by the athlete
+        ("sweatstack", None, "garmin_connect"),  # SweatStack's own sync
+        ("application", "app_123", "garmin_connect"),  # an app relaying a platform
+        ("application", "app_123", None),  # an app's own value
+        ("athlete", None, "strava"),  # an export imported through the SDK's sign-in
+    ],
+)
+def test_every_record_says_who_wrote_it_and_where_it_came_from(
+    model, row, writer, application_id, platform
+):
+    record = model.model_validate(
+        {**row, "writer": writer, "application_id": application_id, "platform": platform}
+    )
+    assert record.writer is WriterKind(writer)
+    assert (record.application_id, record.platform) == (application_id, platform)
+
+
+@RECORDS
+def test_writer_is_a_closed_set(model, row):
+    # The server documents WriterKind as closed: a fourth writer is a breaking release, so it
+    # must fail loudly here rather than parse as a pseudo-member (AGENTS.md, open enums).
+    with pytest.raises(ValidationError):
+        model.model_validate({**row, "writer": "a_writer_added_later"})
+
+
+@RECORDS
+def test_platform_is_an_open_set(model, row):
+    record = model.model_validate({**row, "writer": "application", "platform": "a_new_platform"})
+    assert record.platform == "a_new_platform"

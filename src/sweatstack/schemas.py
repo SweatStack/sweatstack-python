@@ -30,7 +30,6 @@ from .openapi_schemas import (
     CapabilityStatus,
     DailyMeasure,
     DailyResponse,
-    DailySource,
     IssueStatus,
     Marker,
     Metric,
@@ -51,17 +50,18 @@ from .openapi_schemas import (
     UserInfoResponse,
     UserResponse,
     UserSummary,
+    WriterKind,
 )
 
 
 def _open_enum(enum_cls: type[Enum]) -> None:
     """Let ``enum_cls`` accept values the bundled schema does not know yet.
 
-    The server treats some enums as open sets (new metrics, scopes, daily measures, sources of a
-    value, status codes, capabilities and Portal destinations appear without notice). An unknown
-    value becomes a pseudo-member with ``.value`` and ``.name`` set to the string, cached so
-    repeated lookups return the same object, instead of a validation error that would break the
-    client until it is updated. Closed enums (``CapabilityStatus``, ...) are left strict on purpose:
+    The server treats some enums as open sets (new metrics, scopes, daily measures, status codes,
+    capabilities and Portal destinations appear without notice). An unknown value becomes a
+    pseudo-member with ``.value`` and ``.name`` set to the string, cached so repeated lookups
+    return the same object, instead of a validation error that would break the client until it is
+    updated. Closed enums (``CapabilityStatus``, ``WriterKind``, ...) are left strict on purpose:
     the server promises those never grow, or a value the client does not know is not something
     it should act on.
     """
@@ -81,7 +81,6 @@ for _open in (
     Metric,
     Scope,
     DailyMeasure,
-    DailySource,
     StatusIssueCode,
     Capability,
     PortalDestination,

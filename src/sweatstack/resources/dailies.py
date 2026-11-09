@@ -82,7 +82,7 @@ class Dailies(Resource):
             end: Last date (inclusive).
             interpolate: Fill gaps with the server's estimate for the measure. Note that the
                 API's own default is ``false``; the SDK defaults to ``True``. With ``False``, a
-                missing day has ``value=None`` and ``source="missing"``.
+                missing day has ``value=None`` and ``status="missing"``.
             output: ``"models"`` (default), ``"pandas"``, ``"polars"`` or ``"arrow"``.
 
         Returns:

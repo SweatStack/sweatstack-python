@@ -35,8 +35,6 @@ NOT_EXPOSED = {
     "OAuth.exchange_code": {"grant_type", "refresh_token"},  # set by the method / another grant
     "OAuth.authorization_url": {"code_challenge_method"},  # always S256, set with code_challenge
     "PortalSessions.create": {"client_id", "client_secret"},  # from the client's app credentials
-    # Until the server release plan 012 mirrors: `provider` becomes `platform`, `replace` goes.
-    "Activities.upload": {"provider", "replace"},
 }
 # SDK parameters with no wire counterpart yet (AGENTS.md: client-side name filter).
 CLIENT_SIDE = {"Users.list": {"name"}, "Teams.users": {"name"}}

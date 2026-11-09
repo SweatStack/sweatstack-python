@@ -42,7 +42,7 @@ def _source(source_id: str = "src_1", filename: str = "ride.fit", **fields) -> d
     return {
         "id": source_id,
         "type": "fit",
-        "origin": "manual_upload",
+        "writer": "athlete",
         "filename": filename,
         "status": "processing",
         "activity_ids": [],
@@ -158,7 +158,7 @@ class TestActivities:
 
     def test_upload_takes_one_external_id_as_a_string(self, client, tmp_path):
         (fit,) = _fit_files(tmp_path, "ride.fit")
-        relayed = _source(application_id="app_123", external_id="1001")
+        relayed = _source(writer="application", application_id="app_123", external_id="1001")
         with patch.object(
             client, "_request", return_value=_response({"sources": [relayed]})
         ) as request:
@@ -220,7 +220,7 @@ class TestActivities:
 
 
 class TestDailies:
-    STORED = {"date": "2026-05-01", "value": 71.4, "status": "stored", "source": "manual"}
+    STORED = {"date": "2026-05-01", "value": 71.4, "status": "stored", "writer": "athlete"}
 
     def test_set_sends_the_platform(self, client):
         with patch.object(client, "_request", return_value=_response(self.STORED)) as request:

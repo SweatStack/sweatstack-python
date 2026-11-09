@@ -8,18 +8,13 @@
 - **Ships as 0.99.0**, a breaking minor, on the day of the server release and after it. See
   [Release](#release).
 - **Effort:** under a day, plus a short release-day step.
-- **Progress, 2026-11-09.** Commit 1 is on `main`. On `writer-and-platform`, everything that
-  doesn't need the regen is done: `platform=` and `external_id=` with their tests (commit 2,
-  steps 4 and 5), the `[Unreleased]` checks (step 7), the skill lines, and the CHANGELOG's
-  **Added** lines. Left for the regen: steps 1-3, 6, 8's `data-models.md`, 9, the test updates
-  under [Tests](#tests), and the CHANGELOG's breaking part. The `DailySource` entry in
-  `_renames` waits for the regen too, because `tests/test_renames.py` requires the name to be
-  gone.
+- **Progress, 2026-11-09.** Commit 1 is on `main`. Commit 2 is complete on `writer-and-platform`,
+  regenerated from the server's finished code (see [Checked before release](#checked-before-release)).
+  What's left is the release: commit 3 and [Release](#release).
 - **Process:** red-green. Write the tests in [Tests](#tests) first.
-- **One server decision is still open: whether the upload keeps its `replace` flag.** It has been
-  proposed to the server to drop the flag and tell a retry from a correction by the file's bytes
-  (see [Relaying files](#relaying-files)). The plan assumes the flag goes and says exactly what to
-  do if it stays (S11). Commit 2's regen shows which, so nothing waits on it before then.
+- **The server dropped the upload's `replace` flag** and tells a retry from a correction by the
+  file's bytes (see [Relaying files](#relaying-files)), so S11's first branch applies: there is
+  nothing to mirror.
 
 > **Public repository.** This file is published with the code. It describes the server by its
 > public contract (the OpenAPI document and docs.sweatstack.no) and names no app, no user and
@@ -90,9 +85,8 @@ When a file comes again with an `external_id` the server has seen from that app:
   ID. The source's old activities are deleted (each with an `activity_deleted` webhook) and new
   ones, with new IDs, take their place.
 
-So retrying a lost upload is always safe. This is the contract proposed for the coming release.
-Today's production instead keeps the source unless the request also sends `replace=true`, and that
-flag goes if the proposal is accepted (S11 covers both outcomes).
+So retrying a lost upload is always safe. Before the release, production keeps the source unless
+the request also sends `replace=true`. The release removes that flag.
 
 ### What a writer may replace
 
@@ -272,8 +266,10 @@ Red-green: write these first. All offline (AGENTS.md).
 - **`platform` is open**: `platform: "a_platform_added_later"` parses as that string on all four
   models.
 - **Frames**: `dailies.list(output="polars")` and `"pandas"` have the columns `writer`,
-  `application_id` and `platform`, and no `source`. `writer` holds the string `"athlete"`, not an
-  enum. `tests/test_frames.py` already turns a `FrameSchemaWarning` into a failure for every public
+  `application_id` and `platform`, and no `source`. Polars and Arrow hold `writer` as the string
+  `"athlete"`; pandas holds the `WriterKind` member, as for every enum column, so
+  `df["writer"] == "athlete"` is always `False` there. The CHANGELOG and the migration prompt say
+  so. `tests/test_frames.py` already turns a `FrameSchemaWarning` into a failure for every public
   model, so the regen's new enum is covered.
 - `tests/test_renames.py` picks up the `DailySource` entry by its parametrisation, against the
   `[Unreleased]` entry (commit 2, step 7).
@@ -293,100 +289,50 @@ own change (commit 1, step 2).
 
 ## CHANGELOG entry
 
-Under `## [Unreleased]`, renamed to `## [0.99.0] - <server release date>` on release day.
+The entry is in `CHANGELOG.md` under `## [Unreleased]`, renamed to `## [0.99.0] - <date>` on
+release day. It is the only copy: a draft here would drift from it. Two things in it differ from
+this plan's first draft, both found against the generated code:
 
-````markdown
-Records say who wrote them and which platform their data came from, as two separate answers.
-Breaking: `DailyResponse.source`, `SourceResponse.origin` and `DailySource` are gone; see
-**Upgrading** below, or hand the migration prompt to your coding agent.
+- **pandas frames hold `WriterKind` members**, Polars and Arrow hold strings. The table has a row
+  for each, and the prompt says which comparison works where.
+- **0.99 against an older server doesn't fail on dailies.** `DailyResponse.writer` is optional, so
+  dailies parse with `writer=None`; only the upload fails. The entry says "0.99 needs that API"
+  and doesn't claim more.
 
-### Changed
+The text names no release date ("the platform changelog has the date"), so there is no
+placeholder to forget. `tests/test_changelog.py` wants every "silent" in the section written as
+`**Silent:**` in bold.
 
-- Dailies, uploaded sources, markers and max efforts carry `writer` (`WriterKind`: `athlete`,
-  `application` or `sweatstack`), `application_id` (the app, when the writer is an app) and
-  `platform` (where the data came from: `"garmin_connect"`, `"strava"`, ..., or `None`). They
-  replace `DailyResponse.source` and `SourceResponse.origin`, which said both at once. On a daily,
-  all three are `None` on an estimated or missing day.
-- The frames from `dailies.list()` have `writer`, `application_id` and `platform` columns instead
-  of `source`.
-- `DailySource` is gone, and so is `SourceOrigin` from `sweatstack.openapi_schemas`.
-  `WriterKind` is a closed set: a value outside the three is an error, not a pseudo-member.
+## Checked before release
 
-### Added
+On 2026-11-09, against the server's finished code, before production served it:
 
-- `dailies.set()` and `activities.upload()` take `platform=` to say where the data came from.
-  SweatStack accepts it with a token from `authenticate()` or one issued to your app, and answers
-  `SweatStackBadRequestError` (422) for a personal API key or a malformed name. It stores the
-  canonical spelling: `"garmin"` reads back as `"garmin_connect"`. One `platform` applies to every
-  file in an upload.
-- `activities.upload()` takes `external_id=`: your app's own ID for each file, one per file in
-  order, with a token issued to your app. Sending a file again with an ID SweatStack has seen
-  returns the existing source when the file is unchanged, so retrying a lost upload is safe. A
-  changed file is processed again under the same source ID, with new activities. The source
-  echoes the ID as `SourceResponse.external_id`.
+- **The document was rendered in-process** by the server's test image, with throwaway keys (no
+  secrets, no telemetry) and a tmpfs `/data`, under a compose project of its own. The same method
+  on the server's last release produced production's document exactly (deep equality), so the
+  render is a faithful preview.
+- **The regen's diff is the [contract](#the-server-contract-this-mirrors) and nothing else**:
+  `WriterKind` with three members; `DailySource` and `SourceOrigin` gone; the three fields on all
+  four response models (`writer` optional only on `DailyResponse`); `platform` on the upload,
+  `DailyCreate`, `DailyBatchCreate`, `MarkerWrite` and `MaxEffortWrite`; `provider` and `replace`
+  gone from the upload.
+- **The wire-name test** against that document reports only `login_hint` (its own change).
+- **`make check`** is green on the branch.
 
-<!-- --8<-- [start:upgrading-0-99] -->
-### Upgrading
-
-**Upgrade on the day of SweatStack's <date> release.** From that day, SDKs before 0.99 behave
-like this:
-
-- `activities.upload()` raises a pydantic `ValidationError` *after* the server has accepted the
-  files. The files are uploaded, so don't retry the call.
-- `dailies.list()` keeps working, but **Silent:** `source` is `None` on every day.
-
-0.99 needs that release, and against an older server it fails on every daily it reads.
-
-| 0.98 | 0.99 | Fails how |
-|---|---|---|
-| `daily.source == DailySource.manual` | `daily.writer == WriterKind.athlete` | `AttributeError` on `.source` |
-| `daily.source == DailySource.application` | `daily.writer == WriterKind.application`; `daily.application_id` names the app | `AttributeError` |
-| `daily.source == DailySource.garmin_connect` (or `intervals_icu`, `wahoo`) | `daily.writer == WriterKind.sweatstack and daily.platform == "garmin_connect"`. For "from Garmin, whoever wrote it": `daily.platform == "garmin_connect"` | `AttributeError` |
-| `daily.source is None` (an estimated or missing day) | `daily.writer is None`, or `daily.status != DailyStatus.stored` | `AttributeError` |
-| `source.origin == "manual_upload"` | `source.writer == WriterKind.athlete` | `AttributeError` on `.origin` |
-| `source.origin == "garmin_connect"` (or another sync) | `source.writer == WriterKind.sweatstack and source.platform == "garmin_connect"` | `AttributeError` |
-| `df["source"]` on a `dailies.list()` frame | `df["writer"]` (strings: `"athlete"`, ...) and `df["platform"]` | `KeyError` (pandas), `ColumnNotFoundError` (Polars) |
-| `.get("source")` on a `model_dump()` or a frame row | `.get("writer")`, `.get("platform")` | **Silent:** returns `None` |
-| `from sweatstack import DailySource` | `from sweatstack import WriterKind` | `ImportError` |
-| `from sweatstack.openapi_schemas import SourceOrigin` | `from sweatstack import WriterKind` | `ImportError` |
-
-**Migration prompt.** Paste this into your coding agent:
-
-```text
-Upgrade this codebase to sweatstack 0.99, which splits "who wrote a record" from "which
-platform its data came from". The upgrade table is the "Upgrading" section of the 0.99.0 entry
-in https://github.com/SweatStack/sweatstack-python/blob/main/CHANGELOG.md (also at
-https://docs.sweatstack.no/learn/python/upgrading/). Read it first.
-
-Find every read of `.source` on a daily, marker or max effort, of `.origin` on an uploaded
-source, every use of DailySource or SourceOrigin, and every "source" column or key on dailies
-data (frames, model_dump(), dicts). For each, decide which question the code asks:
-
-1. Who wrote it (the athlete, an app, or SweatStack's sync)? Use `.writer` and `WriterKind`;
-   `.application_id` names the app.
-2. Where did the data come from (Garmin, Strava, ...)? Use `.platform`, a plain string such as
-   "garmin_connect", or None.
-3. Both, as the old garmin_connect value did? Combine them:
-   writer == WriterKind.sweatstack and platform == "garmin_connect". Ask whether the code
-   really means "from Garmin, whoever wrote it": then platform alone.
-
-Code that checked `source is None` to find estimated or missing days should check
-`status != DailyStatus.stored`. Search for `.get("source")` and "source" in column lists: those
-return None or drop the column without an error. Then run the code and the tests.
-```
-<!-- --8<-- [end:upgrading-0-99] -->
-````
-
-Write it in user terms. Check before committing: `tests/test_changelog.py` wants every "silent" in
-the section written as `**Silent:**` in bold. Don't lowercase or rephrase it.
+One thing to settle before release, at the server: **the column order of a daily**. The server
+adds the three fields through a base class, so they come first, and `dailies.list()` frames start
+`writer, application_id, platform, date, value, status`. The SDK doesn't reorder a model's
+columns (AGENTS.md, "Never add a per-model special case"), so the fix is in the server's model
+(the record's own fields first). The tests pin the set of columns, not the order, until then.
+Release step 5 checks the order.
 
 ## Commits
 
 | # | Where | What | Done when |
 |---|---|---|---|
 | 1 | `main`, now | Regenerate from today's production, plus the temporary `NOT_EXPOSED` entry for the upload | `make check` green; the wire test reports only `login_hint` |
-| 2 | branch `writer-and-platform` | Everything in [Commit 2](#commit-2-writer-and-platform-branch-writer-and-platform), regenerated from a local server running the release's code | `make check` green; the wire test against that document reports only `login_hint` |
-| 3 | the same branch, release day | Regenerate from production (see Release), bump `pyproject.toml` to 0.99.0, rename the heading | The regen shows no diff against commit 2 |
+| 2 | branch `writer-and-platform` | Everything in [Commit 2](#commit-2-writer-and-platform-branch-writer-and-platform), regenerated from the server's finished code | Done 2026-11-09: `make check` green; the wire test reports only `login_hint` |
+| 3 | the same branch, release day | Regenerate from production (see Release), bump `pyproject.toml` to 0.99.0, rename the heading | The regen shows only the two expected differences (Release, step 2) |
 
 ## Release
 
@@ -395,16 +341,22 @@ The server ships first, and the SDK follows the same day.
 1. **Wait until the server release is live**: production's `/openapi.json` has `WriterKind` and no
    `DailySource`. Until then, nothing is released from this branch, and nothing that needs it is
    released from `main` (S9).
-2. **Regenerate from production** (commit 3). There should be no diff. If there is one, the server
-   changed after commit 2: reconcile it like a regen diff (DEVELOPMENT.md), and don't release until
-   the branch matches what production serves.
+2. **Regenerate from production** (commit 3). Two differences from commit 2 are expected, both
+   asked of the server after the check: the record's own fields before `writer`, `application_id`
+   and `platform` in the four models, and a corrected description of the upload's `external_id`.
+   With the first, pin the column order in `tests/test_dailies.py` (`DAILY_COLUMNS` becomes a list
+   starting `date, value, status`). Anything else means the server changed after commit 2:
+   reconcile it like a regen diff (DEVELOPMENT.md), and don't release until the branch matches what
+   production serves.
 3. Rebase onto `main`, rename `## [Unreleased]` to `## [0.99.0] - <release date>`, bump the version,
    then run `make check` and `make publish`.
 4. **Docs**: on the docs site's Upgrading page, add a `## 0.99` section with the
    `upgrading-0-99` include, above `## 0.94`. The generated reference follows the regen.
 5. Check against production with a token from `authenticate()`:
    - `client.dailies.list("body_mass", start=..., end=...)` parses, and `writer` is set on the
-     stored days.
+     stored days. With `output="polars"`, the columns start `date, value, status`. If they start
+     with `writer`, the server's order fix hasn't shipped: release anyway (nothing breaks), and
+     pin the order in `tests/test_dailies.py` once it does.
    - `client.dailies.set(..., platform="garmin")` reads back `platform == "garmin_connect"` and
      `writer == WriterKind.athlete`. Then delete that test value.
 
