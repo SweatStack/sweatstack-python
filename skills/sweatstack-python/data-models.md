@@ -49,13 +49,15 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
   as `Marker`s, plus `vo2max`, `critical_power`, `w_prime`, ...), `tags`, `created_by`;
   `TestDetails` adds the resolved `traces` and overlapping `activities`.
 - **DailyResponse**: `date`, `value`, `status`, `source` (`DailySource`, an open set: `manual`,
-  `garmin_connect`, ...; markers and max efforts carry it too).
+  `garmin_connect`, ...; markers and max efforts carry it too), `application_id` (the app that
+  wrote a stored value).
 - **UserSummary** (`users.list()`): `id`, `first_name`, `last_name`, `display_name`, `scopes`,
   `is_managed`.
 - **UserResponse** (`users.create()`, `retrieve()`, `update()`): `id`, `first_name`,
   `last_name`, `display_name`, `admin`, `is_managed`, `registered_at`.
 - **SourceResponse** (`activities.upload()`): `id`, `type`, `origin`, `filename`, `status`
-  (`processing`, `processed`, `failed`), `error`, `activity_ids`, `created_at`.
+  (`processing`, `processed`, `failed`), `error`, `activity_ids`, `created_at`, `application_id`,
+  `external_id` (set on a file an app relayed).
 - **UserInfoResponse** (`oauth.userinfo()`): `sub`, `name`, `given_name`, `family_name`,
   `email`, `registered_at`, `issue`.
 - **AccountStatusResponse** (`profile.status()`, beta): `issue` (`StatusIssueResponse | None`:

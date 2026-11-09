@@ -11,6 +11,16 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+### Added
+
+- `DailyResponse.application_id`, also a column of the `dailies.list()` frames: the app that
+  wrote a stored value, or `None`.
+- `SourceResponse.application_id` and `SourceResponse.external_id`: the app that relayed a file
+  from `activities.upload()`, and the ID it gave the file.
+
+
 ## [0.98.0] - 2026-10-30
 
 ### Added

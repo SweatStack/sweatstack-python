@@ -307,13 +307,9 @@ class TestListBackends:
             pf = client.dailies.list(
                 "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars"
             )
-        assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == [
-            "date",
-            "value",
-            "status",
-            "source",
-        ]
-        assert pf.columns == ["date", "value", "status", "source"]
+        columns = ["date", "value", "status", "source", "application_id"]
+        assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == columns
+        assert pf.columns == columns
 
     def test_as_dataframe_is_gone(self, client):
         with pytest.raises(TypeError):

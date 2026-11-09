@@ -68,7 +68,7 @@ class TestDataFrameConversion:
 
         assert isinstance(df.index, pd.RangeIndex)
         assert len(df) == 3
-        assert list(df.columns) == ["date", "value", "status", "source"]
+        assert list(df.columns) == ["date", "value", "status", "source", "application_id"]
 
     def test_dataframe_values(self, sample_dailies: list[DailyResponse]):
         """DataFrame should contain correct values including None."""
@@ -86,7 +86,7 @@ class TestDataFrameConversion:
         df = _frames.models_to_pandas([], DailyResponse)
 
         assert len(df) == 0
-        assert list(df.columns) == ["date", "value", "status", "source"]
+        assert list(df.columns) == ["date", "value", "status", "source", "application_id"]
 
 
 # ---------------------------------------------------------------------------
