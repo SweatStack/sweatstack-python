@@ -277,6 +277,12 @@ Until 1.0, breaking changes are allowed when they ship with an upgrade path. Eve
 Removed *parameters* need no entry: Python's `TypeError` names them, and the CHANGELOG explains
 the replacement.
 
+**A new field never breaks an old reader.** A field added to an existing model that a client
+reads (a response, or a webhook body) must have a default. Code that builds models by hand, data
+saved with `model_dump()`, older servers and webhook bodies sent before the field existed all
+lack the new key. If a regen makes existing fixtures fail with `Field required`, that is a server
+bug: ask the server for a default, and don't add the key to the fixtures.
+
 
 ## Output backends
 
