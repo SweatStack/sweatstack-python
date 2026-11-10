@@ -11,7 +11,11 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
-## [Unreleased]
+## [0.100.0] - 2026-11-10
+
+Records and time-series frames say which platform their data came from, and give you the line to
+show next to it. The FastAPI plugin verifies Standard Webhooks signatures. Nothing is removed or
+renamed: no code changes are needed to upgrade.
 
 ### Added
 
