@@ -660,3 +660,15 @@ class TestStandardWebhookRequests:
 
         assert response.status_code == 200
         assert response.json() == {"id": None}
+
+
+@pytest.mark.parametrize("event_id", ["evt_123", None])
+def test_the_generated_webhook_body_reads_bodies_with_and_without_an_id(event_id):
+    """Every delivery carries ``id``; a body from before it was added does not. A model generated
+    from the document must read both (AGENTS.md: a new field never breaks an old reader)."""
+    from sweatstack.openapi_schemas import WebhookEventBody
+
+    body = create_webhook_payload()
+    if event_id is not None:
+        body["id"] = event_id
+    assert WebhookEventBody.model_validate(body).id == event_id

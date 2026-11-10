@@ -30,7 +30,7 @@ def sample_dailies() -> list[DailyResponse]:
 
 # The order follows the server's document (the record first, then who wrote it); the SDK never
 # reorders a model's columns.
-DAILY_COLUMNS = ["date", "value", "status", "writer", "application_id", "platform"]
+DAILY_COLUMNS = ["date", "value", "status", "writer", "application_id", "platform", "attribution"]
 
 
 # ---------------------------------------------------------------------------
@@ -229,3 +229,18 @@ def test_writer_is_a_closed_set(model, row):
 def test_platform_is_an_open_set(model, row):
     record = model.model_validate({**row, "writer": "application", "platform": "a_new_platform"})
     assert record.platform == "a_new_platform"
+
+
+@RECORDS
+@pytest.mark.parametrize("platform, attribution", [("garmin_connect", "Garmin"), (None, None)])
+def test_every_record_carries_the_line_to_show_next_to_it(model, row, platform, attribution):
+    record = model.model_validate(
+        {**row, "writer": "sweatstack", "platform": platform, "attribution": attribution}
+    )
+    assert record.attribution == attribution
+
+
+@RECORDS
+def test_a_record_saved_before_attribution_still_loads(model, row):
+    # A model_dump() from an older SDK, a test double, an older server: none has the key.
+    assert model.model_validate({**row, "writer": "athlete"}).attribution is None

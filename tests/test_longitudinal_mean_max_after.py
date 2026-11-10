@@ -39,7 +39,7 @@ def _index_free_after_response() -> bytes:
 
 
 def _call(client, **kwargs):
-    response = MagicMock(status_code=200, content=_index_free_after_response())
+    response = MagicMock(status_code=200, content=_index_free_after_response(), headers={})
     http = MagicMock()
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)
@@ -73,7 +73,7 @@ def test_single_after_is_normalised_to_a_list(client):
 
 def test_no_after_is_unchanged(client):
     # without `after`, no after param is sent; the server's metric index becomes a leading column
-    response = MagicMock(status_code=200)
+    response = MagicMock(status_code=200, headers={})
     df = pd.DataFrame(
         {"duration": pd.to_timedelta([60], unit="s")}, index=pd.Index([200.0], name="power")
     )
@@ -129,7 +129,7 @@ def test_by_is_removed(client):
 
 
 def test_after_response_is_duration_rows_with_columns_only(client):
-    response = MagicMock(status_code=200, content=_index_free_by_duration_response())
+    response = MagicMock(status_code=200, content=_index_free_by_duration_response(), headers={})
     http = MagicMock()
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)

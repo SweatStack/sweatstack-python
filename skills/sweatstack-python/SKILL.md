@@ -85,6 +85,12 @@ No frame has an index: `timestamp`, the mean-max metric and `date` are columns. 
 float64; Polars and Arrow keep the compact wire dtypes. Nested list fields are dotted columns in
 pandas (`summary.power.mean`) and structs in Polars (`.unnest("summary")`).
 
+Time-series frames carry the line to show next to the data (`"Garmin"`, or `"Data from Garmin and
+Strava"` for a longitudinal range) in `df.attrs["attribution"]` (pandas) or the Arrow schema
+metadata `b"attribution"`, absent when nothing came from a platform. Polars frames have no
+metadata: fetch `output="arrow"`, read the line, then `pl.from_arrow(table)`. Records carry it as
+`attribution`. Show it next to the data; Garmin requires it.
+
 ## Authentication
 
 - Scripts and notebooks: `client.authenticate()` (browser once, tokens saved on the machine).

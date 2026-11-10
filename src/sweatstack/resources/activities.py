@@ -298,6 +298,11 @@ class Activities(Resource):
             A frame with a timezone-aware UTC ``timestamp`` column, ``timestamp_local``, and
             one column per metric.
 
+            The line to show next to the data, when it came from a platform (``"Garmin"``), is in
+            ``df.attrs["attribution"]`` (pandas) or the schema metadata ``b"attribution"``
+            (Arrow), and absent otherwise. Polars frames carry no metadata: ask for
+            ``output="arrow"`` and convert with ``pl.from_arrow``.
+
         Raises:
             SweatStackNotFoundError: If the activity does not exist.
             SweatStackAPIError: If the API request fails for any other reason.
@@ -319,7 +324,9 @@ class Activities(Resource):
         response = self._client._request(
             "get", f"/api/v1/activities/{activity_id}/data", params=params
         )
-        return self._client._read_frame(response.content, output)
+        return self._client._read_frame(
+            response.content, output, self._client._attribution(response)
+        )
 
     @overload
     def mean_max(
@@ -397,6 +404,11 @@ class Activities(Resource):
             the UTC time the best effort began. The curve can rise again at longer durations
             (intermittent efforts); it is returned as it is.
 
+            The line to show next to the data, when it came from a platform (``"Garmin"``), is in
+            ``df.attrs["attribution"]`` (pandas) or the schema metadata ``b"attribution"``
+            (Arrow), and absent otherwise. Polars frames carry no metadata: ask for
+            ``output="arrow"`` and convert with ``pl.from_arrow``.
+
         Raises:
             SweatStackNotFoundError: If the activity does not exist.
             SweatStackAPIError: If the API request fails for any other reason.
@@ -414,7 +426,9 @@ class Activities(Resource):
         response = self._client._request(
             "get", f"/api/v1/activities/{activity_id}/mean-max", params=params
         )
-        return self._client._read_frame(response.content, output)
+        return self._client._read_frame(
+            response.content, output, self._client._attribution(response)
+        )
 
     @overload
     def awd(
@@ -501,7 +515,9 @@ class Activities(Resource):
         response = self._client._request(
             "get", f"/api/v1/activities/{activity_id}/accumulated-work-duration", params=params
         )
-        return self._client._read_frame(response.content, output)
+        return self._client._read_frame(
+            response.content, output, self._client._attribution(response)
+        )
 
     def upload(
         self,
@@ -757,6 +773,12 @@ class Longitudinal(Resource):
             A frame, one row per sample, with ``timestamp`` (UTC), ``timestamp_local``,
             ``activity_id`` and ``sport`` columns plus one column per metric.
 
+            The line to show next to the data, naming every platform in the range (``"Data from
+            Garmin and Strava"``), is in ``df.attrs["attribution"]`` (pandas) or the schema
+            metadata ``b"attribution"`` (Arrow), and absent when nothing came from a platform.
+            Polars frames carry no metadata: ask for ``output="arrow"`` and convert with
+            ``pl.from_arrow``. The cache keeps the line with the data.
+
         Raises:
             SweatStackAPIError: If the API request fails.
 
@@ -882,6 +904,12 @@ class Longitudinal(Resource):
         Returns:
             A frame, one row per duration (and per ``after`` value): ``duration``, the metric,
             ``start`` (UTC), and the ``activity_id`` and ``sport`` that set it.
+
+            The line to show next to the data, naming every platform in the range (``"Data from
+            Garmin and Strava"``), is in ``df.attrs["attribution"]`` (pandas) or the schema
+            metadata ``b"attribution"`` (Arrow), and absent when nothing came from a platform.
+            Polars frames carry no metadata: ask for ``output="arrow"`` and convert with
+            ``pl.from_arrow``. The cache keeps the line with the data.
 
         Raises:
             SweatStackAPIError: If the API request fails.
@@ -1022,16 +1050,21 @@ class Longitudinal(Resource):
         response = self._client._request(
             "get", "/api/v1/activities/longitudinal-accumulated-work-duration", params=params
         )
-        return self._client._read_frame(response.content, output)
+        return self._client._read_frame(
+            response.content, output, self._client._attribution(response)
+        )
 
     def _cached_frame(self, namespace: str, path: str, params: dict, output: str | None):
         """GET a parquet endpoint through the local cache, when it is enabled."""
         client = self._client
         if not client._cache_enabled():
-            return client._read_frame(client._request("get", path, params=params).content, output)
+            response = client._request("get", path, params=params)
+            return client._read_frame(response.content, output, client._attribution(response))
         key = client._generate_cache_key(namespace, **params)
-        content = client._read_cache(namespace, key)
-        if content is None:
-            content = client._request("get", path, params=params).content
-            client._write_cache(namespace, key, content)
-        return client._read_frame(content, output)
+        cached = client._read_cache(namespace, key)
+        if cached is None:
+            response = client._request("get", path, params=params)
+            cached = response.content, client._attribution(response)
+            client._write_cache(namespace, key, *cached)
+        content, attribution = cached
+        return client._read_frame(content, output, attribution)

@@ -15,6 +15,19 @@ https://docs.sweatstack.no/learn/python/upgrading/.
 
 ### Added
 
+- Records say which platform their data came from and the line to show next to it: `platform` and
+  `attribution` on activities (also the activity in a trace), `attribution` on sources, dailies,
+  markers and max efforts, and as columns in the frames from `activities.list()`,
+  `dailies.list()` and `traces.list()`. Show `attribution` next to the data, near its title.
+  Garmin requires it for Garmin data. See
+  [Where the data came from](https://docs.sweatstack.no/learn/data/activities/#where-the-data-came-from).
+- `activities.data()`, `activities.mean_max()`, `activities.longitudinal.data()` and
+  `activities.longitudinal.mean_max()` put the same line in `df.attrs["attribution"]` (pandas) or
+  the schema metadata `b"attribution"` (Arrow), when the data came from a platform. A longitudinal
+  line names every platform in the range: `"Data from Garmin and Strava"`. Polars frames carry no
+  metadata, so ask for `output="arrow"`, read the line, and convert with `pl.from_arrow`. With
+  `enable_cache()` the line is cached with the data. Entries cached by an earlier version are
+  fetched again once.
 - `oauth.authorization_url()` takes `login_hint=`: the user's email address, when your app already
   knows it, to fill in the email field of SweatStack's sign-in page.
 - The FastAPI plugin verifies webhooks by their [Standard Webhooks](https://www.standardwebhooks.com/)

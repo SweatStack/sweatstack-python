@@ -90,6 +90,9 @@ logger = logging.getLogger(__name__)
 # Refresh tokens this many seconds before they expire to avoid race conditions
 TOKEN_EXPIRY_MARGIN_SECONDS = 5
 
+# The line to show next to a parquet response's data; absent when nothing came from a platform.
+ATTRIBUTION_HEADER = "SweatStack-Attribution"
+
 # Module-level cache configuration. None = caching disabled.
 _cache_config: dict | None = None
 
@@ -908,20 +911,31 @@ class Client:
         cache_data = f"{namespace}:{json.dumps(normalized_params, sort_keys=True)}"
         return hashlib.sha256(cache_data.encode()).hexdigest()[:16]
 
-    def _read_cache(self, namespace: str, cache_key: str) -> bytes | None:
-        """Try to read cached data. Returns raw bytes or None."""
+    def _read_cache(self, namespace: str, cache_key: str) -> tuple[bytes, str | None] | None:
+        """A cached response as ``(content, attribution)``, or None on a miss.
+
+        An entry is the body plus its ``.attribution`` file (empty when the response had no
+        attribution header). A body without that file, as SDKs before 0.100 cached it, is a
+        miss: the old entry cannot say whether its data came from a platform.
+        """
         try:
-            cache_file = self._get_cache_dir() / f"{namespace}-{cache_key}.parquet"
-            if cache_file.exists():
-                return cache_file.read_bytes()
+            stem = self._get_cache_dir() / f"{namespace}-{cache_key}"
+            body, line = stem.with_suffix(".parquet"), stem.with_suffix(".attribution")
+            if body.exists() and line.exists():
+                return body.read_bytes(), line.read_text(encoding="utf-8") or None
         except Exception as e:
             self._log_cache_error("read", e)
         return None
 
-    def _write_cache(self, namespace: str, cache_key: str, content: bytes) -> None:
-        """Write raw bytes to cache."""
+    def _write_cache(
+        self, namespace: str, cache_key: str, content: bytes, attribution: str | None
+    ) -> None:
+        """Cache a response's body and its attribution line, the line last so that an
+        interrupted write leaves a miss rather than an entry without its line."""
         try:
-            (self._get_cache_dir() / f"{namespace}-{cache_key}.parquet").write_bytes(content)
+            stem = self._get_cache_dir() / f"{namespace}-{cache_key}"
+            stem.with_suffix(".parquet").write_bytes(content)
+            stem.with_suffix(".attribution").write_text(attribution or "", encoding="utf-8")
         except Exception as e:
             self._log_cache_error("write", e)
 
@@ -1116,22 +1130,40 @@ class Client:
             )
         return value
 
-    def _read_frame(self, content: bytes, output: str | None) -> Any:
-        """Every parquet response becomes a frame through here."""
+    def _read_frame(self, content: bytes, output: str | None, attribution: str | None) -> Any:
+        """Every parquet response becomes a frame through here.
+
+        ``attribution`` is the response's ``SweatStack-Attribution`` header. It goes in the
+        frame's own metadata where the container has one, under ``attribution`` in pandas
+        ``attrs`` and ``b"attribution"`` in the Arrow schema metadata, and only when present, so
+        a missing key means what a missing header means: nothing came from a platform. Polars
+        frames carry no metadata, and bytes are the body as sent.
+        """
         output = (
             _frames.resolve_output(output, self.output, allowed=_frames.PARQUET_OUTPUTS)
             or _frames.installed_frame_output()
         )
         if output == "bytes":
             return content
-        if output == "arrow":
-            return _frames.parquet_to_arrow(content)
         if output == "polars":
             return _frames.parquet_to_polars(content)
+        if output == "arrow":
+            table = _frames.parquet_to_arrow(content)
+            if attribution is None:
+                return table
+            metadata = {**(table.schema.metadata or {}), b"attribution": attribution.encode()}
+            return table.replace_schema_metadata(metadata)
         df = _frames.parquet_to_pandas(content)
         if self.streamlit_compatible:
             df = make_dataframe_streamlit_compatible(df)
+        if attribution is not None:
+            df.attrs["attribution"] = attribution
         return df
+
+    @staticmethod
+    def _attribution(response: httpx2.Response) -> str | None:
+        """The line to show next to a parquet response's data, from its header."""
+        return response.headers.get(ATTRIBUTION_HEADER)
 
     def _frame_from_models(
         self,

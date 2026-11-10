@@ -2,9 +2,12 @@
 
 ## Status
 
-- **READY, 2026-11-10.** Mirrors server 0.157.0, live. Checked against production that day:
+- **DONE, 2026-11-10**, verified end to end against production (records, list and trace frames,
+  all four Parquet methods, the cache and the Polars route). Ships in 0.100.0.
+- Mirrors server 0.157.1, live. Checked against production that day:
   - Regenerating changes the 13 fields in the [Summary](#summary), each `Field(None, ...)`, plus
-    one change outside this plan: `WebhookEventBody.id`, which the SDK doesn't use.
+    `WebhookEventBody.id` (optional), which the Standard Webhooks change in the same release
+    reads.
   - The header arrives on all four Parquet routes below and is declared on them in
     `/openapi.json`. It is absent on the two accumulated-work-duration routes.
   - The existing fixtures pass unedited ([D5](#decisions)).
@@ -56,7 +59,7 @@ accumulated-work-duration routes don't send it yet.
 | D2 | **The Parquet line goes in the frame's own metadata, where one exists, and survives the cache.** pandas gets it in `df.attrs["attribution"]` and Arrow in the schema metadata `b"attribution"`. Polars and bytes have no channel; Polars users ask for Arrow and convert. | See [D2 in detail](#d2-the-line-on-a-parquet-response). |
 | D3 | **Frames gain the columns in the model's order.** The SDK never reorders a model's columns. | See [Frame columns](#frame-columns). |
 | D4 | **No new methods, parameters or overloads.** No public signature changes, and `tests/typing/` stays as it is. | The fields ride on the methods that already return these records, and the line rides on the frames those four methods already return. |
-| D5 | **A field added to an existing response has a default, so the server gives `attribution` one.** On 0.156.0 it is required, which breaks code that builds these models by hand, data saved with `model_dump()` by an older SDK and later validated again, and parsing against an older server. Each fails with `Field required`. The server patch makes it `Field(None, ...)` like `platform`. The SDK changes nothing for this: the existing fixtures are old recorded responses, and they must pass **unedited**. | A new response field must never break an old reader (AGENTS.md, "Breaking changes"). Fixing it at the source keeps the release additive. Patching the fixtures would hide the break from users, just as it would hide it from us. |
+| D5 | **A field added to an existing response has a default, so the server gives `attribution` one.** On 0.156.0 it is required, which breaks code that builds these models by hand, data saved with `model_dump()` by an older SDK and later validated again, and parsing against an older server. Each fails with `Field required`. The server patch makes it `Field(None, ...)` like `platform`. The SDK changes nothing for this: the existing fixtures are old recorded responses, and they must pass **unedited**. | A new field must never break an old reader (AGENTS.md, "Breaking changes"). Fixing it at the source keeps the release additive. Patching the fixtures would hide the break from users, just as it would hide it from us. |
 
 ### D2: the line on a Parquet response
 
@@ -180,8 +183,8 @@ No change to `_frames`: `str | None` is an existing row in the JSON Schema gramm
 
 ## Release
 
-1. Regenerate from production 0.157.0. The diff is the 13 fields of the [Summary](#summary),
-   each `Field(None, ...)`, and `WebhookEventBody.id`.
+1. Regenerate from production 0.157.1. The diff is the 13 fields of the [Summary](#summary),
+   each `Field(None, ...)`, and the optional `WebhookEventBody.id`.
 2. The wire-name check against the same document passes. It found `login_hint`, which shipped
    in its own commit.
 3. **Gate:** the docs anchor `#where-the-data-came-from` resolves.

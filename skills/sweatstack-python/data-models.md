@@ -38,7 +38,7 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
 - **ActivitySummary** (`activities.list()`): `id`, `sport`, `start`, `end` (UTC), `start_local`,
   `end_local` (naive local wall-clock), `duration`, `metrics` (the streams the activity has),
   `summary` (per-metric aggregates, e.g. `summary.power.mean`; every field optional), `laps`,
-  `traces`, `tags`, `source_id`, `app_metadata`.
+  `traces`, `tags`, `source_id`, `platform`, `app_metadata`, `attribution`.
 - **ActivityDetails** (`activities.retrieve()`, `latest()`): the summary plus `distance`,
   `devices`.
 - **TraceDetails**: `id`, `timestamp`, `timestamp_local`, `lactate`, `rpe`, `notes`, `power`,
@@ -54,6 +54,10 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
   `None`). All three are `None` on an estimated or missing day. `SourceResponse`, markers and max
   efforts carry the same three fields. In a pandas frame `writer` holds `WriterKind` members;
   in Polars and Arrow, strings.
+- **`attribution`** on activities, traces' activities, dailies, sources, markers and max efforts:
+  the line to show next to the data (`"Garmin"`), or `None` when it came from no platform. Show
+  it next to the data, near its title; Garmin requires it for Garmin data. The server composes
+  it: never build it from `platform`.
 - **UserSummary** (`users.list()`): `id`, `first_name`, `last_name`, `display_name`, `scopes`,
   `is_managed`.
 - **UserResponse** (`users.create()`, `retrieve()`, `update()`): `id`, `first_name`,

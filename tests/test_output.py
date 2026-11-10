@@ -67,7 +67,7 @@ def _mean_max_without_index() -> bytes:
 
 
 def _http_returning(content: bytes):
-    response = MagicMock(status_code=200, content=content)
+    response = MagicMock(status_code=200, content=content, headers={})
     http = MagicMock()
     http.__enter__ = MagicMock(return_value=http)
     http.__exit__ = MagicMock(return_value=False)
@@ -307,7 +307,7 @@ class TestListBackends:
             pf = client.dailies.list(
                 "body_mass", start=date(2026, 4, 1), end=date(2026, 4, 1), output="polars"
             )
-        columns = ["date", "value", "status", "writer", "application_id", "platform"]
+        columns = ["date", "value", "status", "writer", "application_id", "platform", "attribution"]
         assert isinstance(df.index, pd.RangeIndex) and list(df.columns) == columns
         assert pf.columns == list(df.columns)  # one column order on every backend
 
