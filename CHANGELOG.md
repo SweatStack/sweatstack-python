@@ -11,6 +11,14 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+### Added
+
+- `oauth.authorization_url()` takes `login_hint=`: the user's email address, when your app already
+  knows it, to fill in the email field of SweatStack's sign-in page.
+
+
 ## [0.99.0] - 2026-11-09
 
 Records say who wrote them and which platform their data came from, as two separate answers.

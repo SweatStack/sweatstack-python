@@ -22,6 +22,7 @@ def _build_authorization_url(
     prompt: str | None = None,
     state: str | None = None,
     nonce: str | None = None,
+    login_hint: str | None = None,
     integration: str | None = None,
     email_auth_mode: str | None = None,
 ) -> str:
@@ -36,6 +37,7 @@ def _build_authorization_url(
         "prompt": prompt,
         "state": state,
         "nonce": nonce,
+        "login_hint": login_hint,
         "integration": integration,
         "email_auth_mode": email_auth_mode,
     }
@@ -79,6 +81,7 @@ class OAuth(Resource):
         prompt: str | None = None,
         state: str | None = None,
         nonce: str | None = None,
+        login_hint: str | None = None,
         integration: str | None = None,
         email_auth_mode: str | None = None,
     ) -> str:
@@ -96,6 +99,9 @@ class OAuth(Resource):
                 shows it.
             state: An opaque value to check on the way back, against CSRF.
             nonce: Echoed in the ``id_token`` that comes with the code exchange.
+            login_hint: The OpenID Connect ``login_hint``: the user's email address, when your app
+                already knows it, to fill in the email field of the sign-in page. At most 320
+                characters.
             integration: One provider (``"garmin_connect"``, ``"intervals_icu"``, ``"wahoo"``):
                 the user skips the sign-in chooser and goes straight to it.
             email_auth_mode: ``"existing_only"`` presents email sign-in as for existing
@@ -126,6 +132,7 @@ class OAuth(Resource):
             prompt=prompt,
             state=state,
             nonce=nonce,
+            login_hint=login_hint,
             integration=integration,
             email_auth_mode=email_auth_mode,
         )

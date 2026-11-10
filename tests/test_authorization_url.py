@@ -51,6 +51,7 @@ class TestAuthorizationUrl:
             prompt="consent",
             state="s",
             nonce="n",
+            login_hint="athlete@example.com",
             integration="garmin_connect",
             email_auth_mode="existing_only",
         )
@@ -61,9 +62,16 @@ class TestAuthorizationUrl:
             "prompt": "consent",
             "state": "s",
             "nonce": "n",
+            "login_hint": "athlete@example.com",
             "integration": "garmin_connect",
             "email_auth_mode": "existing_only",
         }
+
+    def test_a_login_hint_arrives_as_written(self):
+        url = Client().oauth.authorization_url(
+            client_id="app", redirect_uri="http://x/cb", login_hint="first+tag@example.com"
+        )
+        assert query(url)["login_hint"] == "first+tag@example.com"
 
 
 @pytest.fixture
