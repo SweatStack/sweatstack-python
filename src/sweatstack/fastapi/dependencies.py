@@ -452,7 +452,7 @@ async def _require_authenticated_user(
 ) -> SweatStackUser:
     """Dependency: always returns principal user.
 
-    In webhook context (detected by X-Sweatstack-Signature header),
+    In webhook context (detected by its signature headers),
     loads the user from TokenStore instead of session cookie.
     """
     # Import here to avoid circular imports

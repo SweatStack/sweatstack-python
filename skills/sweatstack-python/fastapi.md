@@ -152,19 +152,19 @@ def handle_webhook(payload: WebhookPayload, user: AuthenticatedUser):
     process(activity)
 ```
 
-**`WebhookPayload`** dependency verifies the `X-Sweatstack-Signature` header automatically. Returns 400 if invalid.
+**`WebhookPayload`** dependency verifies the [Standard Webhooks](https://www.standardwebhooks.com/) headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`) automatically, with a 5-minute timestamp tolerance. Returns 400 if they are missing. `payload.id` is the event's id, the same on every retry: deduplicate on it. Pass the secret as SweatStack shows it, `whsec_` included.
 
-**Signature verification** uses HMAC-SHA256 with a 5-minute timestamp tolerance.
+The deprecated `X-Sweatstack-Signature` header is read only when the standard headers are absent; SweatStack stops sending it on 15 February 2027.
 
 **Manual verification** (without the dependency):
 
 ```python
-from sweatstack.fastapi import verify_signature
+from sweatstack.fastapi import verify_standard_signature
 
-verify_signature(
+verify_standard_signature(
     payload=request_body_bytes,
-    signature_header=request.headers["X-Sweatstack-Signature"],
-    secret="your-webhook-secret",
+    headers=request.headers,
+    secret="whsec_...",
 )
 ```
 

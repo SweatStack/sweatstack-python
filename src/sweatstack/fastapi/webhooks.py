@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
@@ -63,12 +66,15 @@ class WebhookPayloadModel:
         event_type: The type of event (e.g., "activity_created").
         resource_id: The ID of the affected resource.
         timestamp: When the event occurred.
+        id: The event's ID, the same on every retry of the event: deduplicate on it. ``None``
+            on a delivery signed only with the deprecated ``X-Sweatstack-Signature`` header.
     """
 
     user_id: str
     event_type: str
     resource_id: str
     timestamp: datetime
+    id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -78,14 +84,73 @@ class WebhookPayloadModel:
 TIMESTAMP_TOLERANCE = 300  # 5 minutes
 
 
+SECRET_PREFIX = "whsec_"
+
+
+def verify_standard_signature(
+    payload: bytes,
+    headers: Mapping[str, str],
+    secret: str,
+) -> None:
+    """Verify a webhook's Standard Webhooks signature.
+
+    SweatStack signs every delivery as the Standard Webhooks specification
+    (https://www.standardwebhooks.com/) describes: ``webhook-signature`` holds
+    ``v1,<base64 HMAC-SHA256>`` over ``{webhook-id}.{webhook-timestamp}.{body}``,
+    keyed by the base64-decoded part of the secret after ``whsec_``.
+
+    Example:
+        >>> verify_standard_signature(body, request.headers, "whsec_...")  # doctest: +SKIP
+
+    Args:
+        payload: The raw request body bytes.
+        headers: The request headers. Names are matched case-insensitively.
+        secret: The webhook secret, as shown on your app's Webhooks tab.
+
+    Raises:
+        WebhookVerificationError: If a header is missing, the timestamp is outside
+            the tolerance window, or no signature matches.
+    """
+    lowered = {name.lower(): value for name, value in headers.items()}
+    try:
+        msg_id = lowered["webhook-id"]
+        timestamp = int(lowered["webhook-timestamp"])
+        signatures = lowered["webhook-signature"].split(" ")
+    except (KeyError, ValueError) as e:
+        raise WebhookVerificationError("Missing or invalid Standard Webhooks headers") from e
+
+    try:
+        key = base64.b64decode(secret.removeprefix(SECRET_PREFIX), validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise WebhookVerificationError(
+            "The webhook secret is not a Standard Webhooks secret"
+        ) from e
+
+    if abs(time.time() - timestamp) > TIMESTAMP_TOLERANCE:
+        raise WebhookVerificationError("Timestamp outside tolerance window")
+
+    signed_payload = f"{msg_id}.{timestamp}.".encode() + payload
+    expected = base64.b64encode(hmac.new(key, signed_payload, hashlib.sha256).digest()).decode()
+
+    for versioned in signatures:
+        version, _, signature = versioned.partition(",")
+        if version == "v1" and hmac.compare_digest(expected, signature):
+            return
+    raise WebhookVerificationError("Invalid signature")
+
+
 def verify_signature(
     payload: bytes,
     signature_header: str,
     secret: str,
 ) -> None:
-    """Verify webhook signature.
+    """Verify the deprecated ``X-Sweatstack-Signature`` header.
 
-    SweatStack uses HMAC-SHA256 signatures. The signature header format is:
+    Deprecated: SweatStack stops sending this header on 15 February 2027. Use
+    :func:`verify_standard_signature`, which the ``WebhookPayload`` dependency
+    already prefers. To be removed in the first release after that date.
+
+    The signature header format is:
     t={timestamp},v1={signature}
 
     The signed payload is: {timestamp}.{raw_json_body}
@@ -140,8 +205,11 @@ async def _detect_webhook_context(request: Request) -> WebhookPayloadModel | Non
     Raises:
         WebhookVerificationError: If signature header is present but invalid.
     """
-    signature = request.headers.get("X-Sweatstack-Signature")
-    if not signature:
+    standard = request.headers.get("webhook-signature")
+    # Deprecated fallback, read only when the standard headers are absent: SweatStack stops
+    # sending it on 15 February 2027. Remove it in the first release after that date.
+    legacy = request.headers.get("X-Sweatstack-Signature")
+    if not standard and not legacy:
         return None  # Not a webhook request - fast path
 
     config = get_config()
@@ -158,7 +226,10 @@ async def _detect_webhook_context(request: Request) -> WebhookPayloadModel | Non
         if hasattr(config.webhook_secret, "get_secret_value")
         else config.webhook_secret
     )
-    verify_signature(body, signature, secret)
+    if standard:
+        verify_standard_signature(body, request.headers, secret)
+    elif legacy:
+        verify_signature(body, legacy, secret)
 
     try:
         data = json.loads(body)
@@ -167,6 +238,7 @@ async def _detect_webhook_context(request: Request) -> WebhookPayloadModel | Non
             event_type=data["event_type"],
             resource_id=data["resource_id"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
+            id=data.get("id"),
         )
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         raise WebhookVerificationError(f"Invalid webhook payload: {e}") from e

@@ -8,8 +8,9 @@
 Webhook simulator for testing SweatStack webhook endpoints.
 
 This script simulates webhook events from SweatStack by:
-1. Creating a properly formatted webhook payload
-2. Signing it with the webhook secret
+1. Creating a properly formatted webhook payload, with an event id
+2. Signing it with the webhook secret, as Standard Webhooks
+   (https://www.standardwebhooks.com/) specifies
 3. Sending it to your local webhook endpoint
 
 Usage:
@@ -22,30 +23,29 @@ Usage:
     # Send to a different endpoint
     uv run send_webhook.py --url http://localhost:8001/webhooks/sweatstack/with-data
 
-    # Use a different webhook secret
-    uv run send_webhook.py --secret "my_webhook_secret"
+    # Use a different webhook secret (a "whsec_" secret, as SweatStack shows it)
+    uv run send_webhook.py --secret "whsec_..."
 """
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
 import sys
 import time
+import uuid
 from datetime import UTC, datetime
 
 import httpx2
 
 
-def create_signature(payload: bytes, secret: str, timestamp: int) -> str:
-    """Create a webhook signature matching SweatStack's format."""
-    signed_payload = f"{timestamp}.".encode() + payload
-    signature = hmac.new(
-        secret.encode(),
-        signed_payload,
-        hashlib.sha256,
-    ).hexdigest()
-    return f"t={timestamp},v1={signature}"
+def create_signature(payload: bytes, secret: str, event_id: str, timestamp: int) -> str:
+    """Create a `webhook-signature` header value, as SweatStack signs a delivery."""
+    key = base64.b64decode(secret.removeprefix("whsec_"))
+    signed_payload = f"{event_id}.{timestamp}.".encode() + payload
+    signature = hmac.new(key, signed_payload, hashlib.sha256).digest()
+    return f"v1,{base64.b64encode(signature).decode()}"
 
 
 def send_webhook(
@@ -58,7 +58,9 @@ def send_webhook(
 ) -> httpx2.Response:
     """Send a webhook to the specified URL."""
     # Create payload
+    event_id = uuid.uuid4().hex
     payload = {
+        "id": event_id,
         "user_id": user_id,
         "event_type": event_type,
         "resource_id": resource_id,
@@ -67,7 +69,7 @@ def send_webhook(
 
     payload_bytes = json.dumps(payload).encode()
     timestamp = int(time.time())
-    signature = create_signature(payload_bytes, secret, timestamp)
+    signature = create_signature(payload_bytes, secret, event_id, timestamp)
 
     if verbose:
         print(f"\n{'=' * 60}")
@@ -84,7 +86,10 @@ def send_webhook(
         content=payload_bytes,
         headers={
             "Content-Type": "application/json",
-            "X-Sweatstack-Signature": signature,
+            "X-Sweatstack-Event": event_type,
+            "webhook-id": event_id,
+            "webhook-timestamp": str(timestamp),
+            "webhook-signature": signature,
         },
         timeout=10.0,
     )
@@ -127,8 +132,8 @@ Examples:
     )
     parser.add_argument(
         "--secret",
-        default="whsec_development_secret_key",
-        help="Webhook secret (default: whsec_development_secret_key)",
+        default="whsec_" + "00" * 32,
+        help="Webhook secret (default: a development secret of zeros)",
     )
     parser.add_argument(
         "-v",

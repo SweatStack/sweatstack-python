@@ -21,6 +21,7 @@ from sweatstack.fastapi import (
     configure,
     instrument,
     verify_signature,
+    verify_standard_signature,
 )
 
 # ---------------------------------------------------------------------------
@@ -487,3 +488,175 @@ class TestWebhookConfiguration:
 
         config = get_config()
         assert config.token_store is store
+
+
+# ---------------------------------------------------------------------------
+# Standard Webhooks
+# ---------------------------------------------------------------------------
+
+#: A secret shaped like the ones SweatStack makes: "whsec_" and 64 hex characters.
+STANDARD_SECRET = "whsec_" + "ab" * 32
+
+
+def standard_headers(
+    payload: bytes, secret: str = STANDARD_SECRET, msg_id: str = "evt_123"
+) -> dict[str, str]:
+    """Headers signed by someone else's reading of the specification: the reference library."""
+    import standardwebhooks
+
+    now = datetime.now(UTC)
+    return {
+        "webhook-id": msg_id,
+        "webhook-timestamp": str(int(now.timestamp())),
+        "webhook-signature": standardwebhooks.Webhook(secret).sign(msg_id, now, payload.decode()),
+    }
+
+
+@pytest.fixture
+def standard_app() -> FastAPI:
+    configure(
+        client_id="test_client_id",
+        client_secret="test_client_secret",
+        app_url="http://localhost:8000",
+        session_secret="dGVzdC1vbmx5LWtleS1mb3ItdW5pdC10ZXN0cy0zMmI=",
+        webhook_secret=STANDARD_SECRET,
+    )
+    app = FastAPI()
+    instrument(app)
+
+    @app.post("/webhooks/test")
+    def webhook_handler(payload: WebhookPayload):
+        return {"id": payload.id, "user_id": payload.user_id, "event_type": payload.event_type}
+
+    return app
+
+
+class TestVerifyStandardSignature:
+    def test_a_reference_signature_verifies(self):
+        payload = json.dumps({**create_webhook_payload(), "id": "evt_123"}).encode()
+
+        verify_standard_signature(payload, standard_headers(payload), STANDARD_SECRET)
+
+    def test_header_names_are_case_insensitive(self):
+        payload = b"{}"
+        headers = {name.title(): value for name, value in standard_headers(payload).items()}
+
+        verify_standard_signature(payload, headers, STANDARD_SECRET)
+
+    def test_one_of_several_signatures_is_enough(self):
+        payload = b"{}"
+        headers = standard_headers(payload)
+        headers["webhook-signature"] = "v1,bm90IGl0 " + headers["webhook-signature"]
+
+        verify_standard_signature(payload, headers, STANDARD_SECRET)
+
+    @pytest.mark.parametrize("change", ["body", "id", "timestamp", "secret"])
+    def test_a_change_fails(self, change: str):
+        payload = b'{"resource_id":"activity_456"}'
+        headers = standard_headers(payload)
+        secret = STANDARD_SECRET
+        if change == "body":
+            payload = b'{"resource_id":"activity_457"}'
+        elif change == "id":
+            headers["webhook-id"] = "evt_124"
+        elif change == "timestamp":
+            headers["webhook-timestamp"] = str(int(headers["webhook-timestamp"]) + 1)
+        else:
+            secret = "whsec_" + "cd" * 32
+
+        with pytest.raises(WebhookVerificationError):
+            verify_standard_signature(payload, headers, secret)
+
+    def test_an_old_timestamp_fails(self):
+        import standardwebhooks
+
+        payload = b"{}"
+        then = datetime.fromtimestamp(time.time() - 600, tz=UTC)
+        headers = {
+            "webhook-id": "evt_123",
+            "webhook-timestamp": str(int(then.timestamp())),
+            "webhook-signature": standardwebhooks.Webhook(STANDARD_SECRET).sign(
+                "evt_123", then, "{}"
+            ),
+        }
+
+        with pytest.raises(WebhookVerificationError, match="tolerance"):
+            verify_standard_signature(payload, headers, STANDARD_SECRET)
+
+    @pytest.mark.parametrize("missing", ["webhook-id", "webhook-timestamp", "webhook-signature"])
+    def test_a_missing_header_fails(self, missing: str):
+        payload = b"{}"
+        headers = standard_headers(payload)
+        del headers[missing]
+
+        with pytest.raises(WebhookVerificationError):
+            verify_standard_signature(payload, headers, STANDARD_SECRET)
+
+    def test_a_secret_that_is_not_a_standard_key_fails(self):
+        with pytest.raises(WebhookVerificationError, match="secret"):
+            verify_standard_signature(b"{}", standard_headers(b"{}"), "whsec_test_secret_key_12345")
+
+
+class TestStandardWebhookRequests:
+    def test_the_standard_headers_alone_are_a_webhook(self, standard_app: FastAPI):
+        payload = json.dumps({**create_webhook_payload(), "id": "evt_123"}).encode()
+
+        response = TestClient(standard_app).post(
+            "/webhooks/test",
+            content=payload,
+            headers={**standard_headers(payload), "Content-Type": "application/json"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "id": "evt_123",
+            "user_id": "user_123",
+            "event_type": "activity_created",
+        }
+
+    def test_the_standard_headers_win_over_the_legacy_one(self, standard_app: FastAPI):
+        """A wrong legacy signature next to valid standard ones is never read."""
+        payload = json.dumps({**create_webhook_payload(), "id": "evt_123"}).encode()
+        headers = {
+            **standard_headers(payload),
+            "X-Sweatstack-Signature": f"t={int(time.time())},v1=00",
+        }
+
+        assert (
+            TestClient(standard_app)
+            .post("/webhooks/test", content=payload, headers=headers)
+            .status_code
+            == 200
+        )
+
+    def test_a_bad_standard_signature_is_refused_even_with_a_good_legacy_one(
+        self, standard_app: FastAPI
+    ):
+        payload = json.dumps({**create_webhook_payload(), "id": "evt_123"}).encode()
+        headers = {
+            **standard_headers(payload, msg_id="evt_999"),
+            "webhook-id": "evt_123",
+            "X-Sweatstack-Signature": create_signature(payload, STANDARD_SECRET),
+        }
+
+        with pytest.raises(WebhookVerificationError):
+            TestClient(standard_app).post("/webhooks/test", content=payload, headers=headers)
+
+    def test_a_legacy_only_delivery_still_verifies_and_has_no_id(
+        self, configured_app: FastAPI, webhook_secret: str
+    ):
+        """Until the flag day, an app whose secret is not a standard key gets the legacy header only."""
+
+        @configured_app.post("/webhooks/test")
+        def webhook_handler(payload: WebhookPayload):
+            return {"id": payload.id}
+
+        payload = json.dumps(create_webhook_payload()).encode()
+        response = TestClient(configured_app).post(
+            "/webhooks/test",
+            content=payload,
+            headers={"X-Sweatstack-Signature": create_signature(payload, webhook_secret)},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"id": None}

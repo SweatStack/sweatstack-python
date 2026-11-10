@@ -83,6 +83,7 @@ from .webhooks import (
     WebhookUserNotFoundError,
     WebhookVerificationError,
     verify_signature,
+    verify_standard_signature,
 )
 
 __all__ = [
@@ -112,6 +113,7 @@ __all__ = [
     "RefreshLockTimeout",
     # Webhook utilities
     "verify_signature",
+    "verify_standard_signature",
     # Exceptions
     "WebhookError",
     "WebhookVerificationError",

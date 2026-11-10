@@ -17,6 +17,19 @@ https://docs.sweatstack.no/learn/python/upgrading/.
 
 - `oauth.authorization_url()` takes `login_hint=`: the user's email address, when your app already
   knows it, to fill in the email field of SweatStack's sign-in page.
+- The FastAPI plugin verifies webhooks by their [Standard Webhooks](https://www.standardwebhooks.com/)
+  headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`), which SweatStack sends on every
+  delivery. Nothing changes in your code: `WebhookPayload` reads them when they are there.
+- `WebhookPayloadModel.id`: the event's id, the same on every retry of the event, so you can
+  deduplicate on it. `None` on a delivery signed only with the old header.
+- `verify_standard_signature(payload, headers, secret)`, to verify a delivery without the
+  dependency. Pass the secret as SweatStack shows it, `whsec_` included.
+
+### Deprecated
+
+- `verify_signature` and the `X-Sweatstack-Signature` header it checks. `WebhookPayload` reads that
+  header only when the standard headers are absent. SweatStack stops sending it on 15 February 2027,
+  and the first release after that date removes `verify_signature` and the fallback.
 
 
 ## [0.99.0] - 2026-11-09
