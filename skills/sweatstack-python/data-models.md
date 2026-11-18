@@ -51,7 +51,8 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
 - **DailyResponse**: `date`, `value`, `status`, and on a stored day who wrote it and where it came
   from: `writer` (`WriterKind`, closed: `athlete`, `application`, `sweatstack`), `application_id`
   (the app, when the writer is one) and `platform` (an open string such as `garmin_connect`, or
-  `None`). All three are `None` on an estimated or missing day. `SourceResponse`, markers and max
+  `None`; `garmin_connect` is data that came through Garmin's API, `garmin_device` is Garmin data
+  read off the device or from the athlete's own export, both attributed "Garmin"). All three are `None` on an estimated or missing day. `SourceResponse`, markers and max
   efforts carry the same three fields. In a pandas frame `writer` holds `WriterKind` members;
   in Polars and Arrow, strings.
 - **`attribution`** on activities, traces' activities, dailies, sources, markers and max efforts:

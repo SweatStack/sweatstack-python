@@ -128,8 +128,10 @@ class Dailies(Resource):
             date: The day.
             value: The value, in the measure's unit.
             platform: Where the value came from, when another platform measured it:
-                ``"garmin_connect"``, ``"strava"``, ... Leave it out for a value you measured or
-                entered yourself. Accepted with a token from ``authenticate()`` (the value's
+                ``"garmin_connect"``, ``"strava"``, ... ``"garmin_connect"`` is only for values
+                that came through Garmin's API; values read off a Garmin device or from the
+                athlete's own Garmin export are ``"garmin_device"``. Leave it out for a value you
+                measured or entered yourself. Accepted with a token from ``authenticate()`` (the value's
                 writer is then ``athlete``) or one issued to your app (``application``), and
                 refused with a personal API key from SweatStack's settings. SweatStack stores
                 the canonical spelling: ``"garmin"`` reads back as ``"garmin_connect"``.

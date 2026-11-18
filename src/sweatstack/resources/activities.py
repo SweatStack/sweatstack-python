@@ -544,7 +544,10 @@ class Activities(Resource):
             files: One path or a list of paths.
             platform: Where the files came from, when another platform recorded them:
                 ``"garmin_connect"``, ``"strava"``, ... One platform per call: it applies to
-                every file, so upload files from different platforms in separate calls. Accepted
+                every file, so upload files from different platforms in separate calls.
+                ``"garmin_connect"`` is only for files that came through Garmin's API; files
+                read off a Garmin device or from the athlete's own Garmin export are
+                ``"garmin_device"``. Both are attributed to "Garmin". Accepted
                 with a token from ``authenticate()`` or one issued to your app, and refused with
                 a personal API key from SweatStack's settings. SweatStack stores the canonical
                 spelling: ``"garmin"`` reads back as ``"garmin_connect"``.
