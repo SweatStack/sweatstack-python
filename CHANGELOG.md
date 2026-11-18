@@ -11,7 +11,10 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
-## [Unreleased]
+## [0.101.0] - 2026-11-18
+
+`oauth.userinfo()` says whether a user is managed and whether their email address is confirmed.
+Nothing is removed or renamed: no code changes are needed to upgrade.
 
 ### Added
 
