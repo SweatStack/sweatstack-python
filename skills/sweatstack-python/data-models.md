@@ -66,7 +66,10 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
   `processed`, `failed`), `error`, `activity_ids`, `created_at`, `writer`, `application_id`,
   `platform`, `external_id` (set on a file an app relayed).
 - **UserInfoResponse** (`oauth.userinfo()`): `sub`, `name`, `given_name`, `family_name`,
-  `email`, `registered_at`, `issue`.
+  `email`, `email_verified` (`None` whenever `email` is), `registered_at`, `is_managed`, `issue`.
+- **`is_managed`** on `UserSummary`, `UserResponse` and `UserInfoResponse`: a coach or an app
+  manages the account, so it has no SweatStack sign-in of its own. Send such a user to the
+  Portal, never to the SweatStack web app.
 - **AccountStatusResponse** (`profile.status()`, beta): `issue` (`StatusIssueResponse | None`:
   `code` (open set), `status` (`CapabilityStatus`: `ready`, `syncing`, `action_required`,
   `unavailable`), `message` (display only), `destination` (`PortalDestination | None`)) and

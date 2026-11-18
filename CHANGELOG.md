@@ -11,6 +11,23 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+### Added
+
+- `oauth.userinfo()` returns `is_managed` and `email_verified`. `is_managed` comes with `sub`
+  (scope `openid`) and is `True` when a coach or your app manages the account: such a user has
+  no SweatStack sign-in of its own, so send them to the Portal, never to the SweatStack web app.
+  `email_verified` comes with `email` (scope `email`) and says whether the person confirmed the
+  address; it is `None` whenever `email` is. Against a server older than 0.161.0, `is_managed`
+  is `False` and `email_verified` is `None`.
+
+### Changed
+
+- `is_managed` on `users.list()`, `users.retrieve()` and the other user responses is now also
+  `True` for a user your app manages, not only for one a coach manages.
+
+
 ## [0.100.0] - 2026-11-10
 
 Records and time-series frames say which platform their data came from, and give you the line to

@@ -81,3 +81,25 @@ class TestUserinfo:
         assert isinstance(user, UserInfoResponse)
         assert user.issue is not None
         assert user.issue.destination == PortalDestination.manage_integrations
+
+    def test_is_managed_and_email_verified(self):
+        user = UserInfoResponse.model_validate(
+            {
+                "sub": "user_123",
+                "name": "A",
+                "email": "athlete@example.com",
+                "email_verified": True,
+                "registered_at": "2025-01-01T00:00:00Z",
+                "is_managed": True,
+            }
+        )
+        assert user.is_managed is True
+        assert user.email_verified is True
+
+    def test_an_older_server_without_the_fields(self):
+        """A server from before 0.161.0 sends neither field: the defaults apply."""
+        user = UserInfoResponse.model_validate(
+            {"sub": "user_123", "name": "A", "registered_at": "2025-01-01T00:00:00Z"}
+        )
+        assert user.is_managed is False
+        assert user.email_verified is None

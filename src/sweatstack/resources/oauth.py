@@ -197,9 +197,18 @@ class OAuth(Resource):
 
         Endpoint: ``GET /api/v1/oauth/userinfo``
 
-        Requires the ``openid`` scope. ``sub`` and ``registered_at`` always come; the name claims
-        (``name``, ``given_name``, ``family_name``) need ``profile`` and ``email`` needs the
-        ``email`` scope, otherwise they are ``None``. The response also has ``issue`` (beta):
+        Requires the ``openid`` scope. ``sub``, ``registered_at`` and ``is_managed`` always come;
+        the name claims (``name``, ``given_name``, ``family_name``) need ``profile``, and ``email``
+        and ``email_verified`` need the ``email`` scope, otherwise they are ``None``.
+
+        ``is_managed`` is ``True`` when a coach or your app manages the account. A managed user
+        has no SweatStack sign-in of its own: send them to the Portal, never to the SweatStack web
+        app. ``email_verified`` says whether the person confirmed ``email`` by opening the message
+        SweatStack sent; it is ``None`` whenever ``email`` is (no ``email`` scope, or no address).
+        A server older than 0.161.0 sends neither: ``is_managed`` is then ``False`` and
+        ``email_verified`` ``None``.
+
+        The response also has ``issue`` (beta):
         ``None`` when there is nothing to say, otherwise the one thing to tell the user now.
         ``issue.destination`` says the user can fix it in the Portal: pass it to
         ``client.portal.sessions.create()`` when they click. It is ``None`` on delegated tokens

@@ -111,7 +111,7 @@ client.whoami()                                               # the user this cl
 ```python
 client.portal.sessions.create("manage-integrations", return_url=None)  # user token; mint on click, never store
 
-client.oauth.userinfo()                 # OpenID claims + issue (needs openid; profile and email add the name and email claims)
+client.oauth.userinfo()                 # OpenID claims + is_managed + issue (needs openid; profile adds the name claims, email adds email and email_verified, None without an address)
 verifier, challenge = client.oauth.generate_pkce_params()
 client.oauth.authorization_url(client_id="YOUR_CLIENT_ID", redirect_uri="http://localhost:8000/callback", code_challenge=challenge)  # + scope, state, nonce, login_hint="athlete@example.com" (prefills the email), integration="garmin_connect", email_auth_mode; leave prompt out
 client.oauth.exchange_code("code", client_id="YOUR_CLIENT_ID", code_verifier=verifier)  # persist=True saves on this machine; never in a server
