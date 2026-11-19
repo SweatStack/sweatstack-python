@@ -115,12 +115,13 @@ client.oauth.userinfo()                 # OpenID claims + is_managed + issue (ne
 verifier, challenge = client.oauth.generate_pkce_params()
 client.oauth.authorization_url(client_id="YOUR_CLIENT_ID", redirect_uri="http://localhost:8000/callback", code_challenge=challenge)  # + scope, state, nonce, login_hint="athlete@example.com" (prefills the email), integration="garmin_connect", email_auth_mode; leave prompt out
 client.oauth.exchange_code("code", client_id="YOUR_CLIENT_ID", code_verifier=verifier)  # persist=True saves on this machine; never in a server
+client.oauth.revoke(refresh_token, client_id="YOUR_CLIENT_ID")  # sign-out: ends that sign-in's refresh tokens; + client_secret when issued against it
 ```
 
 ## Client
 
 ```python
-Client(api_key=None, refresh_token=None, url=None, client_id=None, client_secret=None, output=None, timeout=60.0, max_retries=2, ambient_credentials=True)
+Client(api_key=None, refresh_token=None, url=None, client_id=None, client_secret=None, output=None, timeout=60.0, max_retries=2, ambient_credentials=True, on_refresh=None)  # on_refresh(access, refresh): save the rotated pair in your own store
 client.authenticate(force=False, persist=True)
 client.clear_cache()
 client.close()  # or: with Client() as client: ...
@@ -135,3 +136,8 @@ and `SWEATSTACK_REFRESH_TOKEN` (renewed by the app in `SWEATSTACK_CLIENT_ID` and
 client given only an access token cannot renew it and raises `SweatStackTokenRefreshError` on
 expiry. In a server, build each user's client from that user's tokens with
 `ambient_credentials=False`: it then never reads or writes the machine's tokens.
+
+SweatStack rotates the refresh token on every renewal. Tokens saved by `authenticate()` are
+rewritten automatically; tokens you keep yourself need `on_refresh=` to save the new pair (it
+runs once per renewal, under the client's lock). A refresh token from
+`SWEATSTACK_REFRESH_TOKEN` cannot be written back, so the client warns once when it rotates.

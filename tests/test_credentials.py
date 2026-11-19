@@ -10,12 +10,14 @@ import base64
 import json
 import threading
 import time
+import warnings
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx2
 import pytest
+from pydantic import SecretStr
 
 from sweatstack.client import OAUTH2_CLIENT_ID, Client
 from sweatstack.exceptions import SweatStackTokenRefreshError
@@ -199,18 +201,28 @@ class TestRotation:
 
 
 class TestHook:
+    """``on_refresh``: how an app that keeps users' tokens in its own store keeps a rotated one."""
+
     def test_called_once_per_refresh_with_the_pair_in_force(self, refreshes):
-        client = Client(jwt("user_a", -60), refresh_token="refresh_a", url=URL)
         seen = []
-        client._on_refresh = lambda access, refresh: seen.append((access, refresh))
+        client = Client(
+            jwt("user_a", -60),
+            refresh_token="refresh_a",
+            url=URL,
+            on_refresh=lambda access, refresh: seen.append((access, refresh)),
+        )
         _ = client.api_key
         _ = client.api_key  # valid now: no second refresh
         assert seen == [(client.api_key.get_secret_value(), "refresh_a")]
 
     def test_concurrent_threads_refresh_once_and_notify_once(self):
-        client = Client(jwt("user_a", -60), refresh_token="refresh_a", url=URL)
         seen = []
-        client._on_refresh = lambda access, refresh: seen.append(access)
+        client = Client(
+            jwt("user_a", -60),
+            refresh_token="refresh_a",
+            url=URL,
+            on_refresh=lambda access, refresh: seen.append(access),
+        )
 
         def refresh(refresh_token):
             time.sleep(0.05)
@@ -224,6 +236,17 @@ class TestHook:
                 thread.join()
         assert do_refresh.call_count == 1
         assert len(seen) == 1
+
+    def test_a_failing_hook_reaches_the_caller_and_the_client_keeps_the_new_tokens(self):
+        def fail(access: str, refresh: str) -> None:
+            raise RuntimeError("store unavailable")
+
+        client = Client(jwt("user_a", -60), refresh_token="refresh_old", url=URL, on_refresh=fail)
+        with patch.object(client, "_do_token_refresh", return_value=ROTATED):
+            with pytest.raises(RuntimeError, match="store unavailable"):
+                _ = client.api_key
+            assert client.api_key.get_secret_value() == ROTATED.access_token
+        assert client.refresh_token.get_secret_value() == "refresh_new"
 
     def test_derived_clients_inherit_the_flag_but_not_the_hook(self):
         client = Client(
@@ -406,3 +429,69 @@ class TestApp:
         with pytest.raises(SweatStackTokenRefreshError) as raised:
             _ = Client(url=URL, client_id=client_id).api_key
         assert "SWEATSTACK_CLIENT_ID" not in str(raised.value)
+
+
+ROTATED = TokenResponse(
+    access_token=jwt("user_a", 900), refresh_token="refresh_new", expires_in=900
+)
+
+
+class TestEnvironmentRefreshTokenWarning:
+    """A refresh token from SWEATSTACK_REFRESH_TOKEN cannot be written back: once the server
+    rotates it, the next process that starts with the variable holds a used token."""
+
+    def _refresh(self, client: Client, tokens: TokenResponse = ROTATED) -> None:
+        with patch.object(client, "_do_token_refresh", return_value=tokens):
+            _ = client.api_key
+
+    def test_warns_once_when_a_rotated_token_cannot_be_kept(self, monkeypatch):
+        monkeypatch.setenv("SWEATSTACK_API_KEY", jwt("user_a", -60))
+        monkeypatch.setenv("SWEATSTACK_REFRESH_TOKEN", "refresh_old")
+        client = Client(url=URL)
+
+        with pytest.warns(UserWarning, match="SWEATSTACK_REFRESH_TOKEN") as caught:
+            self._refresh(client)
+        assert caught[0].filename == __file__  # the caller's line, not the SDK's
+
+    def test_a_resource_call_names_the_callers_line(self, monkeypatch):
+        """The renewal happens deep inside ``_request``, behind a ``contextlib`` frame."""
+        monkeypatch.setenv("SWEATSTACK_API_KEY", jwt("user_a", -60))
+        monkeypatch.setenv("SWEATSTACK_REFRESH_TOKEN", "refresh_old")
+        pool = httpx2.Client(
+            base_url=URL,
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(200, json=[])),
+        )
+        monkeypatch.setattr(Client, "_pool", lambda self: pool)
+        client = Client(url=URL)
+        with (
+            patch.object(client, "_do_token_refresh", return_value=ROTATED),
+            pytest.warns(UserWarning) as caught,
+        ):
+            client.activities.list()
+        assert caught[0].filename == __file__
+        client._api_key = SecretStr(jwt("user_a", -60))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self._refresh(client)
+
+    @pytest.mark.parametrize("case", ["callback", "not rotated", "given directly", "token file"])
+    def test_silent_otherwise(self, monkeypatch, token_file, case):
+        monkeypatch.setenv("SWEATSTACK_API_KEY", jwt("user_a", -60))
+        monkeypatch.setenv("SWEATSTACK_REFRESH_TOKEN", "refresh_old")
+        tokens, client = ROTATED, Client(url=URL)
+        if case == "callback":
+            client = Client(url=URL, on_refresh=lambda access, refresh: None)
+        elif case == "not rotated":
+            tokens = TokenResponse(
+                access_token=jwt("user_a", 900), refresh_token="refresh_old", expires_in=900
+            )
+        elif case == "given directly":
+            client = Client(jwt("user_a", -60), refresh_token="refresh_old", url=URL)
+        elif case == "token file":
+            monkeypatch.delenv("SWEATSTACK_API_KEY")
+            monkeypatch.delenv("SWEATSTACK_REFRESH_TOKEN")
+            write_token_file(token_file, jwt("user_a", -60), "refresh_old")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self._refresh(client, tokens)

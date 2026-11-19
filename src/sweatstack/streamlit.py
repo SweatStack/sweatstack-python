@@ -63,6 +63,9 @@ _REFRESH_KEY = "sweatstack_refresh_token"
 # apart from the pair above so that a delegation never overwrites it.
 _PROXY_ACCESS_KEY = "sweatstack_proxy_api_key"
 _PROXY_REFRESH_KEY = "sweatstack_proxy_refresh_token"
+# The refresh token the proxy forwarded for that pair: which login it belongs to. The pair's own
+# refresh token moves on with every renewal, since SweatStack rotates it; the proxy's stays put.
+_PROXY_LOGIN_KEY = "sweatstack_proxy_login"
 
 _PROXY_NO_REFRESH_HINT = (
     "Reload the page, or have the proxy forward the refresh token as well "
@@ -195,8 +198,8 @@ class StreamlitAuth:
             client_id=self.client_id,
             client_secret=self.client_secret,
             ambient_credentials=False,
+            on_refresh=_session_state_writer(*keys),
         )
-        client._on_refresh = _session_state_writer(*keys)
         return client
 
     @classmethod
@@ -220,8 +223,10 @@ class StreamlitAuth:
         the session renews the access token itself and keeps the renewed pair in
         ``st.session_state``: one token request per token lifetime, however long the tab stays
         open. Both headers must come from the proxy, which must drop any ``X-SweatStack-*``
-        header the browser sends. This relies on a refresh returning the same refresh token
-        (the API does not rotate them); the proxy's copy stays valid.
+        header the browser sends. SweatStack rotates the refresh token on every renewal; the
+        session keeps the rotated one and renews with it from then on. A new session (a reload)
+        starts again from the proxy's copy, which SweatStack accepts only while it still accepts
+        an earlier refresh token, so a proxy should renew its own tokens and forward the result.
 
         Without the refresh header the handshake token is used as it is, and once it has
         expired every call raises ``SweatStackTokenRefreshError`` with the advice to reload.
@@ -262,17 +267,21 @@ class StreamlitAuth:
 
         if access_token is None:
             # Logged out at the proxy.
-            for key in proxy_keys:
+            for key in (*proxy_keys, _PROXY_LOGIN_KEY):
                 st.session_state.pop(key, None)
         elif refresh_token is not None:
-            # Same login as the stored pair: continue from whichever access token lives longer,
-            # the stored one after an in-session renewal, the header one after a reload.
+            # Same login as the stored pair: continue from its refresh token, which a renewal in
+            # this session has rotated past the proxy's, and from whichever access token lives
+            # longer.
             # Otherwise (a new login in this tab, or nothing stored yet) the header pair wins.
+            login = refresh_token
             stored_access = st.session_state.get(_PROXY_ACCESS_KEY)
-            if st.session_state.get(_PROXY_REFRESH_KEY) == refresh_token and _expires_at(
-                stored_access
-            ) > _expires_at(access_token):
-                access_token = stored_access
+            stored_refresh = st.session_state.get(_PROXY_REFRESH_KEY)
+            if st.session_state.get(_PROXY_LOGIN_KEY) == login and stored_refresh:
+                refresh_token = stored_refresh
+                if _expires_at(stored_access) > _expires_at(access_token):
+                    access_token = stored_access
+            st.session_state[_PROXY_LOGIN_KEY] = login
             st.session_state[_PROXY_ACCESS_KEY] = access_token
             st.session_state[_PROXY_REFRESH_KEY] = refresh_token
         # Else the proxy does not forward the refresh token: the handshake token, as it is.
@@ -338,7 +347,13 @@ class StreamlitAuth:
             self.api_key = None
             self.refresh_token = None
             self.client = self._client_for(None, None)
-            for key in (_ACCESS_KEY, _REFRESH_KEY, _PROXY_ACCESS_KEY, _PROXY_REFRESH_KEY):
+            for key in (
+                _ACCESS_KEY,
+                _REFRESH_KEY,
+                _PROXY_ACCESS_KEY,
+                _PROXY_REFRESH_KEY,
+                _PROXY_LOGIN_KEY,
+            ):
                 st.session_state.pop(key, None)
             st.rerun()
 

@@ -7,8 +7,10 @@ import logging
 import os
 import random
 import shutil
+import sys
 import threading
 import time
+import warnings
 import webbrowser
 from collections.abc import Callable, Iterator
 from datetime import date, datetime
@@ -134,6 +136,24 @@ def _to_secret(value: str | SecretStr | None) -> SecretStr | None:
     return SecretStr(value)
 
 
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
+# Frames the SDK passes through on its way to the caller: its own, and ``contextlib``'s, since
+# a request renews the token on entering ``with self._http_client()``.
+_INTERNAL_FILES = (_PACKAGE_DIR, contextlib.__file__)
+
+
+def _warn_at_caller(message: str, category: type[Warning]) -> None:
+    """Warn at the first frame outside the SDK, so the warning names the caller's line.
+
+    A fixed ``stacklevel`` cannot: the same warning is reached through many internal paths.
+    (``skip_file_prefixes`` does this from Python 3.12; the SDK supports 3.11.)
+    """
+    frame, stacklevel = sys._getframe(0), 1
+    while frame is not None and frame.f_code.co_filename.startswith(_INTERNAL_FILES):
+        frame, stacklevel = frame.f_back, stacklevel + 1
+    warnings.warn(message, category, stacklevel=stacklevel)
+
+
 def _is_expired(access_token: str) -> bool:
     """Whether a JWT access token expires within the safety margin.
 
@@ -191,10 +211,13 @@ class Client:
     # Whether this client's tokens live in the token file, so a refresh is written back there.
     # Set by loading them from the file or by saving them to it; never by giving tokens directly.
     _file_backed: bool = False
-    # Called after every refresh with the access token and the refresh token now in force. The
-    # Streamlit integration keeps a session's renewed pair with it. Not a public parameter yet:
-    # promote it when a second integration needs it.
-    _on_refresh: Callable[[str, str | None], None] | None = None
+    # Called after every refresh with the access token and the refresh token now in force: the
+    # ``on_refresh`` argument. The Streamlit integration keeps a session's renewed pair with it.
+    _on_refresh: Callable[[str, str], None] | None = None
+    # Whether the tokens came from SWEATSTACK_API_KEY / SWEATSTACK_REFRESH_TOKEN, which a renewed
+    # refresh token cannot be written back to; and whether that has been said once.
+    _tokens_from_environment: bool = False
+    _warned_environment_rotation: bool = False
     # The second sentence of the error for an expired token that cannot be renewed; an
     # integration replaces it with advice that fits its setting.
     _no_refresh_hint: str = (
@@ -215,6 +238,7 @@ class Client:
         max_retries: int = 2,
         *,
         ambient_credentials: bool = True,
+        on_refresh: Callable[[str, str], None] | None = None,
     ):
         """Initialize a SweatStack client.
 
@@ -261,6 +285,16 @@ class Client:
                 for a client in a server that other people sign in to: it then holds only the
                 tokens you give it, and never reads or writes this machine's. The Streamlit and
                 FastAPI integrations build their clients this way.
+            on_refresh: Called after every renewal with the new access token and the new
+                refresh token. SweatStack rotates an app's refresh token on every renewal, so an
+                app that keeps its users' tokens in its own store saves both here, and builds the
+                next client from the saved pair. Keep one store per user that every process
+                reads and writes: a process still holding an earlier refresh token renews with a
+                token SweatStack will stop accepting. Called once per renewal, also when several
+                threads share the client, before the request that needed the renewal is sent.
+                If it raises, that request is not sent and the exception reaches the caller; the
+                client holds the new tokens either way. ``delegated_client()`` and
+                ``principal_client()`` return clients with tokens of their own, and without it.
 
         Examples:
             ```python
@@ -270,7 +304,10 @@ class Client:
             with Client(api_key="...") as client:          # closes the connection pool on exit
                 client.activities.list()
             user_client = Client(  # in your own server, one per signed-in user
-                api_key=access_token, refresh_token=refresh_token, ambient_credentials=False
+                api_key=access_token,
+                refresh_token=refresh_token,
+                ambient_credentials=False,
+                on_refresh=lambda access, refresh: print("save both for this user"),
             )
             ```
         """
@@ -289,6 +326,7 @@ class Client:
         self.timeout = timeout
         self.max_retries = max_retries
         self.ambient_credentials = ambient_credentials
+        self._on_refresh = on_refresh
 
     def __enter__(self) -> Client:
         return self
@@ -405,6 +443,7 @@ class Client:
                     self._file_backed = file_backed
                     if not file_backed:
                         self._environment_app = self._load_environment_app()
+                        self._tokens_from_environment = refresh_token is not None
                     break
         return (
             self._api_key.get_secret_value() if self._api_key is not None else None,
@@ -478,7 +517,7 @@ class Client:
 
         After a renewal the client holds the new access token, and the new refresh token if the
         response rotated it; a file-backed client writes the pair to the file, and
-        ``_on_refresh`` is told.
+        ``on_refresh`` is told.
 
         Raises:
             SweatStackTokenRefreshError: If the token is expired and cannot be renewed.
@@ -501,6 +540,8 @@ class Client:
             tokens = self._do_token_refresh(refresh_token)
             self._api_key = SecretStr(tokens.access_token)
             if tokens.refresh_token is not None:
+                if tokens.refresh_token != refresh_token:
+                    self._warn_if_rotation_is_lost()
                 refresh_token = tokens.refresh_token
                 self._refresh_token = SecretStr(refresh_token)
             if self._file_backed:
@@ -509,6 +550,25 @@ class Client:
                 self._on_refresh(tokens.access_token, refresh_token)
         logger.debug("Refreshed the access token")
         return tokens.access_token
+
+    def _warn_if_rotation_is_lost(self) -> None:
+        """Say once that a rotated refresh token from the environment cannot be kept."""
+        if (
+            not self._tokens_from_environment
+            or self._on_refresh is not None
+            or self._warned_environment_rotation
+        ):
+            return
+        self._warned_environment_rotation = True
+        _warn_at_caller(
+            "SweatStack rotated the refresh token from SWEATSTACK_REFRESH_TOKEN. This process "
+            "keeps the new one, but the variable still holds the old one, which SweatStack will "
+            "stop accepting. Pass on_refresh= to save the new token; or unset "
+            "SWEATSTACK_API_KEY and SWEATSTACK_REFRESH_TOKEN and sign in once with "
+            "client.authenticate() to keep tokens on this machine; or give a short job an "
+            "access token only.",
+            UserWarning,
+        )
 
     @property
     def api_key(self) -> SecretStr | None:
@@ -552,6 +612,7 @@ class Client:
     def refresh_token(self, value: str | SecretStr | None):
         self._refresh_token = _to_secret(value)
         self._environment_app = None  # that app issued the environment's token, not this one
+        self._tokens_from_environment = False
 
     @property
     def client_id(self) -> str:

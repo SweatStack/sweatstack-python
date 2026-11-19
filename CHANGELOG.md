@@ -11,6 +11,40 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+Ready for refresh tokens that rotate. From server 0.162.0, SweatStack sends a new refresh token
+with every renewal of an app's token, and for now still accepts the earlier one. Nothing is
+removed or renamed: no code changes are needed to upgrade.
+
+### Added
+
+- `Client(on_refresh=...)`: called after every renewal with the new access token and the new
+  refresh token. An app that keeps its users' tokens in its own store saves both there, and
+  builds the next client from the saved pair. Called once per renewal, also when threads share
+  the client.
+- `oauth.revoke(token, client_id=..., client_secret=None)` revokes a refresh token and ends the
+  sign-in it belongs to: call it when a user signs out of your app. Needs server 0.162.0.
+
+### Changed
+
+- A client whose refresh token came from `SWEATSTACK_REFRESH_TOKEN` warns once (`UserWarning`)
+  when SweatStack rotates it and nothing keeps the new one: the variable still holds the old
+  token, which SweatStack will stop accepting. Pass `on_refresh=`; or unset the variables and
+  sign in once with `client.authenticate()` to keep tokens on this machine; or give a short job
+  an access token only.
+- `StreamlitAuth.behind_proxy()` with a forwarded refresh token: a reload starts again from the
+  proxy's copy of the refresh token, which a session's renewal has rotated. SweatStack still
+  accepts it for now; to keep working once it stops, the proxy should renew its own tokens and
+  forward the result.
+
+### Fixed
+
+- `StreamlitAuth.behind_proxy()` with a forwarded refresh token keeps the refresh token that a
+  renewal rotated, and renews with it from then on: once per token lifetime again, instead of on
+  every rerun after the forwarded access token expired.
+
+
 ## [0.101.0] - 2026-11-18
 
 `oauth.userinfo()` says whether a user is managed and whether their email address is confirmed.

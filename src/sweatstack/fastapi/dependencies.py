@@ -119,9 +119,8 @@ def _refresh_access_token(
     a string when the server rotated the refresh token, in which case
     callers MUST persist the new value alongside the new access token.
 
-    The current SweatStack OAuth server does not rotate refresh tokens
-    on ``/oauth/token``; the tuple shape exists so that a future
-    server change is handled transparently.
+    SweatStack rotates an app's refresh token on every renewal, so the
+    second element is normally the new token to persist.
     """
     response = _transport.post(
         f"{DEFAULT_URL}/api/v1/oauth/token",

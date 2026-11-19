@@ -264,7 +264,7 @@ async def on_refresh_timeout(request, exc):
 
 ### Refresh-token rotation
 
-The current SweatStack `/oauth/token` endpoint does not rotate refresh tokens, but the cache is rotation-aware: if the server ever starts returning a new refresh token, it is captured, the cookie / token store is rewritten with it, and the cache installs the result under both the old and new keys (so in-flight peers still arriving with the old refresh token continue to hit).
+SweatStack rotates an app's refresh token on every renewal. The new one is captured, the cookie / token store is rewritten with it, and the cache installs the result under both the old and new keys (so in-flight peers still arriving with the old refresh token continue to hit).
 
 ### Debugging
 

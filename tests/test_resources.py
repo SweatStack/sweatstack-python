@@ -330,3 +330,22 @@ def test_dailies_measure_is_the_path(client):
     with patch.object(client, "_request", return_value=_response([])) as request:
         client.dailies.list("body_mass", start=date(2026, 1, 1), end=date(2026, 1, 2))
     assert request.call_args.args == ("get", "/api/v1/dailies/body_mass")
+
+
+class TestRevoke:
+    def test_posts_the_token_and_the_client_without_a_bearer(self, client):
+        with patch.object(client, "_request", return_value=_response(content=b"")) as request:
+            client.oauth.revoke("refresh_123", client_id="app_123", client_secret="secret_123")
+
+        request.assert_called_once_with(
+            "post",
+            "/api/v1/oauth/revoke",
+            data={"token": "refresh_123", "client_id": "app_123", "client_secret": "secret_123"},
+            auth=False,
+        )
+
+    def test_a_public_client_sends_no_secret(self, client):
+        with patch.object(client, "_request", return_value=_response(content=b"")) as request:
+            client.oauth.revoke("refresh_123", client_id="app_123")
+
+        assert request.call_args.kwargs["data"] == {"token": "refresh_123", "client_id": "app_123"}

@@ -105,7 +105,7 @@ auth.logout_button()  # Renders link to proxy's logout endpoint
 activities = auth.client.activities.list()
 ```
 
-**Token lifecycle:** Streamlit sees the headers of the WebSocket handshake only, so the session renews the access token itself with the forwarded refresh token and keeps the renewed pair in session state: one token request per token lifetime, however long the tab stays open. Call `behind_proxy()` at the top of every run. Without the refresh header, calls after the token expires raise `SweatStackTokenRefreshError` with a reload hint. Both headers must come from the proxy (which drops any the browser sends).
+**Token lifecycle:** Streamlit sees the headers of the WebSocket handshake only, so the session renews the access token itself with the forwarded refresh token and keeps the renewed pair in session state: one token request per token lifetime, however long the tab stays open. SweatStack rotates the refresh token on every renewal; the session keeps the rotated one, but a reload starts again from the proxy's copy, so the proxy should renew its own tokens and forward the result. Call `behind_proxy()` at the top of every run. Without the refresh header, calls after the token expires raise `SweatStackTokenRefreshError` with a reload hint. Both headers must come from the proxy (which drops any the browser sends).
 
 **Login/logout buttons** in proxy mode render as styled links (not Streamlit buttons) that navigate to the proxy's endpoints. On iOS standalone PWAs, they open in real Safari via `target="_blank"`.
 

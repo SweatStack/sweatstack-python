@@ -114,6 +114,28 @@ class TestProxyMode:
         assert refreshes == ["refresh_a"]
         assert session["sweatstack_proxy_api_key"] == proxied().client.api_key.get_secret_value()
 
+    def test_a_rotated_refresh_token_is_kept_across_reruns(self, session, headers):
+        """SweatStack rotates the refresh token on every renewal. The session renews with the
+        latest one, never again with the proxy's, and once per token lifetime."""
+        calls: list[str] = []
+
+        def rotate(self, refresh_token: str) -> TokenResponse:
+            calls.append(refresh_token)
+            return TokenResponse(
+                access_token=jwt("user_a", -60 if len(calls) == 1 else 900),
+                refresh_token=f"refresh_a{len(calls)}",
+                expires_in=900,
+            )
+
+        headers["X-SweatStack-Token"] = jwt("user_a", -60)
+        headers["X-SweatStack-Refresh-Token"] = "refresh_a"
+        with patch.object(Client, "_do_token_refresh", rotate):
+            _ = proxied().client.api_key  # renews to an already-expired token, as a clock skew
+            for _ in range(3):
+                assert acts_as(proxied().client) == "user_a"
+        assert calls == ["refresh_a", "refresh_a1"]
+        assert session["sweatstack_proxy_refresh_token"] == "refresh_a2"
+
     def test_a_newer_header_token_wins_after_a_reload(self, session, headers, refreshes):
         session["sweatstack_proxy_api_key"] = jwt("user_a", 300)
         session["sweatstack_proxy_refresh_token"] = "refresh_a"

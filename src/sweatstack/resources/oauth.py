@@ -192,6 +192,40 @@ class OAuth(Resource):
             self._client._save_tokens(tokens.access_token, tokens.refresh_token)
         return tokens
 
+    def revoke(self, token: str, *, client_id: str, client_secret: str | None = None) -> None:
+        """Revokes a refresh token, ending the sign-in it belongs to.
+
+        Endpoint: ``POST /api/v1/oauth/revoke``
+
+        Every refresh token renewed from the same sign-in stops working, so call this when a
+        user signs out of your app or disconnects SweatStack. Other sign-ins of the same user
+        are untouched. A token the server does not know is no error. Access tokens cannot be
+        revoked; they expire within 15 minutes.
+
+        Args:
+            token: The refresh token to revoke.
+            client_id: Your app's client ID; the token must have been issued to it.
+            client_secret: Your app's secret. Required when the token was issued against it.
+
+        Raises:
+            SweatStackAuthError: If the client secret is missing or wrong.
+            SweatStackBadRequestError: If the token was issued to another app, or is an access
+                token.
+            SweatStackAPIError: If the API request fails for any other reason.
+
+        Examples:
+            ```python
+            from sweatstack import Client
+
+            client = Client()
+            client.oauth.revoke("the-users-refresh-token", client_id="YOUR_CLIENT_ID")
+            ```
+        """
+        data = {"token": token, "client_id": client_id}
+        if client_secret:
+            data["client_secret"] = client_secret
+        self._client._request("post", "/api/v1/oauth/revoke", data=data, auth=False)
+
     def userinfo(self) -> UserInfoResponse:
         """Retrieves the OpenID Connect claims of the user, and why they may have no data.
 
