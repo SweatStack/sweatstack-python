@@ -301,8 +301,10 @@ class StreamlitAuth:
         When the access token expires, the session asks the proxy at ``token_url`` for the
         newer one, which the page has the proxy fetch shortly before expiry, and keeps it in
         ``st.session_state``: one request per token lifetime, however long the tab stays open.
-        The session never holds a refresh token. Every header must come from the proxy, which
-        must drop any ``X-SweatStack-*`` header the browser sends.
+        The session never holds the proxy's refresh token. (``select_user()`` and
+        ``switch_to_principal_user()`` get a token pair of their own, which starts a sign-in of
+        its own and renews independently.) Every header must come from the proxy, which must
+        drop any ``X-SweatStack-*`` header the browser sends.
 
         A proxy from before the session id forwards the refresh token instead
         (``refresh_header_name``). The session then renews with it and warns once: that is a

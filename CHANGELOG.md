@@ -13,8 +13,8 @@ https://docs.sweatstack.no/learn/python/upgrading/.
 
 ## [Unreleased]
 
-Streamlit apps behind a proxy no longer hold a refresh token. Nothing is removed or renamed: no
-code changes are needed to upgrade.
+Streamlit apps behind a proxy no longer hold the proxy's refresh token. Nothing is removed or
+renamed: no code changes are needed to upgrade.
 
 ### Added
 
