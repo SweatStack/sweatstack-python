@@ -11,7 +11,7 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
-## [Unreleased]
+## [0.102.0] - 2026-11-19
 
 Ready for refresh tokens that rotate. From server 0.162.0, SweatStack sends a new refresh token
 with every renewal of an app's token, and for now still accepts the earlier one. Nothing is
