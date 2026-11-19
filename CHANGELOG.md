@@ -11,6 +11,29 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+Streamlit apps behind a proxy no longer hold a refresh token. Nothing is removed or renamed: no
+code changes are needed to upgrade.
+
+### Added
+
+- `StreamlitAuth.behind_proxy()` renews from the proxy. When the proxy forwards a session id
+  (`X-SweatStack-Session`), `auth.client` asks the proxy for the newer access token once the
+  handshake's has expired, instead of renewing with a refresh token of its own. The proxy then
+  stays the only holder of the sign-in, which is what SweatStack's rotating refresh tokens
+  require. New arguments: `session_header_name` and `token_url` (default
+  `http://127.0.0.1:8081/_proxy/token`). The SweatStack Streamlit template forwards the session
+  id from 0.4.0.
+
+### Changed
+
+- `StreamlitAuth.behind_proxy()` with a forwarded refresh token (`X-SweatStack-Refresh-Token`)
+  warns once (`UserWarning`): the session is then a second holder of the sign-in, which
+  SweatStack will sign out once it refuses an earlier refresh token. Update the proxy; reading
+  the refresh header will be removed in a later release.
+
+
 ## [0.102.0] - 2026-11-19
 
 Ready for refresh tokens that rotate. From server 0.162.0, SweatStack sends a new refresh token

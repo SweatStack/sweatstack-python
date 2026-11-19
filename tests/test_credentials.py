@@ -260,6 +260,67 @@ class TestHook:
         assert derived._on_refresh is None
 
 
+class TestRenewalWithoutRefreshToken:
+    """``_renew_access_token``: a client that holds no refresh token renews from whatever does,
+    as a Streamlit session behind the template's proxy renews from the proxy."""
+
+    def test_an_expired_token_is_renewed_through_it(self, refreshes):
+        expired = jwt("user_a", -60)
+        seen = []
+        client = Client(expired, url=URL, ambient_credentials=False)
+        client._renew_access_token = lambda token: seen.append(token) or jwt("user_a", 900)
+        assert acts_as(client) == "user_a"
+        _ = client.api_key  # valid now: no second renewal
+        assert seen == [expired]
+        assert refreshes == []
+
+    def test_concurrent_threads_renew_once(self):
+        calls = []
+
+        def renew(token: str | None) -> str:
+            calls.append(token)
+            time.sleep(0.05)
+            return jwt("user_a", 900)
+
+        client = Client(jwt("user_a", -60), url=URL, ambient_credentials=False)
+        client._renew_access_token = renew
+        threads = [threading.Thread(target=lambda: client.api_key) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(calls) == 1
+
+    def test_a_refresh_token_wins(self, refreshes):
+        client = Client(jwt("user_a", -60), refresh_token="refresh_a", url=URL)
+        client._renew_access_token = lambda token: pytest.fail("renewed without the refresh token")
+        assert acts_as(client) == "user_a"
+        assert refreshes == ["refresh_a"]
+
+    def test_an_already_expired_renewal_is_an_error_not_a_loop(self):
+        client = Client(jwt("user_a", -60), url=URL, ambient_credentials=False)
+        client._renew_access_token = lambda token: jwt("user_a", -30)
+        with pytest.raises(SweatStackTokenRefreshError, match="already expired"):
+            _ = client.api_key
+
+    def test_its_error_reaches_the_caller(self):
+        def renew(token: str | None) -> str:
+            raise SweatStackTokenRefreshError("nothing newer")
+
+        client = Client(jwt("user_a", -60), url=URL, ambient_credentials=False)
+        client._renew_access_token = renew
+        with pytest.raises(SweatStackTokenRefreshError, match="nothing newer"):
+            _ = client.api_key
+
+    def test_derived_clients_do_not_inherit_it(self):
+        client = Client(jwt("user_a", 900), url=URL, ambient_credentials=False)
+        client._renew_access_token = lambda token: jwt("user_a", 900)
+        tokens = {"access_token": jwt("user_b", 900), "refresh_token": "refresh_b"}
+        with patch.object(client, "_request", return_value=response(tokens)):
+            derived = client.delegated_client("user_b")
+        assert derived._renew_access_token is None
+
+
 class TestResolution:
     def test_a_miss_is_not_remembered(self, monkeypatch):
         client = Client(url=URL)

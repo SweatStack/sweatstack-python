@@ -92,6 +92,18 @@ def post(url: str, **kwargs: Any) -> httpx2.Response:
     return httpx2.post(url, headers=headers, **kwargs)
 
 
+def get(url: str, **kwargs: Any) -> httpx2.Response:
+    """``httpx2.get`` with the SDK's ``User-Agent``; the caller's headers win on a clash.
+
+    For the one-off calls the integrations make without a ``Client``, such as a Streamlit
+    session asking its proxy for a newer access token. Like ``post``, it adds the header and
+    nothing else: no retry, no error translation and no timeout, so each caller keeps its own.
+    """
+    headers = httpx2.Headers({"User-Agent": USER_AGENT})
+    headers.update(kwargs.pop("headers", None) or {})
+    return httpx2.get(url, headers=headers, **kwargs)
+
+
 class Session:
     """One request scope on the client's shared connection pool, with its own headers.
 

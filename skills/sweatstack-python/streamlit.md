@@ -86,13 +86,14 @@ user = auth.select_user(team_id="team_abc")  # via team membership
 
 ## Behind-Proxy Mode
 
-For Streamlit apps running behind an authentication proxy (e.g., the SweatStack Streamlit template proxy). The proxy handles OAuth and passes the access token, and the refresh token, via HTTP headers.
+For Streamlit apps running behind an authentication proxy (e.g., the SweatStack Streamlit template proxy). The proxy handles OAuth, keeps the refresh token to itself, and passes the access token and a session id via HTTP headers.
 
 ```python
 auth = StreamlitAuth.behind_proxy(
     redirect_uri=f"{APP_URL}/auth/callback",
-    header_name="X-SweatStack-Token",                  # default
-    refresh_header_name="X-SweatStack-Refresh-Token",  # default
+    header_name="X-SweatStack-Token",                       # default
+    session_header_name="X-SweatStack-Session",             # default
+    token_url="http://127.0.0.1:8081/_proxy/token",         # default: the proxy's internal listener
     logout_uri="/logout",              # default, proxy handles this
     login_uri="/login",                # default, proxy handles this
 )
@@ -105,7 +106,7 @@ auth.logout_button()  # Renders link to proxy's logout endpoint
 activities = auth.client.activities.list()
 ```
 
-**Token lifecycle:** Streamlit sees the headers of the WebSocket handshake only, so the session renews the access token itself with the forwarded refresh token and keeps the renewed pair in session state: one token request per token lifetime, however long the tab stays open. SweatStack rotates the refresh token on every renewal; the session keeps the rotated one, but a reload starts again from the proxy's copy, so the proxy should renew its own tokens and forward the result. Call `behind_proxy()` at the top of every run. Without the refresh header, calls after the token expires raise `SweatStackTokenRefreshError` with a reload hint. Both headers must come from the proxy (which drops any the browser sends).
+**Token lifecycle:** Streamlit sees the headers of the WebSocket handshake only, so the session never sees a token the proxy renewed later. SweatStack rotates refresh tokens and ends a sign-in whose earlier refresh token is used again, so the proxy is the only holder of the refresh token: the page has the proxy renew shortly before expiry, and when the session's access token expires, `auth.client` asks the proxy at `token_url` for the newer one (sending the session id) and keeps it in session state. One request per token lifetime, however long the tab stays open; the session never holds a refresh token. When the proxy has no newer token, calls raise `SweatStackTokenRefreshError` with a reload hint. Call `behind_proxy()` at the top of every run. Every header must come from the proxy (which drops any the browser sends). A proxy from before the session id forwards the refresh token instead (`refresh_header_name`, deprecated): the session then renews with it and warns once, since that is a second holder of the sign-in.
 
 **Login/logout buttons** in proxy mode render as styled links (not Streamlit buttons) that navigate to the proxy's endpoints. On iOS standalone PWAs, they open in real Safari via `target="_blank"`.
 
@@ -113,7 +114,7 @@ activities = auth.client.activities.list()
 
 - **Always use `auth.client`** for API calls — never create a standalone `Client()` in a Streamlit app. The standalone client won't have the session's tokens, and may find the server machine's.
 - **Never cache `auth` or `auth.client` across sessions** (`st.cache_resource`, module globals): they hold one user's tokens. Build them at the top of every run.
-- **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`, and in proxy mode `sweatstack_proxy_api_key`, `sweatstack_proxy_refresh_token`. Don't overwrite these; `auth.client` keeps a renewed token there.
+- **Session state keys:** `sweatstack_api_key`, `sweatstack_refresh_token`, and in proxy mode `sweatstack_proxy_api_key`, `sweatstack_proxy_login` (and `sweatstack_proxy_refresh_token` behind a proxy that forwards the refresh token). Don't overwrite these; `auth.client` keeps a renewed token there.
 - **`select_user()` replaces `auth.client`** with a client delegated to the selected user (its own access and refresh token). Call `auth.switch_to_principal_user()` to go back.
 - **Scopes default to `DEFAULT_SCOPE`** (`openid profile email activities:read offline_access`), the same set as `Client.authenticate()` and the FastAPI plugin. Add `wellness:read`, `reproductive_health:read`, `workouts:write` or `sharing:read` when the app uses them.
 

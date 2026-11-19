@@ -4,11 +4,14 @@
 each test is one session, and a rerun is a new ``StreamlitAuth``.
 """
 
+import base64
 import json
 import threading
+import warnings
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx2
 import pytest
 
 from sweatstack.client import Client
@@ -18,7 +21,13 @@ from sweatstack.schemas import TokenResponse
 from .test_credentials import OWNERS, acts_as, jwt, write_token_file
 
 st = pytest.importorskip("streamlit")
+from sweatstack import streamlit as streamlit_module  # noqa: E402  needs the extra
 from sweatstack.streamlit import StreamlitAuth  # noqa: E402  needs the extra
+
+
+def _exp(token: str) -> float:
+    payload = token.split(".")[1]
+    return float(json.loads(base64.urlsafe_b64decode(payload + "=="))["exp"])
 
 
 @pytest.fixture
@@ -96,7 +105,10 @@ class TestOAuthMode:
         assert not isolated_credentials.exists()
 
 
+@pytest.mark.filterwarnings("ignore:The proxy forwards the refresh token:UserWarning")
 class TestProxyMode:
+    """A proxy that forwards the refresh token (before the session header): deprecated."""
+
     def test_fresh_header_pair(self, session, headers, refreshes):
         headers["X-SweatStack-Token"] = jwt("user_a", 900)
         headers["X-SweatStack-Refresh-Token"] = "refresh_a"
@@ -199,6 +211,154 @@ class TestProxyMode:
         headers["X-SweatStack-Refresh-Token"] = "refresh_a"
         assert acts_as(proxied().client) == "user_a"
         assert json.loads(isolated_credentials.read_text())["refresh_token"] == "refresh_b"
+
+
+TOKEN_URL = "http://127.0.0.1:8081/_proxy/token"
+
+
+@pytest.fixture
+def proxy():
+    """The proxy's token endpoint: answers with ``proxy.token``, or ``proxy.status``. Records the
+    requests the session sends."""
+    state = SimpleNamespace(token=jwt("user_a", 900), status=200, error=None, requests=[])
+
+    def get(url, *, params, headers, timeout):
+        headers = dict(headers)
+        assert headers.pop("user-agent").startswith("python-sweatstack")
+        state.requests.append({"url": url, "params": params, "headers": headers})
+        if state.error is not None:
+            raise state.error
+        if state.status != 200:
+            return httpx2.Response(state.status, json={"detail": "no newer token"})
+        return httpx2.Response(200, json={"access_token": state.token, "expires_at": 0})
+
+    with patch.object(httpx2, "get", get):
+        yield state
+
+
+class TestProxySession:
+    """A proxy that forwards ``X-SweatStack-Session`` keeps the refresh token to itself: the
+    session renews the access token from the proxy, and never holds a refresh token."""
+
+    @pytest.fixture(autouse=True)
+    def signed_in(self, headers):
+        headers["X-SweatStack-Token"] = jwt("user_a", -60)
+        headers["X-SweatStack-Session"] = "sid_123"
+
+    def test_an_expired_token_is_renewed_from_the_proxy(self, session, headers, proxy, refreshes):
+        expired = headers["X-SweatStack-Token"]
+        a = proxied()
+        assert a.client.api_key.get_secret_value() == proxy.token
+        assert proxy.requests == [
+            {
+                "url": TOKEN_URL,
+                "params": {"after": _exp(expired)},
+                "headers": {"x-sweatstack-session": "sid_123"},
+            }
+        ]
+        assert refreshes == []
+        assert a.client.refresh_token is None
+        assert session["sweatstack_proxy_api_key"] == proxy.token
+        assert "sweatstack_proxy_refresh_token" not in session
+
+    def test_once_per_lifetime_across_reruns(self, session, proxy):
+        for _ in range(3):
+            assert acts_as(proxied().client) == "user_a"
+        assert len(proxy.requests) == 1
+
+    def test_once_under_concurrency(self, session, proxy):
+        client = proxied().client
+        threads = [threading.Thread(target=lambda: client.api_key) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(proxy.requests) == 1
+
+    def test_a_fresh_header_token_needs_no_renewal(self, session, headers, proxy):
+        headers["X-SweatStack-Token"] = jwt("user_a", 900)
+        assert proxied().client.api_key.get_secret_value() == headers["X-SweatStack-Token"]
+        assert proxy.requests == []
+
+    def test_a_newer_header_token_wins_after_a_reload(self, session, headers, proxy):
+        session["sweatstack_proxy_login"] = "sid_123"
+        session["sweatstack_proxy_api_key"] = jwt("user_a", 300)
+        headers["X-SweatStack-Token"] = jwt("user_a", 900)
+        assert proxied().client.api_key.get_secret_value() == headers["X-SweatStack-Token"]
+
+    def test_a_new_sign_in_replaces_the_stored_token(self, session, headers, proxy):
+        session["sweatstack_proxy_login"] = "sid_old"
+        session["sweatstack_proxy_api_key"] = jwt("user_a", 900)
+        headers["X-SweatStack-Token"] = jwt("user_b", 300)
+        headers["X-SweatStack-Session"] = "sid_new"
+        assert acts_as(proxied().client) == "user_b"
+        assert session["sweatstack_proxy_login"] == "sid_new"
+
+    def test_no_newer_token_says_reload(self, session, proxy):
+        proxy.status = 404
+        with pytest.raises(SweatStackTokenRefreshError, match="Reload the page"):
+            _ = proxied().client.api_key
+
+    def test_an_unreachable_proxy_says_reload(self, session, proxy):
+        proxy.error = httpx2.ConnectError("connection refused")
+        with pytest.raises(SweatStackTokenRefreshError, match="Reload the page"):
+            _ = proxied().client.api_key
+
+    def test_a_malformed_answer_says_reload(self, session, proxy):
+        proxy.token = None
+        with pytest.raises(SweatStackTokenRefreshError, match="Reload the page"):
+            _ = proxied().client.api_key
+
+    def test_a_refresh_header_beside_it_is_ignored(self, session, headers, proxy, refreshes):
+        headers["X-SweatStack-Refresh-Token"] = "refresh_a"
+        a = proxied()
+        assert a.client.api_key.get_secret_value() == proxy.token
+        assert a.client.refresh_token is None
+        assert refreshes == []
+
+    def test_the_token_url_can_be_changed(self, session, proxy):
+        _ = StreamlitAuth.behind_proxy(
+            redirect_uri="http://x", token_url="http://127.0.0.1:9000/t"
+        ).client.api_key
+        assert proxy.requests[0]["url"] == "http://127.0.0.1:9000/t"
+
+    def test_logged_out_clears_the_session(self, session, headers, proxy):
+        proxied()
+        del headers["X-SweatStack-Token"]
+        assert not proxied().is_authenticated()
+        assert "sweatstack_proxy_login" not in session
+        assert "sweatstack_proxy_api_key" not in session
+
+    def test_a_renewal_in_a_worker_thread_does_not_raise(self, session, proxy):
+        client = proxied().client
+        errors = []
+
+        def use():
+            try:
+                with patch.object(st, "session_state", None):  # no session in this thread
+                    _ = client.api_key
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+
+        thread = threading.Thread(target=use)
+        thread.start()
+        thread.join()
+        assert errors == []
+        assert client.api_key.get_secret_value() == proxy.token
+
+
+class TestRefreshHeader:
+    """A proxy from before the session header still works, for one more template release."""
+
+    def test_it_warns_once(self, session, headers, refreshes, monkeypatch):
+        monkeypatch.setattr(streamlit_module, "_warned_refresh_header", False)
+        headers["X-SweatStack-Token"] = jwt("user_a", 900)
+        headers["X-SweatStack-Refresh-Token"] = "refresh_a"
+        with pytest.warns(UserWarning, match="X-SweatStack-Session"):
+            proxied()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            proxied()
 
 
 class TestHookOutsideAScriptRun:

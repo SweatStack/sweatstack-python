@@ -214,6 +214,12 @@ class Client:
     # Called after every refresh with the access token and the refresh token now in force: the
     # ``on_refresh`` argument. The Streamlit integration keeps a session's renewed pair with it.
     _on_refresh: Callable[[str, str], None] | None = None
+    # Renews the access token of a client that holds no refresh token, from whatever holds one
+    # for it: called with the expired access token (None if there is none), returns a valid one.
+    # The Streamlit integration renews a session behind the template's proxy from the proxy, so
+    # that the proxy's cookie stays the only holder of the refresh token. Derived clients hold
+    # tokens of their own and never get it.
+    _renew_access_token: Callable[[str | None], str] | None = None
     # Whether the tokens came from SWEATSTACK_API_KEY / SWEATSTACK_REFRESH_TOKEN, which a renewed
     # refresh token cannot be written back to; and whether that has been said once.
     _tokens_from_environment: bool = False
@@ -517,7 +523,8 @@ class Client:
 
         After a renewal the client holds the new access token, and the new refresh token if the
         response rotated it; a file-backed client writes the pair to the file, and
-        ``on_refresh`` is told.
+        ``on_refresh`` is told. A client without a refresh token renews through
+        ``_renew_access_token`` when it has one, and only holds the new access token.
 
         Raises:
             SweatStackTokenRefreshError: If the token is expired and cannot be renewed.
@@ -526,17 +533,17 @@ class Client:
             return access_token
 
         if refresh_token is None:
+            if self._renew_access_token is not None:
+                return self._renew_without_refresh_token(access_token, self._renew_access_token)
             raise SweatStackTokenRefreshError(
                 "The access token expired and this client has no refresh token to renew it. "
                 + self._no_refresh_hint
             )
 
-        # One refresh at a time per client: threads sharing a client would otherwise all refresh,
-        # and with rotating refresh tokens all but the first would fail.
-        with self.__dict__.setdefault("_refresh_lock", threading.Lock()):
-            current = self._api_key.get_secret_value() if self._api_key else None
-            if current is not None and current != access_token and not _is_expired(current):
-                return current  # another thread refreshed while this one waited
+        with self._refresh_lock():
+            current = self._renewed_meanwhile(access_token)
+            if current is not None:
+                return current
             tokens = self._do_token_refresh(refresh_token)
             self._api_key = SecretStr(tokens.access_token)
             if tokens.refresh_token is not None:
@@ -550,6 +557,42 @@ class Client:
                 self._on_refresh(tokens.access_token, refresh_token)
         logger.debug("Refreshed the access token")
         return tokens.access_token
+
+    def _refresh_lock(self) -> threading.Lock:
+        """One renewal at a time per client.
+
+        Threads sharing a client would otherwise all renew, and with rotating refresh tokens all
+        but the first would fail.
+        """
+        return self.__dict__.setdefault("_refresh_lock_instance", threading.Lock())
+
+    def _renewed_meanwhile(self, access_token: str | None) -> str | None:
+        """The access token another thread renewed while this one waited for the lock, if any."""
+        current = self._api_key.get_secret_value() if self._api_key else None
+        if current is not None and current != access_token and not _is_expired(current):
+            return current
+        return None
+
+    def _renew_without_refresh_token(
+        self, access_token: str | None, renew: Callable[[str | None], str]
+    ) -> str:
+        """Renew through ``_renew_access_token``; the client then holds only the new access token.
+
+        Raises:
+            SweatStackTokenRefreshError: If ``renew`` does, or returns a token that has expired.
+        """
+        with self._refresh_lock():
+            current = self._renewed_meanwhile(access_token)
+            if current is not None:
+                return current
+            renewed = renew(access_token)
+            if _is_expired(renewed):
+                raise SweatStackTokenRefreshError(
+                    "The renewed access token has already expired. " + self._no_refresh_hint
+                )
+            self._api_key = SecretStr(renewed)
+        logger.debug("Renewed the access token")
+        return renewed
 
     def _warn_if_rotation_is_lost(self) -> None:
         """Say once that a rotated refresh token from the environment cannot be kept."""

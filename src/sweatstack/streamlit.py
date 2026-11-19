@@ -42,9 +42,9 @@ import httpx2
 from pydantic import SecretStr
 
 from . import _transport
-from .client import Client
+from .client import Client, _warn_at_caller
 from .constants import DEFAULT_SCOPE, DEFAULT_URL
-from .exceptions import SweatStackAuthError
+from .exceptions import SweatStackAuthError, SweatStackTokenRefreshError
 from .resources.oauth import _build_authorization_url
 from .schemas import ActivitySummary, Metric, Scope, Sport, UserSummary
 from .utils import decode_jwt_body
@@ -63,14 +63,31 @@ _REFRESH_KEY = "sweatstack_refresh_token"
 # apart from the pair above so that a delegation never overwrites it.
 _PROXY_ACCESS_KEY = "sweatstack_proxy_api_key"
 _PROXY_REFRESH_KEY = "sweatstack_proxy_refresh_token"
-# The refresh token the proxy forwarded for that pair: which login it belongs to. The pair's own
-# refresh token moves on with every renewal, since SweatStack rotates it; the proxy's stays put.
+# Which sign-in that pair belongs to: the proxy's session id, or, from a proxy that forwards the
+# refresh token, that refresh token. The pair's own refresh token moves on with every renewal,
+# since SweatStack rotates it; what the proxy forwards stays put.
 _PROXY_LOGIN_KEY = "sweatstack_proxy_login"
 
+# Where a session behind the template's proxy asks for a newer access token. The proxy serves it
+# on a listener bound to loopback, so only processes in the same container reach it.
+_PROXY_TOKEN_URL = "http://127.0.0.1:8081/_proxy/token"
+# The proxy waits up to 10 s for the page to renew the sign-in; this leaves room for that.
+_PROXY_TOKEN_TIMEOUT_SECONDS = 15.0
+
+_PROXY_RELOAD_HINT = "Reload the page to continue."
 _PROXY_NO_REFRESH_HINT = (
-    "Reload the page, or have the proxy forward the refresh token as well "
-    "(StreamlitAuth.behind_proxy reads X-SweatStack-Refresh-Token)."
+    "Reload the page, or update the proxy so that it forwards X-SweatStack-Session "
+    "(sweatstack-streamlit-template 0.4.0 or later)."
 )
+_REFRESH_HEADER_WARNING = (
+    "The proxy forwards the refresh token ({header}), so this session renews the access token "
+    "itself and holds a second copy of the sign-in. SweatStack rotates refresh tokens and will "
+    "end a sign-in whose earlier token is used again. Update the proxy so that it forwards "
+    "X-SweatStack-Session instead (sweatstack-streamlit-template 0.4.0 or later). Reading the "
+    "refresh header will be removed."
+)
+# Said once per process, not once per rerun.
+_warned_refresh_header = False
 
 
 def _secret_value(value: str | SecretStr | None) -> str | None:
@@ -87,18 +104,75 @@ def _expires_at(token: str | None) -> float:
         return 0.0
 
 
+def _keep_in_session_state(values: dict[str, str | None]) -> None:
+    """Keep renewed tokens in session state, for the next rerun to start from."""
+    try:
+        for key, value in values.items():
+            st.session_state[key] = value
+    except Exception:  # noqa: BLE001  outside a script run, e.g. in an app's worker thread
+        logger.debug("Could not keep the renewed token in session state", exc_info=True)
+    # The client holds the renewed token either way; only the next rerun starts stale.
+
+
 def _session_state_writer(access_key: str, refresh_key: str) -> Callable[[str, str | None], None]:
     """A refresh hook that keeps the renewed pair under these session-state keys."""
 
     def write(access_token: str, refresh_token: str | None) -> None:
-        try:
-            st.session_state[access_key] = access_token
-            st.session_state[refresh_key] = refresh_token
-        except Exception:  # noqa: BLE001  outside a script run, e.g. in an app's worker thread
-            logger.debug("Could not keep the renewed token in session state", exc_info=True)
-        # The client holds the renewed token either way; only the next rerun starts stale.
+        _keep_in_session_state({access_key: access_token, refresh_key: refresh_token})
 
     return write
+
+
+def _proxy_renewer(
+    token_url: str, session_header_name: str, session_id: str
+) -> Callable[[str | None], str]:
+    """Renews a proxied session's access token from the proxy, which alone holds the refresh
+    token; keeps the new token in session state for the next rerun.
+
+    The proxy answers with an access token newer than the expired one, waiting briefly for the
+    page to renew the sign-in, or with 404 when it has none.
+    """
+
+    def renew(expired: str | None) -> str:
+        try:
+            response = _transport.get(
+                token_url,
+                params={"after": _expires_at(expired)},
+                headers={session_header_name: session_id},
+                timeout=_PROXY_TOKEN_TIMEOUT_SECONDS,
+            )
+        except httpx2.HTTPError as e:
+            raise SweatStackTokenRefreshError(
+                f"Could not reach the proxy for a new access token ({type(e).__name__}). "
+                + _PROXY_RELOAD_HINT
+            ) from e
+        if response.status_code != 200:
+            raise SweatStackTokenRefreshError(
+                "The access token expired and the proxy has no newer one for this session "
+                f"(status {response.status_code}). " + _PROXY_RELOAD_HINT
+            )
+        try:
+            access_token = response.json()["access_token"]
+        except (ValueError, KeyError, TypeError) as e:
+            raise SweatStackTokenRefreshError(
+                "The proxy's answer held no access token. " + _PROXY_RELOAD_HINT
+            ) from e
+        if not isinstance(access_token, str) or not access_token:
+            raise SweatStackTokenRefreshError(
+                "The proxy's answer held no access token. " + _PROXY_RELOAD_HINT
+            )
+        _keep_in_session_state({_PROXY_ACCESS_KEY: access_token})
+        return access_token
+
+    return renew
+
+
+def _warn_refresh_header_once(header_name: str) -> None:
+    global _warned_refresh_header
+    if _warned_refresh_header:
+        return
+    _warned_refresh_header = True
+    _warn_at_caller(_REFRESH_HEADER_WARNING.format(header=header_name), UserWarning)
 
 
 class StreamlitAuth:
@@ -210,26 +284,31 @@ class StreamlitAuth:
         logout_uri: str = "/logout",
         login_uri: str = "/login",
         refresh_header_name: str = "X-SweatStack-Refresh-Token",
+        session_header_name: str = "X-SweatStack-Session",
+        token_url: str = _PROXY_TOKEN_URL,
     ) -> "StreamlitAuth":
         """Create a StreamlitAuth instance for use behind a proxy.
 
         Use this method when your Streamlit app runs behind a proxy that handles
-        authentication and passes the SweatStack access token via an HTTP header. Call it at
-        the top of every run; never keep ``auth`` or ``auth.client`` across sessions
-        (``st.cache_resource``, module globals).
+        authentication and passes the SweatStack access token via an HTTP header, such as the
+        proxy of the SweatStack Streamlit template. Call it at the top of every run; never keep
+        ``auth`` or ``auth.client`` across sessions (``st.cache_resource``, module globals).
 
         Streamlit exposes the headers of the WebSocket handshake only, so the session never
-        sees a token the proxy refreshed later. When the proxy also forwards the refresh token,
-        the session renews the access token itself and keeps the renewed pair in
-        ``st.session_state``: one token request per token lifetime, however long the tab stays
-        open. Both headers must come from the proxy, which must drop any ``X-SweatStack-*``
-        header the browser sends. SweatStack rotates the refresh token on every renewal; the
-        session keeps the rotated one and renews with it from then on. A new session (a reload)
-        starts again from the proxy's copy, which SweatStack accepts only while it still accepts
-        an earlier refresh token, so a proxy should renew its own tokens and forward the result.
+        sees a token the proxy refreshed later. SweatStack rotates refresh tokens and ends a
+        sign-in whose earlier refresh token is used again, so the proxy keeps the refresh token
+        to itself: it forwards the access token and a session id (``session_header_name``).
+        When the access token expires, the session asks the proxy at ``token_url`` for the
+        newer one, which the page has the proxy fetch shortly before expiry, and keeps it in
+        ``st.session_state``: one request per token lifetime, however long the tab stays open.
+        The session never holds a refresh token. Every header must come from the proxy, which
+        must drop any ``X-SweatStack-*`` header the browser sends.
 
-        Without the refresh header the handshake token is used as it is, and once it has
-        expired every call raises ``SweatStackTokenRefreshError`` with the advice to reload.
+        A proxy from before the session id forwards the refresh token instead
+        (``refresh_header_name``). The session then renews with it and warns once: that is a
+        second holder of the sign-in, and reading the header will be removed. With neither
+        header the handshake token is used as it is, and once it has expired every call raises
+        ``SweatStackTokenRefreshError`` with the advice to reload.
 
         Args:
             redirect_uri: The URI to redirect to after login (used by proxy).
@@ -239,8 +318,12 @@ class StreamlitAuth:
                         Defaults to "/logout".
             login_uri: The URI to redirect to for login.
                        Defaults to "/login".
-            refresh_header_name: The HTTP header name containing the refresh token.
-                         Defaults to "X-SweatStack-Refresh-Token".
+            refresh_header_name: The HTTP header name containing the refresh token, from a proxy
+                that forwards it. Deprecated. Defaults to "X-SweatStack-Refresh-Token".
+            session_header_name: The HTTP header name containing the proxy's session id, which
+                the session sends back to ``token_url``. Defaults to "X-SweatStack-Session".
+            token_url: Where the session asks the proxy for a newer access token. Defaults to
+                "http://127.0.0.1:8081/_proxy/token", the template proxy's internal listener.
 
         Returns:
             StreamlitAuth: An instance configured for proxy mode.
@@ -262,6 +345,7 @@ class StreamlitAuth:
         instance._login_uri = login_uri
 
         access_token = st.context.headers.get(header_name) or None
+        session_id = st.context.headers.get(session_header_name) or None
         refresh_token = st.context.headers.get(refresh_header_name) or None
         proxy_keys = (_PROXY_ACCESS_KEY, _PROXY_REFRESH_KEY)
 
@@ -269,7 +353,21 @@ class StreamlitAuth:
             # Logged out at the proxy.
             for key in (*proxy_keys, _PROXY_LOGIN_KEY):
                 st.session_state.pop(key, None)
+        elif session_id is not None:
+            # The proxy holds the refresh token. Same sign-in as the stored token: continue from
+            # whichever access token lives longer, since this session may have renewed past the
+            # handshake's. Otherwise (a new sign-in, or nothing stored yet) the header wins.
+            refresh_token = None
+            stored_access = st.session_state.get(_PROXY_ACCESS_KEY)
+            if st.session_state.get(_PROXY_LOGIN_KEY) == session_id and _expires_at(
+                stored_access
+            ) > _expires_at(access_token):
+                access_token = stored_access
+            st.session_state[_PROXY_LOGIN_KEY] = session_id
+            st.session_state[_PROXY_ACCESS_KEY] = access_token
+            st.session_state.pop(_PROXY_REFRESH_KEY, None)
         elif refresh_token is not None:
+            _warn_refresh_header_once(refresh_header_name)
             # Same login as the stored pair: continue from its refresh token, which a renewal in
             # this session has rotated past the proxy's, and from whichever access token lives
             # longer.
@@ -289,7 +387,12 @@ class StreamlitAuth:
         instance.api_key = access_token
         instance.refresh_token = refresh_token
         instance.client = instance._client_for(access_token, refresh_token, keys=proxy_keys)
-        if access_token is not None and refresh_token is None:
+        if access_token is not None and session_id is not None:
+            instance.client._renew_access_token = _proxy_renewer(
+                token_url, session_header_name, session_id
+            )
+            instance.client._no_refresh_hint = _PROXY_RELOAD_HINT
+        elif access_token is not None and refresh_token is None:
             instance.client._no_refresh_hint = _PROXY_NO_REFRESH_HINT
         return instance
 
