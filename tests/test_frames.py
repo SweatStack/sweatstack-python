@@ -115,6 +115,10 @@ class TestPolarsSchema:
         # int | float unions collapse to Float64 instead of falling back
         assert dict(summary.to_schema())["distance"] == pl.Struct({"sum": pl.Float64})
 
+    def test_the_location_is_a_struct_with_a_string_polyline(self):
+        summary = dict(polars_schema(ActivitySummary)["summary"].to_schema())
+        assert summary["location"] == pl.Struct({"polyline": pl.String})
+
     def test_recursive_reference_becomes_json_text(self):
         activity = polars_schema(TraceDetails)["activity"]
         assert isinstance(activity, pl.Struct)
@@ -152,6 +156,19 @@ class TestModelsToPolars:
             pl.col("laps").list.eval(pl.element().struct.field("power").struct.field("mean"))
         )
         assert lap_mean.to_series().to_list() == [[], [250.0]]
+
+    def test_location_polyline_round_trips_and_is_null_without_gps(self):
+        polyline = "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
+        with_gps = _activity(
+            summary={"power": {"mean": 210, "max": 500}, "location": {"polyline": polyline}}
+        )
+        without_gps = _activity(id="a2")
+
+        assert (
+            with_gps.summary.location.polyline == polyline and without_gps.summary.location is None
+        )
+        df = models_to_polars([with_gps, without_gps], ActivitySummary)
+        assert df.unnest("summary").unnest("location")["polyline"].to_list() == [polyline, None]
 
     def test_empty_list_gives_typed_empty_frame(self):
         df = models_to_polars([], ActivitySummary)

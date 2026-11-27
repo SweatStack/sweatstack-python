@@ -11,6 +11,18 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
+## [Unreleased]
+
+Activities carry their track as a polyline, for drawing a small map. Nothing is removed or renamed:
+no code changes are needed to upgrade.
+
+### Added
+
+- `summary.location.polyline` on `ActivitySummary` and `ActivityDetails`: the activity's track as
+  a Google encoded polyline at precision 5, simplified for a small map (at most 150 points).
+  `summary.location` is `None` for an activity without GPS. Decode it with the `polyline` package;
+  the full track is still `activities.data(activity_id, metrics=["latitude", "longitude"])`.
+
 ## [0.103.0] - 2026-11-19
 
 Streamlit apps behind a proxy no longer hold the proxy's refresh token. Nothing is removed or

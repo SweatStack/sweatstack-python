@@ -255,6 +255,14 @@ class IssueStatus(Enum):
     syncing = 'syncing'
 
 
+class LocationSummary(BaseModel):
+    polyline: str = Field(
+        ...,
+        description="The activity's track as a [Google encoded polyline](https://developers.google.com/maps/documentation/utilities/polylinealgorithm) at precision 5, latitude before longitude. Simplified for a small map: every recorded sample is within 1/150 of the track's extent of the line (2 px on a 300 px map), with at most 150 points. Where the track has no position, the line goes straight to the next one. For the full track, read `latitude` and `longitude` from the activity's data.",
+        title='Polyline',
+    )
+
+
 class LongitudinalPowerAWDRecord(BaseModel):
     power: float = Field(..., description='W.', title='Power')
     max: int = Field(
@@ -877,6 +885,7 @@ class ActivitySummarySummary(BaseModel):
     temperature: TemperatureSummary | None = None
     core_temperature: CoreTemperatureSummary | None = None
     smo2: Smo2Summary | None = None
+    location: LocationSummary | None = None
 
 
 class AuthorizeTeamRequest(BaseModel):

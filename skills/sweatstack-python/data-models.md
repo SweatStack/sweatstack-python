@@ -37,7 +37,9 @@ taxonomy is preserved (`is_standard` is `False`) instead of failing.
 
 - **ActivitySummary** (`activities.list()`): `id`, `sport`, `start`, `end` (UTC), `start_local`,
   `end_local` (naive local wall-clock), `duration`, `metrics` (the streams the activity has),
-  `summary` (per-metric aggregates, e.g. `summary.power.mean`; every field optional), `laps`,
+  `summary` (per-metric aggregates, e.g. `summary.power.mean`; every field optional;
+  `summary.location.polyline` is the track as a Google encoded polyline, precision 5, for a small
+  map, and `summary.location` is `None` without GPS), `laps`,
   `traces`, `tags`, `source_id`, `platform`, `app_metadata`, `attribution`.
 - **ActivityDetails** (`activities.retrieve()`, `latest()`): the summary plus `distance`,
   `devices`.
