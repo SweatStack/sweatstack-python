@@ -11,7 +11,7 @@ for a coding agent, are in `UPGRADING.md` next to this file and at
 https://docs.sweatstack.no/learn/python/upgrading/.
 
 
-## [Unreleased]
+## [0.104.0] - 2026-11-27
 
 Activities carry their track as a polyline, for drawing a small map. Nothing is removed or renamed:
 no code changes are needed to upgrade.
